@@ -1,0 +1,6 @@
+# This file is only used in LZA 1.5.0+
+globalReplacements:
+  - key: EvidenceBucket
+    path: /gc_guardrails/s3/evidence_bucket
+  - key: ConfigBucket
+    path: /gc_guardrails/s3/aws_config_bucket

@@ -1,0 +1,400 @@
+AWSTemplateFormatVersion: 2010-09-09
+
+Parameters:
+  OrganizationName:
+    Type: String
+    Default: ""
+    Description: The name of the organization. Used as a prefix in resource names.
+  AuditAccountID:
+    Type: String
+    Default: ""
+    Description: 12-digit AWS Account ID (e.g., '222222222222')
+  EvidenceBucketName:
+    Type: String
+    Default: ""
+    Description: >-
+      The name of the Amazon S3 bucket to be used to store the required documents for assessment.
+  AWSConfigConformsBucketName:
+    Type: String
+    Default: ""
+    Description: >-
+      The name of the Amazon S3 bucket to be used/ created to store the AWS Config Conformance Pack - must start with awsconfigconforms-.
+  RolePrefix:
+    Type: String
+    Default: "ASEA-"
+    Description: >-
+      The prefix to apply to generated role names, in ASEA this is generally ASEA- for lza this could be cdk-accel etc
+  AccelRolePrefix:
+    Type: String
+    Default: "AWSA-"
+    Description: The Accelerator role prefix for priveledged access
+
+Conditions:
+  GenerateEvidenceBucketName: !Equals
+    - !Ref EvidenceBucketName
+    - ""
+  GenerateAWSConfigConformsBucketName: !Equals
+    - !Ref AWSConfigConformsBucketName
+    - ""
+  IsAuditAccount: !Equals
+    - !Ref AWS::AccountId
+    - !Ref AuditAccountID
+
+Resources:
+  BucketSetupLambdaExecutionRolePolicy:
+    Condition: IsAuditAccount
+    Type: AWS::IAM::Policy
+    Properties:
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: AllowCreateLogGroup
+            Action:
+              - "logs:CreateLogGroup"
+            Resource:
+              - !Sub "arn:aws:logs:${AWS::Region}:${AWS::AccountId}:*"
+            Effect: Allow
+          - Sid: AllowLogging
+            Action:
+              - "logs:CreateLogGroup"
+              - "logs:CreateLogStream"
+              - "logs:PutLogEvents"
+            Resource:
+              - !Sub "arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/lambda/${OrganizationName}gc*"
+            Effect: Allow
+          - Sid: AllowS3BucketCreation
+            Action:
+              - "s3:CreateBucket"
+              - "s3:ListAllMyBuckets"
+              - "s3:PutBucketPolicy"
+            Resource: "*"
+            Effect: Allow
+          - Sid: AllowS3ObjectCreation
+            Action:
+              - "s3:PutBucketAcl"
+              - "s3:PutObject"
+              - "s3:PutObjectAcl"
+              - "s3:Get*"
+              - "s3:List*"
+            Resource:
+              - !Sub "arn:aws:s3:::${EvidenceBucketName}"
+              - !Sub "arn:aws:s3:::${EvidenceBucketName}/*"
+            Effect: Allow
+      PolicyName: gc_setup_buckets_lambda_execution_role_policy
+      Roles:
+        - !Ref BucketSetupLambdaExecutionRole
+
+  BucketSetupLambdaExecutionRole:
+    Condition: IsAuditAccount
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: "Allow"
+            Principal:
+              Service:
+                - "lambda.amazonaws.com"
+            Action:
+              - "sts:AssumeRole"
+      Description: "Setup Buckets"
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Path: "/"
+      RoleName: !Sub ${RolePrefix}setup_buckets_role
+      Tags:
+        - Key: "Source"
+          Value: "ProServe Delivery Kit"
+
+  BucketsSetupLambda:
+    Condition: IsAuditAccount
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub "${OrganizationName}aws_buckets_setup"
+      Code: "../../src/lambda/aws_buckets_setup/build/BucketsSetupLambda/"
+      Handler: app.lambda_handler
+      Role: !GetAtt BucketSetupLambdaExecutionRole.Arn
+      Runtime: python3.9
+      Timeout: 300
+    DependsOn:
+      - BucketSetupLambdaExecutionRolePolicy
+
+  BucketsSetup:
+    Condition: IsAuditAccount
+    Type: Custom::BucketsSetup
+    Properties:
+      ServiceToken: !Sub "arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:${OrganizationName}aws_buckets_setup"
+      AuditAccountId: !Ref AuditAccountID
+      EvidenceBucketName:
+        !If [GenerateEvidenceBucketName, AWS::NoValue, !Ref EvidenceBucketName]
+      AWSConfigBucketName:
+        !If [GenerateAWSConfigConformsBucketName, AWS::NoValue, !Ref AWSConfigConformsBucketName]
+      StaticWebSiteURL: "http://localhost:8000"
+    DependsOn:
+      - BucketsSetupLambda
+
+  #############################################
+  # Part 2 - Assessment Resources
+  #############################################
+  EvidenceBucketAccessPolicy:
+    Condition: IsAuditAccount
+    Type: AWS::IAM::Policy
+    Properties:
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: AllowS3Access
+            Action:
+              - "s3:GetObjectRetention"
+              - "s3:GetObjectVersionTagging"
+              - "s3:GetObjectAttributes"
+              - "s3:ListBucket"
+              - "s3:GetObjectLegalHold"
+              - "s3:GetObjectVersionAttributes"
+              - "s3:GetObjectVersionTorrent"
+              - "s3:GetObjectAcl"
+              - "s3:GetObject"
+              - "s3:GetObjectTorrent"
+              - "s3:GetObjectVersionAcl"
+              - "s3:GetObjectTagging"
+              - "s3:GetObjectVersionForReplication"
+              - "s3:GetObjectVersion"
+            Resource:
+              - !Sub "arn:aws:s3:::${EvidenceBucketName}"
+              - !Sub "arn:aws:s3:::${EvidenceBucketName}/*"
+            Effect: Allow
+          - Sid: AllowListBuckets
+            Action:
+              - s3:ListAllMyBuckets
+            Resource: "*"
+            Effect: Allow
+      PolicyName: gc_evidence_bucket_access_policy
+      Roles:
+        - !Ref GCDefaultLambdaExecutionRole
+
+  # Assessment Requirements - Policy
+  GCDefaultLambdaExecutionRolePolicy:
+    Condition: IsAuditAccount
+    Type: AWS::IAM::Policy
+    Properties:
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: AllowCreateLogGroup
+            Action:
+              - "logs:CreateLogGroup"
+            Resource:
+              - !Sub "arn:aws:logs:${AWS::Region}:${AWS::AccountId}:*"
+            Effect: Allow
+          - Sid: AllowLogging
+            Action:
+              - "logs:CreateLogGroup"
+              - "logs:CreateLogStream"
+              - "logs:PutLogEvents"
+            Resource:
+              - !Sub "arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/lambda/${OrganizationName}gc*"
+            Effect: Allow
+          - Sid: AllowIAMQueries
+            Action:
+              - "iam:GenerateCredentialReport"
+              - "iam:GetAccountPasswordPolicy"
+              - "iam:GetCredentialReport"
+              - "iam:GetLoginProfile"
+              - "iam:GetRole"
+              - "iam:ListAttachedRolePolicies"
+              - "iam:ListMFADevices"
+              - "iam:ListUsers"
+            Resource: "*"
+            Effect: Allow
+          - Sid: AllowCloudWatchAlarmQueries
+            Action:
+              - "cloudwatch:DescribeAlarms"
+            Resource: "*"
+            Effect: Allow
+          - Sid: AllowDatastoreChecks
+            Action:
+              - "apigateway:GET"
+              - "backup:ListRecoveryPointsByBackupVault"
+              - "backup:ListBackupVaults"
+              - "cassandra:Select"
+              - "codebuild:BatchGetProjects"
+              - "codebuild:ListProjects"
+              - "dax:DescribeClusters"
+              - "dynamodb:DescribeTable"
+              - "dynamodb:ListTables"
+              - "docdb-elastic:ListClusters"
+              - "docdb-elastic:ListClusterSnapshots"
+              - "ec2:DescribeRegions"
+              - "ec2:DescribeVolumes"
+              - "ec2:GetEbsEncryptionByDefault"
+              - "elasticfilesystem:DescribeFileSystems"
+              - "eks:DescribeCluster"
+              - "eks:ListClusters"
+              - "elasticache:DescribeCacheClusters"
+              - "elasticache:DescribeSnapshots"
+              - "kinesis:DescribeStream"
+              - "kinesis:ListStreams"
+              - "memorydb:DescribeClusters"
+              - "memorydb:DescribeSnapshots"
+              - "qldb:DescribeLedger"
+              - "qldb:ListLedgers"
+              - "rds:DescribeDBClusters"
+              - "rds:DescribeDBClusterSnapshots"
+              - "rds:DescribeDBInstances"
+              - "rds:DescribeDBSnapshots"
+              - "resource-explorer-2:ListIndexes"
+              - "resource-explorer-2:Search"
+              - "s3:GetEncryptionConfiguration"
+              - "s3:GetBucketLocation"
+              - "s3:GetBucketPolicy"
+              - "s3:ListAllMyBuckets"
+              - "s3:ListBucket"
+              - "sns:GetTopicAttributes"
+              - "sns:ListTopics"
+              - "timestream:DescribeEndpoints"
+              - "timestream:ListDatabases"
+              - "timestream:ListTables"
+              - "tag:GetResources"
+            Resource: "*"
+            Effect: Allow
+          - Sid: AllowReadAccountInfo
+            Action:
+              - "account:GetAlternateContact"
+            Resource:
+              - "arn:aws:account::*:account"
+              - "arn:aws:account::*:account/o-*/*"
+            Effect: Allow
+          - Sid: AllowCloudTrailChecks
+            Action:
+              - "cloudtrail:DescribeTrails"
+              - "cloudtrail:GetTrailStatus"
+              - "cloudtrail:ListTrails"
+            Resource:
+              - "*"
+            Effect: Allow
+          - Sid: AllowMarketplaceChecks
+            Action:
+              - "aws-marketplace:ListEntities"
+            Resource:
+              - "*"
+            Effect: Allow
+          - Sid: AllowOrganizationsChecks
+            Action:
+              - "organizations:DescribeOrganization"
+            Resource:
+              - "*"
+            Effect: Allow
+          - Sid: AllowRedshift
+            Action:
+              - "redshift:DescribeClusters"
+              - "redshift:DescribeClusterParameters"
+            Resource: "*"
+            Effect: Allow
+          - Sid: AllowAPI
+            Action:
+              - "apigateway:GET"
+            Resource: "*"
+            Effect: Allow
+          - Sid: AllowELB
+            Action:
+              - "elasticloadbalancing:DescribeListeners"
+              - "elasticloadbalancing:DescribeLoadBalancers"
+            Resource:
+              - "*"
+            Effect: Allow
+          - Sid: AllowES
+            Action:
+              - "es:ListDomainNames"
+              - "es:DescribeDomain"
+              - "es:DescribeElasticsearchDomains"
+            Resource: "*"
+            Effect: Allow
+      PolicyName: !Sub "${RolePrefix}default_lambda_execution_role_policy"
+      Roles:
+        - !Ref GCDefaultLambdaExecutionRole
+
+  GCDefaultLambdaExecutionRole:
+    Condition: IsAuditAccount
+    DependsOn:
+      - BucketsSetup
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: "Allow"
+            Principal:
+              AWS:
+                - !Join
+                  - ""
+                  - - "arn:aws:iam::"
+                    - !Ref AuditAccountID
+                    - ":root"
+            Action:
+              - "sts:AssumeRole"
+          - Effect: "Allow"
+            Principal:
+              Service:
+                - "lambda.amazonaws.com"
+            Action:
+              - "sts:AssumeRole"
+      Description: "GC - Assessment Role"
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSConfigRulesExecutionRole
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Path: "/"
+      Policies:
+        - PolicyName: AssumeRoleInWorkloadAccounts
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Action:
+                  - sts:AssumeRole
+                Resource:
+                  - !Sub "arn:aws:iam::*:role/${AccelRolePrefix}GCLambdaExecutionRole"
+                  - !Sub "arn:aws:iam::*:role/${AccelRolePrefix}GCLambdaExecutionRole2"
+                  - !Join [
+                      "",
+                      ["arn:aws:iam::*:role/", "GCLambdaExecutionRole2"],
+                    ]
+                Effect: Allow
+      RoleName: !Sub ${RolePrefix}default_assessment_role
+      Tags:
+        - Key: "Source"
+          Value: "ProServe Delivery Kit"
+
+  GCDefaultLambdaExecutionRoleARNStorage:
+    Condition: IsAuditAccount
+    Type: AWS::SecretsManager::Secret
+    Properties:
+      Description: GC Assessment - ARN of the Lambda Execution Role
+      Name: GCDefaultLambdaExecutionRoleARN
+      SecretString: !GetAtt GCDefaultLambdaExecutionRole.Arn
+      Tags:
+        - Key: Source
+          Value: ProServe Delivery Kit
+        - Key: Note
+          Value: Not really secret - used for sharing value between templates
+
+  GC01CheckAttestationLetterLambda:
+    Condition: IsAuditAccount
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub "${OrganizationName}gc01_check_attestation_letter"
+      Code: "../../src/lambda/gc01_check_attestation_letter/build/GC01CheckAttestationLetterLambda/"
+      Handler: app.lambda_handler
+      Role: !GetAtt GCDefaultLambdaExecutionRole.Arn
+      Runtime: python3.9
+      Timeout: 90
+
+  ## GC02
+  GC02CheckAccountManagementPlanLambda:
+    Condition: IsAuditAccount
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub "${OrganizationName}gc02_check_account_mgmt_plan"
+      Code: "../../src/lambda/gc02_check_account_mgmt_plan/build/GC02CheckAccountManagementPlanLambda/"
+      Handler: app.lambda_handler
+      Role: !GetAtt GCDefaultLambdaExecutionRole.Arn
+      Runtime: python3.9
+      Timeout: 90

@@ -1,0 +1,108 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: Configures AWS Config and AWS Audit Manager for multi-account management.
+
+Parameters:
+  OrganizationName:
+    Type: String
+    Default: ""
+    Description: The name of the organization. Used as a prefix in resource names.
+  AuditAccountID:
+    Type: String
+    Default: ""
+    Description: 12-digit AWS Account ID (e.g., '222222222222')
+  RolePrefix:
+    Type: String
+    Default: ""
+    Description: Role name prefix
+
+Conditions:
+  IsAuditAccount: !Equals
+    - !Ref AWS::AccountId
+    - !Ref AuditAccountID
+
+Resources:
+  #############################################
+  # Configure Lambda Permissions
+  #############################################
+  LambdaPermissionsExecutionRolePolicy:
+    Condition: IsAuditAccount
+    Type: AWS::IAM::Policy
+    Properties:
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: AllowCreateLogGroup
+            Action:
+              - "logs:CreateLogGroup"
+            Resource:
+              - !Sub "arn:aws:logs:${AWS::Region}:${AWS::AccountId}:*"
+            Effect: Allow
+          - Sid: AllowLogging
+            Action:
+              - "logs:CreateLogGroup"
+              - "logs:CreateLogStream"
+              - "logs:PutLogEvents"
+            Resource:
+              - !Sub "arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/lambda/${OrganizationName}gc*"
+            Effect: Allow
+          - Sid: AllowLambdaPermissions
+            Action:
+              - "lambda:AddPermission"
+              - "lambda:GetPolicy"
+            Resource:
+              - !Sub "arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:${OrganizationName}gc*"
+            Effect: Allow
+          - Sid: AllowOrganizationsReadAccess
+            Action:
+              - "organizations:ListAccounts"
+            Resource: "*"
+            Effect: Allow
+      PolicyName: gc_setup_lambda_execution_role_policy
+      Roles:
+        - !Ref LambdaPermissionsExecutionRole
+
+  LambdaPermissionsExecutionRole:
+    Condition: IsAuditAccount
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: "Allow"
+            Principal:
+              Service:
+                - "lambda.amazonaws.com"
+            Action:
+              - "sts:AssumeRole"
+      Description: "Setup Lambda Permissions"
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Path: "/"
+      RoleName: !Sub ${RolePrefix}setup_lambda_permissions_role
+      Tags:
+        - Key: "Source"
+          Value: "Proserve Delivery Kit"
+
+  LambdaPermissionsSetup:
+    Condition: IsAuditAccount
+    Type: Custom::LambdaPermissionsSetup
+    Properties:
+      ServiceToken: !Sub "arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:${OrganizationName}aws_lambda_permissions_setup"
+      UpdateVariable: QVdTb21lCg8
+    DependsOn:
+      - LambdaPermissionsLambda
+
+  LambdaPermissionsLambda:
+    Condition: IsAuditAccount
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub "${OrganizationName}aws_lambda_permissions_setup"
+      Code: "../../src/lambda/aws_lambda_permissions_setup/build/LambdaPermissionsLambda/"
+      Handler: app.lambda_handler
+      Role: !GetAtt LambdaPermissionsExecutionRole.Arn
+      Runtime: python3.9
+      Timeout: 600
+      Environment:
+        Variables:
+          OrganizationName:
+            Ref: OrganizationName

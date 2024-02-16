@@ -1,0 +1,71 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: Configures AWS Config and AWS Audit Manager for multi-account management.
+
+Parameters:
+  OrganizationName:
+    Type: String
+    Default: ""
+    Description: The name of the organization. Used as a prefix in resource names.
+  AuditAccountID:
+    Type: String
+    Default: ""
+    Description: 12-digit AWS Account ID (e.g., '222222222222')
+  RolePrefix:
+    Type: String
+    Default: "ASEA-"
+    Description: >-
+      The prefix to apply to generated role names, in ASEA this is generally ASEA- for lza this could be cdk-accel etc
+
+Conditions:
+  IsAuditAccount: !Equals
+    - !Ref AWS::AccountId
+    - !Ref AuditAccountID
+
+Resources:
+  ## GC11
+  GC11CheckTrailLoggingLambda:
+    Condition: IsAuditAccount
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub "${OrganizationName}gc11_check_trail_logging"
+      Code: "../../src/lambda/gc11_check_trail_logging/build/GC11CheckTrailLoggingLambda/"
+      Handler: app.lambda_handler
+      Role: !Sub "arn:aws:iam::${AuditAccountID}:role/${RolePrefix}default_assessment_role"
+      Runtime: python3.9
+      Timeout: 90
+
+  ## GC12
+  GC12CheckMarketplacesLambda:
+    Condition: IsAuditAccount
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub "${OrganizationName}gc12_check_marketplace"
+      Code: "../../src/lambda/gc12_check_marketplace/build/GC12CheckMarketplacesLambda/"
+      Handler: app.lambda_handler
+      Role: !Sub "arn:aws:iam::${AuditAccountID}:role/${RolePrefix}default_assessment_role"
+      Runtime: python3.9
+      Timeout: 90
+
+  ## GC01
+  GC01CheckRootAccountMFAEnabledLambda:
+    Condition: IsAuditAccount
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub "${OrganizationName}gc01_check_root_mfa"
+      Code: "../../src/lambda/gc01_check_root_mfa/build/GC01CheckRootAccountMFAEnabledLambda/"
+      Handler: app.lambda_handler
+      Role: !Sub "arn:aws:iam::${AuditAccountID}:role/${RolePrefix}default_assessment_role"
+      Runtime: python3.9
+      Timeout: 180
+
+  ## GC03
+  GC03CheckIAMCloudWatchAlarmsLambda:
+    Condition: IsAuditAccount
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub "${OrganizationName}gc03_check_iam_cloudwatch_alarms"
+      Code: "../../src/lambda/gc03_check_iam_cloudwatch_alarms/build/GC03CheckIAMCloudWatchAlarmsLambda/"
+      Handler: app.lambda_handler
+      Role: !Sub "arn:aws:iam::${AuditAccountID}:role/${RolePrefix}default_assessment_role"
+      Runtime: python3.9
+      Timeout: 180

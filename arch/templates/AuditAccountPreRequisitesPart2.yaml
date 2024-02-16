@@ -1,0 +1,44 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: Configures AWS Config and AWS Audit Manager for multi-account management.
+
+Parameters:
+  OrganizationName:
+    Type: String
+    Default: ""
+    Description: The name of the organization. Used as a prefix in resource names.
+  AuditAccountID:
+    Type: String
+    Default: ""
+    Description: 12-digit AWS Account ID (e.g., '222222222222')
+  RolePrefix:
+    Type: String
+    Description: prefix for roles created by this template
+
+Conditions:
+  IsAuditAccount: !Equals
+    - !Ref AWS::AccountId
+    - !Ref AuditAccountID
+
+Resources:
+  ## GC02
+  GC02CheckIAMUsersMFALambda:
+    Condition: IsAuditAccount
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub "${OrganizationName}gc02_check_iam_users_mfa"
+      Code: "../../src/lambda/gc02_check_iam_users_mfa/build/GC02CheckIAMUsersMFALambda/"
+      Handler: app.lambda_handler
+      Role: !Sub "arn:aws:iam::${AuditAccountID}:role/${RolePrefix}default_assessment_role"
+      Runtime: python3.9
+      Timeout: 180
+
+  GC02CheckIAMPasswordPolicyLambda:
+    Condition: IsAuditAccount
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub "${OrganizationName}gc02_check_iam_password_policy"
+      Code: "../../src/lambda/gc02_check_iam_password_policy/build/GC02CheckIAMPasswordPolicyLambda/"
+      Handler: app.lambda_handler
+      Role: !Sub "arn:aws:iam::${AuditAccountID}:role/${RolePrefix}default_assessment_role"
+      Runtime: python3.9
+      Timeout: 180

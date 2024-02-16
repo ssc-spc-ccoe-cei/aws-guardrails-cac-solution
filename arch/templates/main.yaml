@@ -1,0 +1,1529 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: Deploys the Government of Canada Guardrails Assessment Package
+
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+      - Label:
+          default: Required Parameters
+        Parameters:
+          - OrganizationName
+          - OrganizationId
+          - ExecutionName
+          - RootOUID
+          - AuditAccountID
+          - SecurityOUID
+          - RolePrefix
+          - AccelRolePrefix
+          - AccleratorRole
+          - PipelineBucket
+      - Label:
+          default: Optional Parameters
+        Parameters:
+          - EvidenceBucketName
+          - AWSConfigConformsBucketName
+          - AdditionalAssessmentAdminRoleARN
+          - DestBucketName
+          - DeployRoles
+    ParameterLabels:
+      OrganizationName:
+        default: The name of the organization
+      OrganizationId:
+        default: The ID of the organization
+      ExecutionName:
+        default: Execution name of the IAM role that is passed to GC permission's
+      RootOUID:
+        default: ID of the AWS Organizations Root OU
+      AuditAccountID:
+        default: AWS Account ID of the Audit Account
+      SecurityOUID:
+        default: ID of the AWS Organizations Security OU
+      RolePrefix:
+        default: The prefix to apply to generated role names
+      AccelRolePrefix:
+        default: The Accelerator role prefix for priveledged access, in ASEA or LZA deployed by ProServices this could be AWSA- etc
+      AccleratorRole:
+        default: The role used to assume access to organizational accounts, in ASEA = ASEA-PipelineRole, LZA = OrganizationAccountAccessRole could also be PBMMAccel etc.
+      PipelineBucket:
+        default: The deployment pipeline bucket holding child templates and packaged lambda code.
+      EvidenceBucketName:
+        default: Name for the S3 Evidence bucket
+      AWSConfigConformsBucketName:
+        default: Name for the S3 AWS Config Conformance Pack assets bucket
+      AdditionalAssessmentAdminRoleARN:
+        default: Additional Audit Manager Assessment Admin Role ARN
+      DestBucketName:
+        default: Name of the S3 bucket (leave as is unless instructed otherwise)
+      DeployRoles:
+        default: True/ False flag used to create GC Guardrails Roles (default - True)
+
+Parameters:
+  OrganizationName:
+    Type: String
+    Description: >-
+      The name of the organization that will be used as a prefix to stack resources including lambdas.
+  OrganizationId:
+    Type: String
+    Description: >-
+      Organization Id provided by root.yaml.
+  ExecutionName:
+    Type: String
+    Description: >-
+      Execution name of the IAM role that is passed to GC permission's.
+  RootOUID:
+    Type: String
+    Default: ""
+    Description: Copy from the AWS Organizations console (e.g., r-abc1)
+  AuditAccountID:
+    Type: String
+    Default: ""
+    Description: 12-digit AWS Account ID (e.g., '222222222222')
+  SecurityOUID:
+    Type: String
+    Default: ""
+    Description: >-
+      Copy from the AWS Organizations console (e.g., ou-1234-abcdefg)
+  RolePrefix:
+    Type: String
+    Default: "AM-"
+    Description: >-
+      The prefix to apply to generated role names
+  AccelRolePrefix:
+    Type: String
+    Default: "AWSA-"
+    Description: >-
+      The Accelerator role prefix for priveledged access, in ASEA or LZA deployed by ProServices this could be AWSA- etc
+  AccleratorRole:
+    Type: String
+    Description: >-
+      The role used to assume access to organizational accounts, in ASEA = ASEA-PipelineRole, LZA = OrganizationAccountAccessRole could also be PBMMAccel etc.
+  PipelineBucket:
+    Type: String
+    Description: >-
+      The deployment pipeline bucket holding child templates and packaged lambda code.
+  EvidenceBucketName:
+    Type: String
+    Default: ""
+    Description: >-
+      Bucket will store evidence documents. If not provided, a name will be generated.
+  AWSConfigConformsBucketName:
+    Type: String
+    Default: ""
+    Description: >-
+      Bucket will store AWS Config Conformance Pack assets. If not provided, a name will be generated. (name must start with awsconfigconforms- ).
+  AdditionalAssessmentAdminRoleARN:
+    Type: String
+    Default: ""
+    Description: >-
+      ARN of any additional role that should be configured as owners of the Assessment in Audit Manager
+  DestBucketName:
+    Type: String
+    Default: "*GCDestBucketName*"
+    Description: Bucket to which evidence will be shared
+  DeployRoles:
+    Type: String
+    Default: false
+    AllowedValues: [true, false]
+
+Conditions:
+  GenerateEvidenceBucketName: !Equals [ !Ref EvidenceBucketName, "" ]
+  GenerateAWSConfigConformsBucketName: !Equals [ !Ref AWSConfigConformsBucketName, "" ]
+  DeployRoles: !Equals [ !Ref DeployRoles, "true" ]
+
+Resources:
+  ##################################################
+  # Part 1 - Management Account Pre-requisites
+  ##################################################
+  # Priveledged Role Creation
+  LambdaCreateRole:
+    Type: "AWS::IAM::Role"
+    Condition: DeployRoles
+    Properties:
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action:
+              - sts:AssumeRole
+      Path: "/"
+      Policies:
+        - PolicyName: assume_role
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - sts:AssumeRole
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Resource: !Sub arn:aws:iam::*:role/${AccleratorRole}
+              - Effect: Allow
+                Action:
+                  - "organizations:ListAccounts"
+                Resource:
+                  - "*"
+
+  InvokeCustomLambda:
+    Type: Custom::InvokeCustomLambda
+    Condition: DeployRoles
+    Properties:
+      Version: 15
+      ServiceToken: !GetAtt CreateRoleLambda.Arn
+      TrustPrincipal: !Sub arn:aws:iam::${AuditAccountID}:assumed-role/${RolePrefix}default_assessment_role/configLambdaExecution,arn:aws:iam::${AuditAccountID}:assumed-role/${RolePrefix}default_assessment_role/${OrganizationName}gc02_check_iam_password_policy,arn:aws:iam::${AuditAccountID}:assumed-role/${RolePrefix}default_assessment_role/${OrganizationName}gc02_check_iam_users_mfa,arn:aws:iam::${AuditAccountID}:assumed-role/${RolePrefix}default_assessment_role/${OrganizationName}gc05_check_data_location,arn:aws:iam::${AuditAccountID}:assumed-role/${RolePrefix}default_assessment_role/${OrganizationName}gc11_check_security_contact,arn:aws:iam::${AuditAccountID}:assumed-role/${RolePrefix}default_assessment_role/${OrganizationName}gc11_check_trail_logging,arn:aws:iam::${AuditAccountID}:assumed-role/${RolePrefix}default_assessment_role/${OrganizationName}gc12_check_marketplace,arn:aws:iam::${AuditAccountID}:assumed-role/${RolePrefix}default_assessment_role/${OrganizationName}gc03_check_iam_cloudwatch_alarms,arn:aws:iam::${AuditAccountID}:assumed-role/${RolePrefix}default_assessment_role/${OrganizationName}gc04_check_enterprise_monitoring,arn:aws:iam::${AuditAccountID}:assumed-role/${RolePrefix}default_assessment_role/${OrganizationName}gc07_check_secure_network_transmission_policy,arn:aws:iam::${AuditAccountID}:assumed-role/${RolePrefix}default_assessment_role/${OrganizationName}gc08_check_target_network_architecture,arn:aws:iam::${AuditAccountID}:assumed-role/${RolePrefix}default_assessment_role/${OrganizationName}gc10_confirmation_of_mou,arn:aws:iam::${AuditAccountID}:assumed-role/${RolePrefix}default_assessment_role/${OrganizationName}gc01_check_attestation_letter,arn:aws:iam::${AuditAccountID}:assumed-role/${RolePrefix}default_assessment_role/${OrganizationName}gc09_check_netsec_architecture,arn:aws:iam::${AuditAccountID}:assumed-role/${RolePrefix}default_assessment_role/${OrganizationName}gc01_check_root_mfa
+      SwitchRole: !Ref AccleratorRole
+      RoleName: !Sub ${AccelRolePrefix}GCLambdaExecutionRole
+      PolicyPackage: !Sub
+        - |
+          {
+            "Docs": [{
+              "Version": "2012-10-17",
+                "Statement": [{
+                  "Action": [
+                    "config:PutEvaluations",
+                    "cloudtrail:DescribeTrails",
+                    "cloudtrail:GetTrailStatus",
+                    "cloudtrail:ListTrails",
+                    "apigateway:GET",
+                    "backup:ListRecoveryPointsByBackupVault",
+                    "backup:ListBackupVaults",
+                    "cassandra:Select",
+                    "codebuild:BatchGetProjects",
+                    "codebuild:ListProjects",
+                    "dax:DescribeClusters",
+                    "dynamodb:DescribeTable",
+                    "dynamodb:ListTables",
+                    "docdb-elastic:ListClusters",
+                    "docdb-elastic:ListClusterSnapshots",
+                    "ec2:DescribeRegions",
+                    "ec2:DescribeVolumes",
+                    "ec2:GetEbsEncryptionByDefault",
+                    "elasticfilesystem:DescribeFileSystems",
+                    "eks:DescribeCluster",
+                    "eks:ListClusters",
+                    "elasticache:DescribeCacheClusters",
+                    "elasticache:DescribeSnapshots",
+                    "kinesis:DescribeStream",
+                    "kinesis:ListStreams",
+                    "memorydb:DescribeClusters",
+                    "memorydb:DescribeSnapshots",
+                    "qldb:DescribeLedger",
+                    "qldb:ListLedgers",
+                    "rds:DescribeDBClusters",
+                    "rds:DescribeDBClusterSnapshots",
+                    "rds:DescribeDBInstances",
+                    "rds:DescribeDBSnapshots",
+                    "resource-explorer-2:ListIndexes",
+                    "resource-explorer-2:Search",
+                    "s3:GetEncryptionConfiguration",
+                    "s3:GetBucketLocation",
+                    "s3:GetBucketPolicy",
+                    "s3:ListAllMyBuckets",
+                    "s3:ListBucket",
+                    "sns:GetTopicAttributes",
+                    "sns:ListTopics",
+                    "timestream:DescribeEndpoints",
+                    "timestream:ListDatabases",
+                    "timestream:ListTables",
+                    "tag:GetResources",
+                    "iam:GenerateCredentialReport",
+                    "iam:GetAccountPasswordPolicy",
+                    "iam:GetCredentialReport",
+                    "iam:GetLoginProfile",
+                    "iam:GetRole",
+                    "iam:ListAttachedRolePolicies",
+                    "iam:ListMFADevices",
+                    "iam:ListUsers",
+                    "aws-marketplace:ListEntities",
+                    "organizations:DescribeOrganization"
+                  ],
+                  "Resource": [
+                    "*"
+                  ],
+                  "Effect": "Allow",
+                  "Sid": "GCComplianceAllowAccess"
+                },
+                {
+                  "Action": [
+                    "s3:GetObjectRetention",
+                    "s3:GetObjectVersionTagging",
+                    "s3:GetObjectAttributes",
+                    "s3:ListBucket",
+                    "s3:GetObjectLegalHold",
+                    "s3:GetObjectVersionAttributes",
+                    "s3:GetObjectVersionTorrent",
+                    "s3:GetObjectAcl",
+                    "s3:GetObject",
+                    "s3:GetObjectTorrent",
+                    "s3:GetObjectVersionAcl",
+                    "s3:GetObjectTagging",
+                    "s3:GetObjectVersionForReplication",
+                    "s3:GetObjectVersion"
+                  ],
+                  "Resource": [
+                    "arn:aws:s3:::${ClientEvidenceBucket}/*",
+                    "arn:aws:s3:::${ClientEvidenceBucket}",
+                    "arn:aws:s3:::${AWSConfigConformsBucketName}/*",
+                    "arn:aws:s3:::${AWSConfigConformsBucketName}"
+                  ],
+                  "Effect": "Allow",
+                  "Sid": "GcComplianceAllowBucketAccess"
+                },
+                {
+                  "Action": [
+                    "s3: ListAllMyBuckets"
+                  ],
+                  "Resource": "*",
+                  "Effect": "Allow",
+                  "Sid": "GcComplianceAllowListBucketAccess"
+                }
+              ]
+            }]
+          }
+        - ClientEvidenceBucket:
+            !If [
+              GenerateEvidenceBucketName,
+              !GetAtt GenerateEvidenceBucketName.EvidenceBucketName,
+              !Ref EvidenceBucketName,
+            ]
+          AWSConfigConformsBucketName:
+            !If [
+              GenerateAWSConfigConformsBucketName,
+              !GetAtt GenerateEvidenceBucketName.AWSConfigBucketName,
+              !Ref AWSConfigConformsBucketName,
+            ]
+
+  InvokeCustomLambda2:
+    Type: Custom::InvokeCustomLambda
+    Condition: DeployRoles
+    Properties:
+      Version: 15
+      ServiceToken: !GetAtt CreateRoleLambda.Arn
+      TrustPrincipal: !Sub arn:aws:iam::${AuditAccountID}:assumed-role/${RolePrefix}default_assessment_role/configLambdaExecution,arn:aws:iam::${AuditAccountID}:assumed-role/${RolePrefix}default_assessment_role/${OrganizationName}gc06_check_encryption_at_rest_part1,arn:aws:iam::${AuditAccountID}:assumed-role/${RolePrefix}default_assessment_role/${OrganizationName}gc06_check_encryption_at_rest_part2,arn:aws:iam::${AuditAccountID}:assumed-role/${RolePrefix}default_assessment_role/${OrganizationName}gc07_check_encryption_in_transit
+      SwitchRole: !Ref AccleratorRole
+      RoleName: !Sub ${AccelRolePrefix}GCLambdaExecutionRole2
+      PolicyPackage: |
+        {
+          "Docs": [{
+            "Version": "2012-10-17",
+            "Statement": [{
+              "Action": [
+                "config:PutEvaluations",
+                "cloudtrail:DescribeTrails",
+                "cloudtrail:GetTrailStatus",
+                "cloudtrail:ListTrails",
+                "apigateway:GET",
+                "backup:ListRecoveryPointsByBackupVault",
+                "backup:ListBackupVaults",
+                "cassandra:Select",
+                "codebuild:BatchGetProjects",
+                "codebuild:ListProjects",
+                "dax:DescribeClusters",
+                "dynamodb:DescribeTable",
+                "dynamodb:ListTables",
+                "docdb-elastic:ListClusters",
+                "docdb-elastic:ListClusterSnapshots",
+                "ec2:DescribeRegions",
+                "ec2:DescribeVolumes",
+                "ec2:GetEbsEncryptionByDefault",
+                "elasticfilesystem:DescribeFileSystems",
+                "eks:DescribeCluster",
+                "eks:ListClusters",
+                "elasticache:DescribeCacheClusters",
+                "elasticache:DescribeSnapshots",
+                "kinesis:DescribeStream",
+                "kinesis:ListStreams",
+                "memorydb:DescribeClusters",
+                "memorydb:DescribeSnapshots",
+                "qldb:DescribeLedger",
+                "qldb:ListLedgers",
+                "rds:DescribeDBClusters",
+                "rds:DescribeDBClusterSnapshots",
+                "rds:DescribeDBInstances",
+                "rds:DescribeDBSnapshots",
+                "resource-explorer-2:ListIndexes",
+                "resource-explorer-2:Search",
+                "s3:GetEncryptionConfiguration",
+                "s3:GetBucketLocation",
+                "s3:GetBucketPolicy",
+                "s3:ListAllMyBuckets",
+                "s3:ListBucket",
+                "sns:GetTopicAttributes",
+                "sns:ListTopics",
+                "timestream:DescribeEndpoints",
+                "timestream:ListDatabases",
+                "timestream:ListTables",
+                "tag:GetResources",
+                "s3:ListAllMyBuckets",
+                "s3:ListBucket",
+                "s3:GetBucketPolicy",
+                "redshift:DescribeClusters",
+                "redshift:DescribeClusterParameters",
+                "apigateway:GET",
+                "elasticloadbalancing:DescribeListeners",
+                "elasticloadbalancing:DescribeLoadBalancers",
+                "es:ListDomainNames",
+                "es:DescribeElasticsearchDomains",
+                "tag:GetResources"
+              ],
+              "Resource": [
+                "*"
+              ],
+              "Effect": "Allow",
+              "Sid": "GCComplianceAllowAccess2"
+            }]
+          }]
+        }
+
+  CreateRoleLambda:
+    Type: "AWS::Lambda::Function"
+    Condition: DeployRoles
+    Properties:
+      FunctionName: !Sub ${OrganizationName}aws_create_role
+      Code: "../../src/lambda/aws_create_role/build/CreateRoleLambda/"
+      Handler: app.lambda_handler
+      Role: !GetAtt LambdaCreateRole.Arn
+      Runtime: python3.10
+      Timeout: 900
+
+  # AWS Config setup requirements
+  ConfigLambdaExecutionRolePolicy:
+    Type: AWS::IAM::Policy
+    Properties:
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: AllowCreateLogGroup
+            Action:
+              - "logs:CreateLogGroup"
+            Resource:
+              - !Sub "arn:aws:logs:${AWS::Region}:${AWS::AccountId}:*"
+            Effect: Allow
+          - Sid: AllowLogging
+            Action:
+              - "logs:CreateLogGroup"
+              - "logs:CreateLogStream"
+              - "logs:PutLogEvents"
+            Resource:
+              - !Sub "arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/lambda/${OrganizationName}gc*"
+            Effect: Allow
+          - Sid: AllowOrganizationsSetup
+            Action:
+              - "organizations:EnableAWSServiceAccess"
+              - "organizations:RegisterDelegatedAdministrator"
+              - "organizations:ListDelegatedAdministrators"
+            Resource: "*"
+            Effect: Allow
+      PolicyName: gc_setup_config_lambda_execution_role_policy
+      Roles:
+        - !Ref SetupAWSConfigLambdaExecutionRole
+
+  SetupAWSConfigLambdaExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: "Allow"
+            Principal:
+              Service:
+                - "lambda.amazonaws.com"
+            Action:
+              - "sts:AssumeRole"
+      Description: "Setup AWS Organizations"
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Path: "/"
+      RoleName: !Sub ${RolePrefix}setup_organizations_role
+      Tags:
+        - Key: "Source"
+          Value: "ProServe Delivery Kit"
+
+  AWSConfigSetupLambda:
+    DependsOn:
+      - SetupAWSAuditManagerLambdaExecutionRole
+      - ConfigLambdaExecutionRolePolicy
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub "${OrganizationName}aws_config_setup"
+      Code: "../../src/lambda/aws_config_setup/build/AWSConfigSetupLambda/"
+      Handler: app.lambda_handler
+      Role: !GetAtt SetupAWSConfigLambdaExecutionRole.Arn
+      Runtime: python3.9
+      Timeout: 90
+
+  AWSConfigOrganizationsSetup:
+    Type: Custom::AWSConfigOrganizationsSetup
+    Properties:
+      ServiceToken: !Sub "arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:${OrganizationName}aws_config_setup"
+      AuditAccountId: !Ref AuditAccountID
+    DependsOn:
+      - AWSConfigSetupLambda
+
+  # AWS Audit Manager setup requirements
+  AuditManagerLambdaExecutionRolePolicy:
+    Type: AWS::IAM::Policy
+    Properties:
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: AllowCreateLogGroup
+            Action:
+              - "logs:CreateLogGroup"
+            Resource:
+              - !Sub "arn:aws:logs:${AWS::Region}:${AWS::AccountId}:*"
+            Effect: Allow
+          - Sid: AllowLogging
+            Action:
+              - "logs:CreateLogGroup"
+              - "logs:CreateLogStream"
+              - "logs:PutLogEvents"
+            Resource:
+              - !Sub "arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/lambda/${OrganizationName}gc*"
+            Effect: Allow
+          - Sid: AllowOrganizationsSetup
+            Action:
+              - "organizations:EnableAWSServiceAccess"
+              - "organizations:RegisterDelegatedAdministrator"
+              - "organizations:ListDelegatedAdministrators"
+              - "organizations:ListAWSServiceAccessForOrganization"
+            Resource: "*"
+            Effect: Allow
+      PolicyName: !Sub "${OrganizationName}setup_auditmanager_lambda_execution_role_policy"
+      Roles:
+        - !Ref SetupAWSAuditManagerLambdaExecutionRole
+
+  SetupAWSAuditManagerLambdaExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: "Allow"
+            Principal:
+              Service:
+                - "lambda.amazonaws.com"
+            Action:
+              - "sts:AssumeRole"
+      Description: "Setup AWS Audit Manager"
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+        - arn:aws:iam::aws:policy/AWSAuditManagerAdministratorAccess
+      Path: "/"
+      RoleName: !Sub ${RolePrefix}setup_auditmanager_role
+      Tags:
+        - Key: "Source"
+          Value: "ProServe Delivery Kit"
+
+  AWSAuditManagerSetupLambda:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub "${OrganizationName}aws_auditmanager_setup"
+      Code: "../../src/lambda/aws_auditmanager_setup/build/AWSAuditManagerSetupLambda/"
+      Handler: app.lambda_handler
+      Role: !GetAtt SetupAWSAuditManagerLambdaExecutionRole.Arn
+      Runtime: python3.9
+      Timeout: 90
+
+  AWSAuditManagerOrganizationsSetup:
+    Type: Custom::AWSAuditManagerOrganizationsSetup
+    Properties:
+      ServiceToken: !Sub "arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:${OrganizationName}aws_auditmanager_setup"
+      AuditAccountId: !Ref AuditAccountID
+    DependsOn:
+      - AWSAuditManagerSetupLambda
+
+  # Generate names for the evidence and AWS Config Conforms buckets
+  GenerateEvidenceBucketNameLambda:
+    Type: AWS::Lambda::Function
+    Condition: GenerateEvidenceBucketName
+    Properties:
+      FunctionName: !Sub "${OrganizationName}aws_generate_bucket_name"
+      Code: "../../src/lambda/aws_generate_bucket_name/build/GenerateEvidenceBucketNameLambda/"
+      Handler: app.lambda_handler
+      Role: !GetAtt SetupAWSAuditManagerLambdaExecutionRole.Arn
+      Runtime: python3.9
+      Timeout: 90
+
+  GenerateEvidenceBucketName:
+    Type: Custom::GenerateEvidenceBucketName
+    Condition: GenerateEvidenceBucketName
+    Properties:
+      ServiceToken: !Sub "arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:${OrganizationName}aws_generate_bucket_name"
+      AuditAccountId: !Ref AuditAccountID
+    DependsOn:
+      - GenerateEvidenceBucketNameLambda
+
+  EvidenceBucketSSMParam:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Description: Name of the Evidence Bucket
+      # unique ssm param key
+      Name: '/gc_guardrails/s3/evidence_bucket'
+      Type: String
+      Value: !If [ GenerateEvidenceBucketName, !GetAtt GenerateEvidenceBucketName.EvidenceBucketName, !Ref EvidenceBucketName ]
+
+  AWSConfigBucketSSMParam:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Description: Name of the AWS Config Bucket
+      # unique ssm param key
+      Name: '/gc_guardrails/s3/aws_config_bucket'
+      Type: String
+      Value: !If [ GenerateAWSConfigConformsBucketName, !GetAtt GenerateEvidenceBucketName.AWSConfigBucketName, !Ref AWSConfigConformsBucketName ]
+  
+  ##################################################
+  # Part 2 - Audit Account Pre-requisites
+  ##################################################
+  AuditAccountPreRequisitesPart1:
+    Type: AWS::CloudFormation::StackSet
+    Properties:
+      AutoDeployment:
+        Enabled: true
+        RetainStacksOnAccountRemoval: true
+      Capabilities:
+        - CAPABILITY_IAM
+        - CAPABILITY_NAMED_IAM
+      Description: GC Guardrails Assessment - Audit Account Pre-reqs - Part 1
+      ManagedExecution:
+        Active: true
+      OperationPreferences:
+        FailureToleranceCount: 0
+        MaxConcurrentCount: 1
+        RegionOrder:
+          - ca-central-1
+      Parameters:
+        - ParameterKey: OrganizationName
+          ParameterValue: !Ref OrganizationName
+        - ParameterKey: AuditAccountID
+          ParameterValue: !Ref AuditAccountID
+        - ParameterKey: EvidenceBucketName
+          ParameterValue: !If [ GenerateEvidenceBucketName, !GetAtt GenerateEvidenceBucketName.EvidenceBucketName, !Ref EvidenceBucketName ]
+        - ParameterKey: AWSConfigConformsBucketName
+          ParameterValue: !If [ GenerateAWSConfigConformsBucketName, !GetAtt GenerateEvidenceBucketName.AWSConfigBucketName, !Ref AWSConfigConformsBucketName ]
+        - ParameterKey: RolePrefix
+          ParameterValue: !Ref RolePrefix
+        - ParameterKey: AccelRolePrefix
+          ParameterValue: !Ref AccelRolePrefix
+      PermissionModel: SERVICE_MANAGED
+      StackInstancesGroup:
+        - DeploymentTargets:
+            OrganizationalUnitIds:
+              - !Ref SecurityOUID
+          Regions:
+            - ca-central-1
+      StackSetName: !Sub "${OrganizationName}-GC-AuditAccount-PreReqs-Part1"
+      Tags:
+        - Key: Source
+          Value: "ProServe Delivery Kit"
+      TemplateURL: !Sub https://${PipelineBucket}.s3.${AWS::Region}.amazonaws.com/AuditAccountPreRequisitesPart1.yaml
+
+  AuditAccountPreRequisitesPart2:
+    Type: AWS::CloudFormation::StackSet
+    DependsOn:
+      - AuditAccountPreRequisitesPart1
+    Properties:
+      AutoDeployment:
+        Enabled: true
+        RetainStacksOnAccountRemoval: true
+      Capabilities:
+        - CAPABILITY_IAM
+        - CAPABILITY_NAMED_IAM
+      Description: GC Guardrails Assessment - Audit Account Pre-reqs - Part 2
+      ManagedExecution:
+        Active: true
+      OperationPreferences:
+        FailureToleranceCount: 0
+        MaxConcurrentCount: 1
+        RegionOrder:
+          - ca-central-1
+      Parameters:
+        - ParameterKey: OrganizationName
+          ParameterValue: !Ref OrganizationName
+        - ParameterKey: AuditAccountID
+          ParameterValue: !Ref AuditAccountID
+        - ParameterKey: RolePrefix
+          ParameterValue: !Ref RolePrefix
+      PermissionModel: SERVICE_MANAGED
+      StackInstancesGroup:
+        - DeploymentTargets:
+            OrganizationalUnitIds:
+              - !Ref SecurityOUID
+          Regions:
+            - ca-central-1
+      StackSetName: !Sub "${OrganizationName}-GC-AuditAccount-PreReqs-Part2"
+      Tags:
+        - Key: Source
+          Value: "ProServe Delivery Kit"
+      TemplateURL: !Sub https://${PipelineBucket}.s3.${AWS::Region}.amazonaws.com/AuditAccountPreRequisitesPart2.yaml
+
+  AuditAccountPreRequisitesPart3:
+    Type: AWS::CloudFormation::StackSet
+    DependsOn:
+      - AuditAccountPreRequisitesPart1
+    Properties:
+      AutoDeployment:
+        Enabled: true
+        RetainStacksOnAccountRemoval: true
+      Capabilities:
+        - CAPABILITY_IAM
+        - CAPABILITY_NAMED_IAM
+      Description: GC Guardrails Assessment - Audit Account Pre-reqs - Part 3
+      ManagedExecution:
+        Active: true
+      OperationPreferences:
+        FailureToleranceCount: 0
+        MaxConcurrentCount: 1
+        RegionOrder:
+          - ca-central-1
+      Parameters:
+        - ParameterKey: OrganizationName
+          ParameterValue: !Ref OrganizationName
+        - ParameterKey: AuditAccountID
+          ParameterValue: !Ref AuditAccountID
+        - ParameterKey: RolePrefix
+          ParameterValue: !Ref RolePrefix
+      PermissionModel: SERVICE_MANAGED
+      StackInstancesGroup:
+        - DeploymentTargets:
+            OrganizationalUnitIds:
+              - !Ref SecurityOUID
+          Regions:
+            - ca-central-1
+      StackSetName: !Sub "${OrganizationName}-GC-AuditAccount-PreReqs-Part3"
+      Tags:
+        - Key: Source
+          Value: "ProServe Delivery Kit"
+      TemplateURL: !Sub https://${PipelineBucket}.s3.${AWS::Region}.amazonaws.com/AuditAccountPreRequisitesPart3.yaml
+
+  AuditAccountPreRequisitesPart4:
+    Type: AWS::CloudFormation::StackSet
+    DependsOn:
+      - AuditAccountPreRequisitesPart1
+    Properties:
+      AutoDeployment:
+        Enabled: true
+        RetainStacksOnAccountRemoval: true
+      Capabilities:
+        - CAPABILITY_IAM
+        - CAPABILITY_NAMED_IAM
+      Description: GC Guardrails Assessment - Audit Account Pre-reqs - Part 4
+      ManagedExecution:
+        Active: true
+      OperationPreferences:
+        FailureToleranceCount: 0
+        MaxConcurrentCount: 1
+        RegionOrder:
+          - ca-central-1
+      Parameters:
+        - ParameterKey: OrganizationName
+          ParameterValue: !Ref OrganizationName
+        - ParameterKey: AuditAccountID
+          ParameterValue: !Ref AuditAccountID
+        - ParameterKey: RolePrefix
+          ParameterValue: !Ref RolePrefix
+      PermissionModel: SERVICE_MANAGED
+      StackInstancesGroup:
+        - DeploymentTargets:
+            OrganizationalUnitIds:
+              - !Ref SecurityOUID
+          Regions:
+            - ca-central-1
+      StackSetName: !Sub "${OrganizationName}-GC-AuditAccount-PreReqs-Part4"
+      Tags:
+        - Key: Source
+          Value: "ProServe Delivery Kit"
+      TemplateURL: !Sub https://${PipelineBucket}.s3.${AWS::Region}.amazonaws.com/AuditAccountPreRequisitesPart4.yaml
+
+  AuditAccountPreRequisitesPart5:
+    Type: AWS::CloudFormation::StackSet
+    DependsOn:
+      - AuditAccountPreRequisitesPart1
+      - AuditAccountPreRequisitesPart2
+    Properties:
+      AutoDeployment:
+        Enabled: true
+        RetainStacksOnAccountRemoval: true
+      Capabilities:
+        - CAPABILITY_IAM
+        - CAPABILITY_NAMED_IAM
+      Description: GC Guardrails Assessment - Audit Account Pre-reqs - Part 5
+      ManagedExecution:
+        Active: true
+      OperationPreferences:
+        FailureToleranceCount: 0
+        MaxConcurrentCount: 1
+        RegionOrder:
+          - ca-central-1
+      Parameters:
+        - ParameterKey: OrganizationName
+          ParameterValue: !Ref OrganizationName
+        - ParameterKey: AuditAccountID
+          ParameterValue: !Ref AuditAccountID
+        - ParameterKey: RolePrefix
+          ParameterValue: !Ref RolePrefix
+      PermissionModel: SERVICE_MANAGED
+      StackInstancesGroup:
+        - DeploymentTargets:
+            OrganizationalUnitIds:
+              - !Ref SecurityOUID
+          Regions:
+            - ca-central-1
+      StackSetName: !Sub "${OrganizationName}-GC-AuditAccount-PreReqs-Part5"
+      Tags:
+        - Key: Source
+          Value: "ProServe Delivery Kit"
+      TemplateURL: !Sub https://${PipelineBucket}.s3.${AWS::Region}.amazonaws.com/AuditAccountPreRequisitesPart5.yaml
+
+  AuditAccountPreRequisitesPart6:
+    Type: AWS::CloudFormation::StackSet
+    DependsOn:
+      - AuditAccountPreRequisitesPart1
+    Properties:
+      AutoDeployment:
+        Enabled: true
+        RetainStacksOnAccountRemoval: true
+      Capabilities:
+        - CAPABILITY_IAM
+        - CAPABILITY_NAMED_IAM
+      Description: GC Guardrails Assessment - Audit Account Pre-reqs - Part 6
+      ManagedExecution:
+        Active: true
+      OperationPreferences:
+        FailureToleranceCount: 0
+        MaxConcurrentCount: 1
+        RegionOrder:
+          - ca-central-1
+      Parameters:
+        - ParameterKey: OrganizationName
+          ParameterValue: !Ref OrganizationName
+        - ParameterKey: AuditAccountID
+          ParameterValue: !Ref AuditAccountID
+        - ParameterKey: RolePrefix
+          ParameterValue: !Ref RolePrefix
+      PermissionModel: SERVICE_MANAGED
+      StackInstancesGroup:
+        - DeploymentTargets:
+            OrganizationalUnitIds:
+              - !Ref SecurityOUID
+          Regions:
+            - ca-central-1
+      StackSetName: !Sub "${OrganizationName}-GC-AuditAccount-PreReqs-Part6"
+      Tags:
+        - Key: Source
+          Value: "ProServe Delivery Kit"
+      TemplateURL: !Sub https://${PipelineBucket}.s3.${AWS::Region}.amazonaws.com/AuditAccountPreRequisitesPart6.yaml
+
+  AuditAccountPreRequisitesPart7:
+    Type: AWS::CloudFormation::StackSet
+    DependsOn:
+      - AuditAccountPreRequisitesPart1
+    Properties:
+      AutoDeployment:
+        Enabled: true
+        RetainStacksOnAccountRemoval: true
+      Capabilities:
+        - CAPABILITY_IAM
+        - CAPABILITY_NAMED_IAM
+      Description: GC Guardrails Assessment - Audit Account Pre-reqs - Part 7
+      ManagedExecution:
+        Active: true
+      OperationPreferences:
+        FailureToleranceCount: 0
+        MaxConcurrentCount: 1
+        RegionOrder:
+          - ca-central-1
+      Parameters:
+        - ParameterKey: OrganizationName
+          ParameterValue: !Ref OrganizationName
+        - ParameterKey: AuditAccountID
+          ParameterValue: !Ref AuditAccountID
+        - ParameterKey: RolePrefix
+          ParameterValue: !Ref RolePrefix
+      PermissionModel: SERVICE_MANAGED
+      StackInstancesGroup:
+        - DeploymentTargets:
+            OrganizationalUnitIds:
+              - !Ref SecurityOUID
+          Regions:
+            - ca-central-1
+      StackSetName: !Sub "${OrganizationName}-GC-AuditAccount-PreReqs-Part7"
+      Tags:
+        - Key: Source
+          Value: "ProServe Delivery Kit"
+      TemplateURL: !Sub https://${PipelineBucket}.s3.${AWS::Region}.amazonaws.com/AuditAccountPreRequisitesPart7.yaml
+
+  AuditAccountPreRequisitesPart8:
+    Type: AWS::CloudFormation::StackSet
+    DependsOn:
+      - AuditAccountPreRequisitesPart1
+    Properties:
+      AutoDeployment:
+        Enabled: true
+        RetainStacksOnAccountRemoval: true
+      Capabilities:
+        - CAPABILITY_IAM
+        - CAPABILITY_NAMED_IAM
+      Description: GC Guardrails Assessment- Audit Account Pre-reqs - Part 8
+      ManagedExecution:
+        Active: true
+      OperationPreferences:
+        FailureToleranceCount: 0
+        MaxConcurrentCount: 1
+        RegionOrder:
+          - ca-central-1
+      Parameters:
+        - ParameterKey: OrganizationName
+          ParameterValue: !Ref OrganizationName
+        - ParameterKey: AuditAccountID
+          ParameterValue: !Ref AuditAccountID
+        - ParameterKey: RolePrefix
+          ParameterValue: !Ref RolePrefix
+      PermissionModel: SERVICE_MANAGED
+      StackInstancesGroup:
+        - DeploymentTargets:
+            OrganizationalUnitIds:
+              - !Ref SecurityOUID
+          Regions:
+            - ca-central-1
+      StackSetName: !Sub "${OrganizationName}-GC-AuditAccount-PreReqs-Part8"
+      Tags:
+        - Key: Source
+          Value: "ProServe Delivery Kit"
+      TemplateURL: !Sub https://${PipelineBucket}.s3.${AWS::Region}.amazonaws.com/AuditAccountPreRequisitesPart8.yaml
+
+  AuditAccountPreRequisitesPartN:
+    Type: AWS::CloudFormation::StackSet
+    DependsOn:
+      - AuditAccountPreRequisitesPart1
+      - AuditAccountPreRequisitesPart2
+      - AuditAccountPreRequisitesPart3
+      - AuditAccountPreRequisitesPart4
+      - AuditAccountPreRequisitesPart5
+      - AuditAccountPreRequisitesPart6
+      - AuditAccountPreRequisitesPart7
+      - AuditAccountPreRequisitesPart8
+    Properties:
+      AutoDeployment:
+        Enabled: true
+        RetainStacksOnAccountRemoval: true
+      Capabilities:
+        - CAPABILITY_IAM
+        - CAPABILITY_NAMED_IAM
+      Description: GC Guardrails Assessment - Audit Account Pre-reqs - Last Part
+      ManagedExecution:
+        Active: true
+      OperationPreferences:
+        FailureToleranceCount: 0
+        MaxConcurrentCount: 1
+        RegionOrder:
+          - ca-central-1
+      Parameters:
+        - ParameterKey: OrganizationName
+          ParameterValue: !Ref OrganizationName
+        - ParameterKey: AuditAccountID
+          ParameterValue: !Ref AuditAccountID
+        - ParameterKey: RolePrefix
+          ParameterValue: !Ref RolePrefix
+      PermissionModel: SERVICE_MANAGED
+      StackInstancesGroup:
+        - DeploymentTargets:
+            OrganizationalUnitIds:
+              - !Ref SecurityOUID
+          Regions:
+            - ca-central-1
+      StackSetName: !Sub "${OrganizationName}-GC-AuditAccount-PreReqs-PartN"
+      Tags:
+        - Key: Source
+          Value: "ProServe Delivery Kit"
+      TemplateURL: !Sub https://${PipelineBucket}.s3.${AWS::Region}.amazonaws.com/AuditAccountPreRequisitesPartN.yaml
+
+  #######################################################
+  # Part 3 - Assessment Pre-requisites for All accounts
+  #######################################################
+  AllAccountPreRequisites:
+    Condition: DeployRoles
+    Type: AWS::CloudFormation::StackSet
+    DependsOn:
+      - AuditAccountPreRequisitesPart1
+      - AuditAccountPreRequisitesPart2
+      - AuditAccountPreRequisitesPart3
+      - AuditAccountPreRequisitesPart4
+      - AuditAccountPreRequisitesPart5
+      - AuditAccountPreRequisitesPart6
+      - AuditAccountPreRequisitesPart7
+      - AuditAccountPreRequisitesPart8
+      - AuditAccountPreRequisitesPartN
+    Properties:
+      AutoDeployment:
+        Enabled: true
+        RetainStacksOnAccountRemoval: true
+      Capabilities:
+        - CAPABILITY_IAM
+        - CAPABILITY_NAMED_IAM
+      Description: GC Guardrails Assessment - Pre-requisites
+      ManagedExecution:
+        Active: true
+      OperationPreferences:
+        FailureToleranceCount: 100
+        MaxConcurrentCount: 10
+        RegionOrder:
+          - ca-central-1
+      Parameters:
+        - ParameterKey: OrganizationName
+          ParameterValue: !Ref OrganizationName
+        - ParameterKey: AuditAccountID
+          ParameterValue: !Ref AuditAccountID
+        - ParameterKey: EvidenceBucketName
+          ParameterValue: !If [ GenerateEvidenceBucketName, !GetAtt GenerateEvidenceBucketName.EvidenceBucketName, !Ref EvidenceBucketName ]
+        - ParameterKey: RolePrefix
+          ParameterValue: !Ref RolePrefix
+        - ParameterKey: AccelRolePrefix
+          ParameterValue: !Ref AccelRolePrefix
+      PermissionModel: SERVICE_MANAGED
+      StackInstancesGroup:
+        - DeploymentTargets:
+            OrganizationalUnitIds:
+              - !Ref RootOUID
+          Regions:
+            - ca-central-1
+      StackSetName: !Sub "${OrganizationName}-GC-ALL-Accounts-PreReqs"
+      Tags:
+        - Key: Source
+          Value: "ProServe Delivery Kit"
+      TemplateURL: !Sub https://${PipelineBucket}.s3.${AWS::Region}.amazonaws.com/AllAccountPreRequisites.yaml
+
+  # MGMT-Account-Pre-Requisites:
+  GCLambdaExecutionRole:
+    Condition: DeployRoles
+    DependsOn:
+      - AuditAccountPreRequisitesPartN
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        !Sub | 
+          {
+              "Version": "2012-10-17",
+              "Statement": [
+                  {
+                      "Effect": "Allow",
+                      "Principal": {
+                          "AWS": [
+                              "arn:aws:sts::${AuditAccountID}:assumed-role/${RolePrefix}default_assessment_role/configLambdaExecution",
+                              "arn:aws:sts::${AuditAccountID}:assumed-role/${RolePrefix}default_assessment_role/${OrganizationName}gc07_check_secure_network_transmission_policy",
+                              "arn:aws:sts::${AuditAccountID}:assumed-role/${RolePrefix}default_assessment_role/${OrganizationName}gc04_check_enterprise_monitoring",
+                              "arn:aws:sts::${AuditAccountID}:assumed-role/${RolePrefix}default_assessment_role/${OrganizationName}gc01_check_attestation_letter",
+                              "arn:aws:sts::${AuditAccountID}:assumed-role/${RolePrefix}default_assessment_role/${OrganizationName}gc11_check_security_contact",
+                              "arn:aws:sts::${AuditAccountID}:assumed-role/${RolePrefix}default_assessment_role/${OrganizationName}gc02_check_iam_users_mfa",
+                              "arn:aws:sts::${AuditAccountID}:assumed-role/${RolePrefix}default_assessment_role/${OrganizationName}gc05_check_data_location",
+                              "arn:aws:sts::${AuditAccountID}:assumed-role/${RolePrefix}default_assessment_role/${OrganizationName}gc11_check_trail_logging",
+                              "arn:aws:sts::${AuditAccountID}:assumed-role/${RolePrefix}default_assessment_role/${OrganizationName}gc02_check_iam_password_policy",
+                              "arn:aws:sts::${AuditAccountID}:assumed-role/${RolePrefix}default_assessment_role/${OrganizationName}gc09_check_netsec_architecture",
+                              "arn:aws:sts::${AuditAccountID}:assumed-role/${RolePrefix}default_assessment_role/${OrganizationName}gc03_check_iam_cloudwatch_alarms",
+                              "arn:aws:sts::${AuditAccountID}:assumed-role/${RolePrefix}default_assessment_role/${OrganizationName}gc10_confirmation_of_mou",
+                              "arn:aws:sts::${AuditAccountID}:assumed-role/${RolePrefix}default_assessment_role/${OrganizationName}gc08_check_target_network_architecture",
+                              "arn:aws:sts::${AuditAccountID}:assumed-role/${RolePrefix}default_assessment_role/${OrganizationName}gc01_check_root_mfa",
+                              "arn:aws:sts::${AuditAccountID}:assumed-role/${RolePrefix}default_assessment_role/${OrganizationName}gc12_check_marketplace"
+                          ]
+                      },
+                      "Action": "sts:AssumeRole"
+                  }
+              ]
+          }
+      Description: "GC Guardrails - Assessment Role"
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSConfigRulesExecutionRole
+      Path: "/"
+      RoleName: !Sub ${AccelRolePrefix}GCLambdaExecutionRole
+      Tags:
+        - Key: "Source"
+          Value: "ProServe Delivery Kit"
+
+  GCLambdaExecutionRole2:
+    Condition: DeployRoles
+    DependsOn:
+      - AuditAccountPreRequisitesPartN
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        !Sub | 
+          {
+              "Version": "2012-10-17",
+              "Statement": [
+                  {
+                      "Effect": "Allow",
+                      "Principal": {
+                          "AWS": [
+                              "arn:aws:sts::343164472410:assumed-role/${RolePrefix}default_assessment_role/configLambdaExecution",
+                              "arn:aws:sts::343164472410:assumed-role/${RolePrefix}default_assessment_role/${OrganizationName}gc06_check_encryption_at_rest_part1",
+                              "arn:aws:sts::343164472410:assumed-role/${RolePrefix}default_assessment_role/${OrganizationName}gc06_check_encryption_at_rest_part2",
+                              "arn:aws:sts::343164472410:assumed-role/${RolePrefix}default_assessment_role/${OrganizationName}gc07_check_encryption_in_transit"
+                          ]
+                      },
+                      "Action": "sts:AssumeRole"
+                  }
+              ]
+          }
+      Description: "GC Guardrails - Assessment Role 2"
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSConfigRulesExecutionRole
+      Path: "/"
+      RoleName: !Sub ${AccelRolePrefix}GCLambdaExecutionRole2
+      Tags:
+        - Key: "Source"
+          Value: "ProServe Delivery Kit"
+
+  # Encryption in Transit Checks Access
+  GCLambdaExecutionRoleInTransitEncryptionPolicy:
+    Condition: DeployRoles
+    Type: AWS::IAM::Policy
+    Properties:
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: S3
+            Action:
+              - "s3:ListAllMyBuckets"
+              - "s3:ListBucket"
+              - "s3:GetBucketPolicy"
+            Resource: "*"
+            Effect: Allow
+          - Sid: AllowRedshift
+            Action:
+              - "redshift:DescribeClusters"
+              - "redshift:DescribeClusterParameters"
+            Resource: "arn:aws:redshift:*:*:cluster:*"
+            Effect: Allow
+          - Sid: AllowAPI
+            Action:
+              - "apigateway:GET"
+            Resource: "*"
+            Effect: Allow
+          - Sid: AllowELB
+            Action:
+              - "elasticloadbalancing:DescribeListeners"
+              - "elasticloadbalancing:DescribeLoadBalancers"
+            Resource:
+              - "*"
+            Effect: Allow
+          - Sid: AllowES
+            Action:
+              - "es:ListDomainNames"
+              - "es:DescribeElasticsearchDomains"
+            Resource: "*"
+            Effect: Allow
+          - Sid: AllowReadTags
+            Action:
+              - "tag:GetResources"
+            Resource: "*"
+            Effect: Allow
+      PolicyName: !Sub "${OrganizationName}GCLambdaExecutionRoleInTransitEncryptionPolicy"
+      Roles:
+        - !Ref GCLambdaExecutionRole2
+
+  GCLambdaExecutionRoleS3AccessPolicy:
+    Condition: DeployRoles
+    Type: AWS::IAM::Policy
+    Properties:
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: AllowS3Access
+            Action:
+              - "s3:GetObjectRetention"
+              - "s3:GetObjectVersionTagging"
+              - "s3:GetObjectAttributes"
+              - "s3:ListBucket"
+              - "s3:GetObjectLegalHold"
+              - "s3:GetObjectVersionAttributes"
+              - "s3:GetObjectVersionTorrent"
+              - "s3:GetObjectAcl"
+              - "s3:GetObject"
+              - "s3:GetObjectTorrent"
+              - "s3:GetObjectVersionAcl"
+              - "s3:GetObjectTagging"
+              - "s3:GetObjectVersionForReplication"
+              - "s3:GetObjectVersion"
+            Resource:
+              - !Sub
+                - "arn:aws:s3:::${ClientEvidenceBucket}"
+                - ClientEvidenceBucket:
+                    !If [
+                      GenerateEvidenceBucketName,
+                      !GetAtt GenerateEvidenceBucketName.EvidenceBucketName,
+                      !Ref EvidenceBucketName,
+                    ]
+              - !Sub
+                - "arn:aws:s3:::${ClientEvidenceBucket}/*"
+                - ClientEvidenceBucket:
+                    !If [
+                      GenerateEvidenceBucketName,
+                      !GetAtt GenerateEvidenceBucketName.EvidenceBucketName,
+                      !Ref EvidenceBucketName,
+                    ]
+            Effect: Allow
+          - Sid: AllowListBuckets
+            Action:
+              - s3:ListAllMyBuckets
+            Resource: "*"
+            Effect: Allow
+      PolicyName: !Sub "${OrganizationName}evidence_bucket_access_policy"
+      Roles:
+        - !Ref GCLambdaExecutionRole
+
+  # CW Logs Access
+  GCLambdaExecutionRoleCWLogsPolicy:
+    Condition: DeployRoles
+    Type: AWS::IAM::Policy
+    Properties:
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: AllowCreateLogGroup
+            Action:
+              - "logs:CreateLogGroup"
+            Resource:
+              - !Sub "arn:aws:logs:${AWS::Region}:${AWS::AccountId}:*"
+            Effect: Allow
+          - Sid: AllowLogging
+            Action:
+              - "logs:CreateLogGroup"
+              - "logs:CreateLogStream"
+              - "logs:PutLogEvents"
+            Resource:
+              - !Sub "arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/lambda/${OrganizationName}gc*"
+            Effect: Allow
+      PolicyName: !Sub "${OrganizationName}GCLambdaExecutionRoleCWLogsPolicy"
+      Roles:
+        - !Ref GCLambdaExecutionRole
+        - !Ref GCLambdaExecutionRole2
+
+  # IAM Access
+  GCLambdaExecutionRoleIAMPolicy:
+    Condition: DeployRoles
+    Type: AWS::IAM::Policy
+    Properties:
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: AllowIAMQueries
+            Action:
+              - "iam:GenerateCredentialReport"
+              - "iam:GetAccountPasswordPolicy"
+              - "iam:GetCredentialReport"
+              - "iam:GetLoginProfile"
+              - "iam:GetRole"
+              - "iam:ListAttachedRolePolicies"
+              - "iam:ListMFADevices"
+              - "iam:ListUsers"
+            Resource: "*"
+            Effect: Allow
+          - Sid: AllowCloudWatchAlarmQueries
+            Action:
+              - "cloudwatch:DescribeAlarms"
+            Resource: "*"
+            Effect: Allow
+      PolicyName: !Sub "${OrganizationName}GCLambdaExecutionRoleIAMPolicy"
+      Roles:
+        - !Ref GCLambdaExecutionRole
+
+  # Datastores Access
+  GCLambdaExecutionRoleDatastoresPolicy:
+    Condition: DeployRoles
+    Type: AWS::IAM::Policy
+    Properties:
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: AllowDatastoreChecks
+            Action:
+              - "apigateway:GET"
+              - "backup:ListRecoveryPointsByBackupVault"
+              - "backup:ListBackupVaults"
+              - "cassandra:Select"
+              - "codebuild:BatchGetProjects"
+              - "codebuild:ListProjects"
+              - "dax:DescribeClusters"
+              - "dynamodb:DescribeTable"
+              - "dynamodb:ListTables"
+              - "docdb-elastic:ListClusters"
+              - "docdb-elastic:ListClusterSnapshots"
+              - "ec2:DescribeRegions"
+              - "ec2:DescribeVolumes"
+              - "ec2:GetEbsEncryptionByDefault"
+              - "elasticfilesystem:DescribeFileSystems"
+              - "eks:DescribeCluster"
+              - "eks:ListClusters"
+              - "elasticache:DescribeCacheClusters"
+              - "elasticache:DescribeSnapshots"
+              - "kinesis:DescribeStream"
+              - "kinesis:ListStreams"
+              - "memorydb:DescribeClusters"
+              - "memorydb:DescribeSnapshots"
+              - "qldb:DescribeLedger"
+              - "qldb:ListLedgers"
+              - "rds:DescribeDBClusters"
+              - "rds:DescribeDBClusterSnapshots"
+              - "rds:DescribeDBInstances"
+              - "rds:DescribeDBSnapshots"
+              - "resource-explorer-2:ListIndexes"
+              - "resource-explorer-2:Search"
+              - "s3:GetEncryptionConfiguration"
+              - "s3:GetBucketLocation"
+              - "s3:GetBucketPolicy"
+              - "s3:ListAllMyBuckets"
+              - "s3:ListBucket"
+              - "sns:GetTopicAttributes"
+              - "sns:ListTopics"
+              - "timestream:DescribeEndpoints"
+              - "timestream:ListDatabases"
+              - "timestream:ListTables"
+              - "tag:GetResources"
+            Resource: "*"
+            Effect: Allow
+      PolicyName: !Sub "${OrganizationName}GCLambdaExecutionRoleDatastorePolicy"
+      Roles:
+        - !Ref GCLambdaExecutionRole
+        - !Ref GCLambdaExecutionRole2
+
+  # Account Access
+  GCLambdaExecutionRoleAccountPolicy:
+    Condition: DeployRoles
+    Type: AWS::IAM::Policy
+    Properties:
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: AllowReadAccountInfo
+            Action:
+              - "account:GetAlternateContact"
+            Resource:
+              - "arn:aws:account::*:account"
+              - "arn:aws:account::*:account/o-*/*"
+            Effect: Allow
+      PolicyName: GCLambdaExecutionRoleAccountPolicy
+      Roles:
+        - !Ref GCLambdaExecutionRole
+
+  # CloudTrail Access
+  GCLambdaExecutionRoleCloudTrailPolicy:
+    Condition: DeployRoles
+    Type: AWS::IAM::Policy
+    Properties:
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: AllowCloudTrailChecks
+            Action:
+              - "cloudtrail:DescribeTrails"
+              - "cloudtrail:GetTrailStatus"
+              - "cloudtrail:ListTrails"
+            Resource:
+              - "*"
+            Effect: Allow
+      PolicyName: !Sub "${OrganizationName}GCLambdaExecutionRoleCloudTrailPolicy"
+      Roles:
+        - !Ref GCLambdaExecutionRole
+        - !Ref GCLambdaExecutionRole2
+
+  # Marketplace Access
+  GCLambdaExecutionRoleMarketplacePolicy:
+    Condition: DeployRoles
+    Type: AWS::IAM::Policy
+    Properties:
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: AllowMarketplaceChecks
+            Action:
+              - "aws-marketplace:ListEntities"
+            Resource:
+              - "*"
+            Effect: Allow
+      PolicyName: !Sub "${OrganizationName}GCLambdaExecutionRoleMarketplacePolicy"
+      Roles:
+        - !Ref GCLambdaExecutionRole
+
+  # Organizations Access
+  GCLambdaExecutionRoleOrganizationsPolicy:
+    Condition: DeployRoles
+    Type: AWS::IAM::Policy
+    Properties:
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: AllowOrganizationsChecks
+            Action:
+              - "organizations:DescribeOrganization"
+            Resource:
+              - "*"
+            Effect: Allow
+      PolicyName: !Sub "${OrganizationName}GCLambdaExecutionRoleOrganizationsPolicy"
+      Roles:
+        - !Ref GCLambdaExecutionRole
+
+  #######################################################
+  # Part 4 - Conformance Pack
+  #######################################################
+  ConformancePack:
+    DependsOn:
+      - AuditAccountPreRequisitesPart1
+      - AuditAccountPreRequisitesPart2
+      - AuditAccountPreRequisitesPart3
+      - AuditAccountPreRequisitesPart4
+      - AuditAccountPreRequisitesPart5
+      - AuditAccountPreRequisitesPart6
+      - AuditAccountPreRequisitesPart7
+      - AuditAccountPreRequisitesPart8
+      - AuditAccountPreRequisitesPartN
+      #- AllAccountPreRequisites
+    Type: AWS::Config::OrganizationConformancePack
+    Properties:
+      ConformancePackInputParameters:
+        - ParameterName: GCLambdaExecutionRoleName
+          ParameterValue: !Sub "${AccelRolePrefix}GCLambdaExecutionRole"
+        - ParameterName: GCLambdaExecutionRoleName2
+          ParameterValue: !Sub ${AccelRolePrefix}GCLambdaExecutionRole2
+        - ParameterName: AuditAccountID
+          ParameterValue: !Ref AuditAccountID
+        - ParameterName: OrganizationName
+          ParameterValue: !Ref OrganizationName
+        - ParameterName: S3AttestationLetterPath
+          ParameterValue: !Sub
+            - "s3://${ClientEvidenceBucket}/gc-01/attestation_letter.pdf"
+            - ClientEvidenceBucket: !If [ GenerateEvidenceBucketName, !GetAtt GenerateEvidenceBucketName.EvidenceBucketName, !Ref EvidenceBucketName ]
+        - ParameterName: S3AccountManagementPlanPath
+          ParameterValue: !Sub
+            - "s3://${ClientEvidenceBucket}/gc-02/account_management_plan.pdf"
+            - ClientEvidenceBucket: !If [ GenerateEvidenceBucketName, !GetAtt GenerateEvidenceBucketName.EvidenceBucketName, !Ref EvidenceBucketName ]
+        - ParameterName: S3SecureNetworkTransmissionPolicyPath
+          ParameterValue: !Sub
+            - "s3://${ClientEvidenceBucket}/gc-07/secure_network_transmission.pdf"
+            - ClientEvidenceBucket: !If [ GenerateEvidenceBucketName, !GetAtt GenerateEvidenceBucketName.EvidenceBucketName, !Ref EvidenceBucketName ]
+        - ParameterName: S3TargetNetworkArchitecturePath
+          ParameterValue: !Sub
+            - "s3://${ClientEvidenceBucket}/gc-08/target_network_architecture.pdf"
+            - ClientEvidenceBucket: !If [ GenerateEvidenceBucketName, !GetAtt GenerateEvidenceBucketName.EvidenceBucketName, !Ref EvidenceBucketName ]
+        - ParameterName: S3NetworkArchitectureDocumentPath
+          ParameterValue: !Sub
+            - "s3://${ClientEvidenceBucket}/gc-09/network_security_architecture.pdf"
+            - ClientEvidenceBucket: !If [ GenerateEvidenceBucketName, !GetAtt GenerateEvidenceBucketName.EvidenceBucketName, !Ref EvidenceBucketName ]
+        - ParameterName: S3SignedMOUDocumentPath
+          ParameterValue: !Sub
+            - "s3://${ClientEvidenceBucket}/gc-10/signed_mou.pdf"
+            - ClientEvidenceBucket: !If [ GenerateEvidenceBucketName, !GetAtt GenerateEvidenceBucketName.EvidenceBucketName, !Ref EvidenceBucketName ]
+      OrganizationConformancePackName: !Sub "${OrganizationName}-GC-CP-Guardrails"
+      TemplateS3Uri: !Sub s3://${PipelineBucket}/ConformancePack.yaml
+
+  #######################################################
+  # Part 5 - Audit Manager Components
+  #######################################################
+  AuditAccountAuditManager:
+    Type: AWS::CloudFormation::StackSet
+    DependsOn:
+      - AWSAuditManagerOrganizationsSetup
+      - ConformancePack
+      - AuditAccountPreRequisitesPart1
+      - AuditAccountPreRequisitesPart2
+      - AuditAccountPreRequisitesPart3
+      - AuditAccountPreRequisitesPart4
+      - AuditAccountPreRequisitesPart5
+      - AuditAccountPreRequisitesPart6
+      - AuditAccountPreRequisitesPart7
+      - AuditAccountPreRequisitesPart8
+      - AuditAccountPreRequisitesPartN
+      #- AllAccountPreRequisites
+    Properties:
+      AutoDeployment:
+        Enabled: true
+        RetainStacksOnAccountRemoval: true
+      Capabilities:
+        - CAPABILITY_IAM
+        - CAPABILITY_NAMED_IAM
+      Description: GC Guardrails Assessment - Audit Manager resources
+      ManagedExecution:
+        Active: true
+      OperationPreferences:
+        FailureToleranceCount: 0
+        MaxConcurrentCount: 1
+        RegionOrder:
+          - ca-central-1
+      Parameters:
+        - ParameterKey: OrganizationName
+          ParameterValue: !Ref OrganizationName
+        - ParameterKey: AuditAccountID
+          ParameterValue: !Ref AuditAccountID
+        - ParameterKey: EvidenceBucketName
+          ParameterValue: !If [ GenerateEvidenceBucketName, !GetAtt GenerateEvidenceBucketName.EvidenceBucketName, !Ref EvidenceBucketName ]
+        - ParameterKey: AdditionalAssessmentAdminRoleARN
+          ParameterValue: !Ref AdditionalAssessmentAdminRoleARN
+        - ParameterKey: RolePrefix
+          ParameterValue: !Ref RolePrefix
+      PermissionModel: SERVICE_MANAGED
+      StackInstancesGroup:
+        - DeploymentTargets:
+            OrganizationalUnitIds:
+              - !Ref SecurityOUID
+          Regions:
+            - ca-central-1
+      StackSetName: !Sub "${OrganizationName}-GC-AuditAccount-AuditManager"
+      Tags:
+        - Key: Source
+          Value: "ProServe Delivery Kit"
+      TemplateURL: !Sub https://${PipelineBucket}.s3.${AWS::Region}.amazonaws.com/AuditAccountAuditManager.yaml
+
+  #######################################################
+  # Part 6 - Evidence Collection Components
+  #######################################################
+  EvidenceCollectionComponents:
+    Type: AWS::CloudFormation::StackSet
+    DependsOn:
+      - AuditAccountAuditManager
+    Properties:
+      AutoDeployment:
+        Enabled: true
+        RetainStacksOnAccountRemoval: true
+      Capabilities:
+        - CAPABILITY_IAM
+        - CAPABILITY_NAMED_IAM
+      Description: GC Guardrails Assessment - Evidence Collection
+      ManagedExecution:
+        Active: true
+      OperationPreferences:
+        FailureToleranceCount: 0
+        MaxConcurrentCount: 1
+        RegionOrder:
+          - ca-central-1
+      Parameters:
+        - ParameterKey: AuditAccountID
+          ParameterValue: !Ref AuditAccountID
+        - ParameterKey: DestBucketName
+          ParameterValue: !Ref DestBucketName
+        - ParameterKey: OrganizationId
+          ParameterValue: !Ref OrganizationId
+        - ParameterKey: ExecutionName
+          ParameterValue: !Ref ExecutionName
+        - ParameterKey: OrganizationName
+          ParameterValue: !Ref OrganizationName
+      PermissionModel: SERVICE_MANAGED
+      StackInstancesGroup:
+        - DeploymentTargets:
+            OrganizationalUnitIds:
+              - !Ref SecurityOUID
+            # Accounts:
+            #   - !Ref AuditAccountID
+          Regions:
+            - ca-central-1
+      StackSetName: !Sub "${OrganizationName}-GC-AuditAccount-EvidenceCollection"
+      Tags:
+        - Key: Source
+          Value: "ProServe Delivery Kit"
+      TemplateURL: !Sub https://${PipelineBucket}.s3.${AWS::Region}.amazonaws.com/EvidenceCollectionComponents.yaml
+
+Outputs:
+  EvidenceBucketNameOut:
+    Description: Amazon S3 bucket where evidence documents should be uploaded to
+    Value: !If [ GenerateEvidenceBucketName, !GetAtt GenerateEvidenceBucketName.EvidenceBucketName, !Ref EvidenceBucketName ]

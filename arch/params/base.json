@@ -1,0 +1,58 @@
+[
+  {
+    "ParameterKey": "OrganizationName",
+    "ParameterValue": ""
+  },
+  {
+    "ParameterKey": "OrganizationId",
+    "ParameterValue": ""
+  },
+  {
+    "ParameterKey": "RootOUID",
+    "ParameterValue": ""
+  },
+  {
+    "ParameterKey": "AuditAccountID",
+    "ParameterValue": ""
+  },
+  {
+    "ParameterKey": "SecurityOUID",
+    "ParameterValue": ""
+  },
+  {
+    "ParameterKey": "ExecutionName",
+    "ParameterValue": ""
+  },
+  {
+    "ParameterKey": "RolePrefix",
+    "ParameterValue": "gc-"
+  },
+  {
+    "ParameterKey": "AccelRolePrefix",
+    "ParameterValue": "AWSA-"
+  },
+  {
+    "ParameterKey": "AccleratorRole",
+    "ParameterValue": "OrganizationAccountAccessRole"
+  },
+  {
+    "ParameterKey": "PipelineBucket",
+    "ParameterValue": ""
+  },
+  {
+    "ParameterKey": "DestBucketName",
+    "ParameterValue": ""
+  },
+  {
+    "ParameterKey": "EvidenceBucketName",
+    "ParameterValue": ""
+  },
+  {
+    "ParameterKey": "AWSConfigConformsBucketName",
+    "ParameterValue": ""
+  },
+  {
+    "ParameterKey": "AdditionalAssessmentAdminRoleARN",
+    "ParameterValue": ""
+  }
+]

@@ -1,0 +1,41 @@
+customizations:
+  cloudFormationStacks:
+    - deploymentTargets:
+        organizationalUnits:
+          - Root
+          - Security
+          - Infrastructure
+          - Sandbox
+          - PolicyStaging
+          - Exceptions
+          - Transitional
+          - Deployments
+          - Quarantine
+          - Shared-VPC-Workloads
+          - Shared-VPC-Workloads/Development
+          - Shared-VPC-Workloads/Test
+          - Shared-VPC-Workloads/Production
+          - Spoke-VPCs-Workloads
+          - Spoke-VPCs-Workloads/Spoke-Development
+          - Spoke-VPCs-Workloads/Spoke-Test
+          - Spoke-VPCs-Workloads/Spoke-Production
+      description: Roles required for gc guardrails package
+      name: gc-guardrails-roles-package
+      regions:
+        - ca-central-1
+      template: customizations/GCGuardrailsRoles.yaml
+      runOrder: 2
+      terminationProtection: true
+      # replacements can only be used in LZA 1.5.0+
+      # in older LZA deployments the replacement values must be manually entered
+      parameters:
+        - name: OrganizationName
+          value: "ESDC-LZA"
+        - name: AuditAccountID
+          value: "{{account Audit}}"
+        - name: RolePrefix
+          value: "gc-"
+        - name: AccelRolePrefix
+          value: "AWSA-"
+        - name: EvidenceBucketName
+          value: "{{EvidenceBucket}}"

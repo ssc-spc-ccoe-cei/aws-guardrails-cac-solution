@@ -1,0 +1,417 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: AWS CloudFormation template to deploy the GC Guardrails Assessment Resources - Workload Accounts
+
+Parameters:
+  OrganizationName:
+    Type: String
+    Default: ""
+    Description: The name of the organization. Used as a prefix in resource names.
+  AuditAccountID:
+    Type: String
+    Description: >-
+      The AWS Account ID (12 digits) of the Audit Account
+  EvidenceBucketName:
+    Type: String
+    Description: >-
+      The name of the Amazon S3 bucket to be created to store the required documents for assessment.
+  RolePrefix:
+    Type: String
+    Default: "ASEA-"
+    Description: >-
+      The prefix to apply to generated role names, in ASEA this is generally ASEA- for lza this could be cdk-accel etc
+  AccelRolePrefix:
+    Type: String
+    Default: "AWSA-"
+    Description: >-
+      The Accelerator role prefix for priveledged access, in ASEA or LZA deployed by Proservices this could be AWSA- etc
+
+Conditions:
+  NotAuditAccount:
+    Fn::Not:
+      - Fn::Equals:
+          - !Ref AuditAccountID
+          - !Ref "AWS::AccountId"
+
+Resources:
+  GCLambdaExecutionRoleS3AccessPolicy:
+    Condition: NotAuditAccount
+    Type: AWS::IAM::Policy
+    Properties:
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: AllowS3Access
+            Action:
+              - "s3:GetObjectRetention"
+              - "s3:GetObjectVersionTagging"
+              - "s3:GetObjectAttributes"
+              - "s3:ListBucket"
+              - "s3:GetObjectLegalHold"
+              - "s3:GetObjectVersionAttributes"
+              - "s3:GetObjectVersionTorrent"
+              - "s3:GetObjectAcl"
+              - "s3:GetObject"
+              - "s3:GetObjectTorrent"
+              - "s3:GetObjectVersionAcl"
+              - "s3:GetObjectTagging"
+              - "s3:GetObjectVersionForReplication"
+              - "s3:GetObjectVersion"
+            Resource:
+              - !Sub "arn:aws:s3:::${EvidenceBucketName}"
+              - !Sub "arn:aws:s3:::${EvidenceBucketName}/*"
+            Effect: Allow
+          - Sid: AllowListBuckets
+            Action:
+              - s3:ListAllMyBuckets
+            Resource: "*"
+            Effect: Allow
+      PolicyName: !Sub "${OrganizationName}evidence_bucket_access_policy"
+      Roles:
+        - !Ref GCLambdaExecutionRole
+
+  # CW Logs Access
+  GCLambdaExecutionRoleCWLogsPolicy:
+    Condition: NotAuditAccount
+    Type: AWS::IAM::Policy
+    Properties:
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: AllowCreateLogGroup
+            Action:
+              - "logs:CreateLogGroup"
+            Resource:
+              - !Sub "arn:aws:logs:${AWS::Region}:${AWS::AccountId}:*"
+            Effect: Allow
+          - Sid: AllowLogging
+            Action:
+              - "logs:CreateLogGroup"
+              - "logs:CreateLogStream"
+              - "logs:PutLogEvents"
+            Resource:
+              - !Sub "arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/lambda/${OrganizationName}gc*"
+            Effect: Allow
+      PolicyName: !Sub "${OrganizationName}GCLambdaExecutionRoleCWLogsPolicy"
+      Roles:
+        - !Ref GCLambdaExecutionRole
+
+  # IAM Access
+  GCLambdaExecutionRoleIAMPolicy:
+    Condition: NotAuditAccount
+    Type: AWS::IAM::Policy
+    Properties:
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: AllowIAMQueries
+            Action:
+              - "iam:GenerateCredentialReport"
+              - "iam:GetAccountPasswordPolicy"
+              - "iam:GetCredentialReport"
+              - "iam:GetLoginProfile"
+              - "iam:GetRole"
+              - "iam:ListAttachedRolePolicies"
+              - "iam:ListMFADevices"
+              - "iam:ListUsers"
+            Resource: "*"
+            Effect: Allow
+          - Sid: AllowCloudWatchAlarmQueries
+            Action:
+              - "cloudwatch:DescribeAlarms"
+            Resource: "*"
+            Effect: Allow
+      PolicyName: !Sub "${OrganizationName}GCLambdaExecutionRoleIAMPolicy"
+      Roles:
+        - !Ref GCLambdaExecutionRole
+
+  # Datastores Access
+  GCLambdaExecutionRoleDatastoresPolicy:
+    Condition: NotAuditAccount
+    Type: AWS::IAM::Policy
+    Properties:
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: AllowDatastoreChecks
+            Action:
+              - "apigateway:GET"
+              - "backup:ListRecoveryPointsByBackupVault"
+              - "backup:ListBackupVaults"
+              - "cassandra:Select"
+              - "codebuild:BatchGetProjects"
+              - "codebuild:ListProjects"
+              - "dax:DescribeClusters"
+              - "dynamodb:DescribeTable"
+              - "dynamodb:ListTables"
+              - "docdb-elastic:ListClusters"
+              - "docdb-elastic:ListClusterSnapshots"
+              - "ec2:DescribeRegions"
+              - "ec2:DescribeVolumes"
+              - "ec2:GetEbsEncryptionByDefault"
+              - "elasticfilesystem:DescribeFileSystems"
+              - "eks:DescribeCluster"
+              - "eks:ListClusters"
+              - "elasticache:DescribeCacheClusters"
+              - "elasticache:DescribeSnapshots"
+              - "kinesis:DescribeStream"
+              - "kinesis:ListStreams"
+              - "memorydb:DescribeClusters"
+              - "memorydb:DescribeSnapshots"
+              - "qldb:DescribeLedger"
+              - "qldb:ListLedgers"
+              - "rds:DescribeDBClusters"
+              - "rds:DescribeDBClusterSnapshots"
+              - "rds:DescribeDBInstances"
+              - "rds:DescribeDBSnapshots"
+              - "resource-explorer-2:ListIndexes"
+              - "resource-explorer-2:Search"
+              - "s3:GetEncryptionConfiguration"
+              - "s3:GetBucketLocation"
+              - "s3:GetBucketPolicy"
+              - "s3:ListAllMyBuckets"
+              - "s3:ListBucket"
+              - "sns:GetTopicAttributes"
+              - "sns:ListTopics"
+              - "timestream:DescribeEndpoints"
+              - "timestream:ListDatabases"
+              - "timestream:ListTables"
+              - "tag:GetResources"
+            Resource: "*"
+            Effect: Allow
+      PolicyName: !Sub "${OrganizationName}GCLambdaExecutionRoleDatastorePolicy"
+      Roles:
+        - !Ref GCLambdaExecutionRole
+        - !Ref GCLambdaExecutionRole2
+
+  # Account Access
+  GCLambdaExecutionRoleAccountPolicy:
+    Condition: NotAuditAccount
+    Type: AWS::IAM::Policy
+    Properties:
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: AllowReadAccountInfo
+            Action:
+              - "account:GetAlternateContact"
+            Resource:
+              - "arn:aws:account::*:account"
+              - "arn:aws:account::*:account/o-*/*"
+            Effect: Allow
+      PolicyName: GCLambdaExecutionRoleAccountPolicy
+      Roles:
+        - !Ref GCLambdaExecutionRole
+
+  # CloudTrail Access
+  GCLambdaExecutionRoleCloudTrailPolicy:
+    Condition: NotAuditAccount
+    Type: AWS::IAM::Policy
+    Properties:
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: AllowCloudTrailChecks
+            Action:
+              - "cloudtrail:DescribeTrails"
+              - "cloudtrail:GetTrailStatus"
+              - "cloudtrail:ListTrails"
+            Resource:
+              - "*"
+            Effect: Allow
+      PolicyName: !Sub "${OrganizationName}GCLambdaExecutionRoleCloudTrailPolicy"
+      Roles:
+        - !Ref GCLambdaExecutionRole
+        - !Ref GCLambdaExecutionRole2
+
+  # Marketplace Access
+  GCLambdaExecutionRoleMarketplacePolicy:
+    Condition: NotAuditAccount
+    Type: AWS::IAM::Policy
+    Properties:
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: AllowMarketplaceChecks
+            Action:
+              - "aws-marketplace:ListEntities"
+            Resource:
+              - "*"
+            Effect: Allow
+      PolicyName: !Sub "${OrganizationName}GCLambdaExecutionRoleMarketplacePolicy"
+      Roles:
+        - !Ref GCLambdaExecutionRole
+
+  # Organizations Access
+  GCLambdaExecutionRoleOrganizationsPolicy:
+    Condition: NotAuditAccount
+    Type: AWS::IAM::Policy
+    Properties:
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: AllowOrganizationsChecks
+            Action:
+              - "organizations:DescribeOrganization"
+            Resource:
+              - "*"
+            Effect: Allow
+      PolicyName: !Sub "${OrganizationName}GCLambdaExecutionRoleOrganizationsPolicy"
+      Roles:
+        - !Ref GCLambdaExecutionRole
+
+  # Encryption in Transit Checks Access
+  GCLambdaExecutionRoleInTransitEncryptionPolicy:
+    Condition: NotAuditAccount
+    Type: AWS::IAM::Policy
+    Properties:
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: S3
+            Action:
+              - "s3:ListAllMyBuckets"
+              - "s3:ListBucket"
+              - "s3:GetBucketPolicy"
+            Resource: "*"
+            Effect: Allow
+          - Sid: AllowRedshift
+            Action:
+              - "redshift:DescribeClusters"
+              - "redshift:DescribeClusterParameters"
+            Resource: "*"
+            Effect: Allow
+          - Sid: AllowAPI
+            Action:
+              - "apigateway:GET"
+            Resource: "*"
+            Effect: Allow
+          - Sid: AllowELB
+            Action:
+              - "elasticloadbalancing:DescribeListeners"
+              - "elasticloadbalancing:DescribeLoadBalancers"
+            Resource:
+              - "*"
+            Effect: Allow
+          - Sid: AllowES
+            Action:
+              - "es:ListDomainNames"
+              - "es:DescribeElasticsearchDomains"
+            Resource: "*"
+            Effect: Allow
+          - Sid: AllowReadTags
+            Action:
+              - "tag:GetResources"
+            Resource: "*"
+            Effect: Allow
+      PolicyName: !Sub "${OrganizationName}GCLambdaExecutionRoleInTransitEncryptionPolicy"
+      Roles:
+        - !Ref GCLambdaExecutionRole2
+
+  GCLambdaExecutionRole:
+    Condition: NotAuditAccount
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: "Allow"
+            Principal:
+              AWS:
+                - !Join
+                  - ""
+                  - - "arn:aws:iam::"
+                    - !Ref AuditAccountID
+                    - ":root"
+            Action:
+              - "sts:AssumeRole"
+          - Effect: "Allow"
+            Principal:
+              AWS: !Sub "arn:aws:iam::${AuditAccountID}:assumed-role/${RolePrefix}default_assessment_role/${OrganizationName}gc02_check_iam_password_policy"
+            Action:
+              - "sts:AssumeRole"
+          - Effect: "Allow"
+            Principal:
+              AWS: !Sub "arn:aws:iam::${AuditAccountID}:assumed-role/${RolePrefix}default_assessment_role/${OrganizationName}gc02_check_iam_users_mfa"
+            Action:
+              - "sts:AssumeRole"
+          - Effect: "Allow"
+            Principal:
+              AWS: !Sub "arn:aws:iam::${AuditAccountID}:assumed-role/${RolePrefix}default_assessment_role/${OrganizationName}gc05_check_data_location"
+            Action:
+              - "sts:AssumeRole"
+          - Effect: "Allow"
+            Principal:
+              AWS: !Sub "arn:aws:iam::${AuditAccountID}:assumed-role/${RolePrefix}default_assessment_role/${OrganizationName}gc11_check_security_contact"
+            Action:
+              - "sts:AssumeRole"
+          - Effect: "Allow"
+            Principal:
+              AWS: !Sub "arn:aws:iam::${AuditAccountID}:assumed-role/${RolePrefix}default_assessment_role/${OrganizationName}gc11_check_trail_logging"
+            Action:
+              - "sts:AssumeRole"
+          - Effect: "Allow"
+            Principal:
+              AWS: !Sub "arn:aws:iam::${AuditAccountID}:assumed-role/${RolePrefix}default_assessment_role/${OrganizationName}gc12_check_marketplace"
+            Action:
+              - "sts:AssumeRole"
+          - Effect: "Allow"
+            Principal:
+              Service:
+                - "lambda.amazonaws.com"
+            Action:
+              - "sts:AssumeRole"
+      Description: "GC Guardrails - Assessment Role"
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSConfigRulesExecutionRole
+      Path: "/"
+      RoleName: !Sub ${AccelRolePrefix}GCLambdaExecutionRole
+      Tags:
+        - Key: "Source"
+          Value: "ProServe Delivery Kit"
+
+  GCLambdaExecutionRole2:
+    Condition: NotAuditAccount
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: "Allow"
+            Principal:
+              AWS:
+                - !Join
+                  - ""
+                  - - "arn:aws:iam::"
+                    - !Ref AuditAccountID
+                    - ":root"
+            Action:
+              - "sts:AssumeRole"
+          - Effect: "Allow"
+            Principal:
+              AWS: !Sub "arn:aws:iam::${AuditAccountID}:assumed-role/${RolePrefix}default_assessment_role/${OrganizationName}gc06_check_encryption_at_rest_part1"
+            Action:
+              - "sts:AssumeRole"
+          - Effect: "Allow"
+            Principal:
+              AWS: !Sub "arn:aws:iam::${AuditAccountID}:assumed-role/${RolePrefix}default_assessment_role/${OrganizationName}gc06_check_encryption_at_rest_part2"
+            Action:
+              - "sts:AssumeRole"
+          - Effect: "Allow"
+            Principal:
+              AWS: !Sub "arn:aws:iam::${AuditAccountID}:assumed-role/${RolePrefix}default_assessment_role/${OrganizationName}gc07_check_encryption_in_transit"
+            Action:
+              - "sts:AssumeRole"
+          - Effect: "Allow"
+            Principal:
+              Service:
+                - "lambda.amazonaws.com"
+            Action:
+              - "sts:AssumeRole"
+      Description: "GC Guardrails - Assessment Role 2"
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSConfigRulesExecutionRole
+      Path: "/"
+      RoleName: !Sub ${AccelRolePrefix}GCLambdaExecutionRole2
+      Tags:
+        - Key: "Source"
+          Value: "ProServe Delivery Kit"

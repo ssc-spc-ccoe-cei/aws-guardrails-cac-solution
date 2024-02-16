@@ -1,0 +1,58 @@
+[
+  {
+    "ParameterKey": "OrganizationName",
+    "ParameterValue": "LCCFedGov"
+  },
+  {
+    "ParameterKey": "OrganizationId",
+    "ParameterValue": "o-gjowv2fbwj"
+  },
+  {
+    "ParameterKey": "RootOUID",
+    "ParameterValue": "r-6gkm"
+  },
+  {
+    "ParameterKey": "AuditAccountID",
+    "ParameterValue": "061849379246"
+  },
+  {
+    "ParameterKey": "SecurityOUID",
+    "ParameterValue": "ou-6gkm-vcwxl0py"
+  },
+  {
+    "ParameterKey": "ExecutionName",
+    "ParameterValue": ""
+  },
+  {
+    "ParameterKey": "RolePrefix",
+    "ParameterValue": "gc-"
+  },
+  {
+    "ParameterKey": "AccelRolePrefix",
+    "ParameterValue": "AWSA-"
+  },
+  {
+    "ParameterKey": "AccleratorRole",
+    "ParameterValue": "OrganizationAccountAccessRole"
+  },
+  {
+    "ParameterKey": "PipelineBucket",
+    "ParameterValue": "gc-gourdrails-deployments-605096884043"
+  },
+  {
+    "ParameterKey": "DestBucketName",
+    "ParameterValue": ""
+  },
+  {
+    "ParameterKey": "EvidenceBucketName",
+    "ParameterValue": ""
+  },
+  {
+    "ParameterKey": "AWSConfigConformsBucketName",
+    "ParameterValue": ""
+  },
+  {
+    "ParameterKey": "AdditionalAssessmentAdminRoleARN",
+    "ParameterValue": ""
+  }
+]

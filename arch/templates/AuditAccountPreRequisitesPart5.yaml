@@ -1,0 +1,46 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: Configures AWS Config and AWS Audit Manager for multi-account management.
+
+Parameters:
+  OrganizationName:
+    Type: String
+    Default: ""
+    Description: The name of the organization. Used as a prefix in resource names.
+  AuditAccountID:
+    Type: String
+    Default: ""
+    Description: 12-digit AWS Account ID (e.g., '222222222222')
+  RolePrefix:
+    Type: String
+    Default: "ASEA-"
+    Description: >-
+      The prefix to apply to generated role names, in ASEA this is generally ASEA- for lza this could be cdk-accel etc
+Conditions:
+  IsAuditAccount: !Equals
+    - !Ref AWS::AccountId
+    - !Ref AuditAccountID
+
+Resources:
+  ## GC04
+  GC04CheckEnterpriseMonitoringLambda:
+    Condition: IsAuditAccount
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub "${OrganizationName}gc04_check_enterprise_monitoring"
+      Code: "../../src/lambda/gc04_check_enterprise_monitoring/build/GC04CheckEnterpriseMonitoringLambda/"
+      Handler: app.lambda_handler
+      Role: !Sub "arn:aws:iam::${AuditAccountID}:role/${RolePrefix}default_assessment_role"
+      Runtime: python3.9
+      Timeout: 90
+
+  ## GC05
+  GC05CheckDataLocationLambda:
+    Condition: IsAuditAccount
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub "${OrganizationName}gc05_check_data_location"
+      Code: "../../src/lambda/gc05_check_data_location/build/GC05CheckDataLocationLambda/"
+      Handler: app.lambda_handler
+      Role: !Sub "arn:aws:iam::${AuditAccountID}:role/${RolePrefix}default_assessment_role"
+      Runtime: python3.9
+      Timeout: 900

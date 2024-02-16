@@ -1,0 +1,8 @@
+{
+    "Parameters": {
+        "OrganizationName": "LCCFedGov",
+        "AuditAccountID": "061849379246",
+        "RootOUID": "r-6gkm",
+        "PipelineBucket": "gc-guardrails-deployments-605096884043"
+    }
+}

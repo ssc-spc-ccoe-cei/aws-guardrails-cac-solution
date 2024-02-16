@@ -1,0 +1,260 @@
+AWSTemplateFormatVersion: 2010-09-09
+
+Description: Upload an object to an S3 bucket, triggering a Lambda event, returning the object key as a Stack Output.
+
+Parameters:
+  DestBucketName:
+    Description: S3 Bucket name
+    Type: String
+  AuditAccountID:
+    Type: String
+    Default: ""
+    Description: 12-digit AWS Account ID (e.g., '222222222222')
+  ExecutionName:
+    Type: String
+    Default: "gc-fedclient-execution-role"
+    Description: Execution arn name to be used when applying policy to the destination bucket.
+  OrganizationName:
+    Type: String
+    Description: Name of the organziation.
+  OrganizationId:
+    Type: String
+    Description: Organization id to be passed down from the root.yaml file.
+  AssessmentName:
+    Type: String
+    Default: "GC Guardrails Assessment"
+    Description: Name of assessment in auditmanager.
+
+Conditions:
+  IsAuditAccount: !Equals
+    - !Ref AWS::AccountId
+    - !Ref AuditAccountID
+
+Resources:
+  myKey:
+    Condition: IsAuditAccount
+    Type: "AWS::KMS::Key"
+    Properties:
+      Description: An example symmetric encryption KMS key
+      EnableKeyRotation: true
+      PendingWindowInDays: 20
+      KeyPolicy:
+        Version: 2012-10-17
+        Id: s3-lambda-access-key
+        Statement:
+          - Sid: Allow administration of the key
+            Effect: Allow
+            Principal:
+              AWS: !Sub "arn:${AWS::Partition}:iam::${AWS::AccountId}:root"
+            Action:
+              - "kms:Create*"
+              - "kms:Describe*"
+              - "kms:Enable*"
+              - "kms:List*"
+              - "kms:Put*"
+              - "kms:Update*"
+              - "kms:Revoke*"
+              - "kms:Disable*"
+              - "kms:Get*"
+              - "kms:Delete*"
+              - "kms:ScheduleKeyDeletion"
+              - "kms:CancelKeyDeletion"
+            Resource: "*"
+          - Sid: Allow use of the key
+            Effect: Allow
+            Principal:
+              Service: !Sub lambda.${AWS::Region}.amazonaws.com
+              AWS: !Sub arn:aws:iam::${AWS::AccountId}:root
+            Action:
+              - "kms:DescribeKey"
+              - "kms:Encrypt"
+              - "kms:Decrypt"
+              - "kms:ReEncrypt*"
+              - "kms:GenerateDataKey"
+              - "kms:GenerateDataKeyWithoutPlaintext"
+            Resource: "*"
+
+  Bucket:
+    Condition: IsAuditAccount
+    Type: AWS::S3::Bucket
+    DependsOn: BucketPermission
+    Properties:
+      OwnershipControls:
+        Rules:
+          - ObjectOwnership: BucketOwnerPreferred
+      BucketName: !Sub "gc-fedclient-${AWS::AccountId}-${AWS::Region}"
+      NotificationConfiguration:
+        LambdaConfigurations:
+          - Event: "s3:ObjectCreated:*"
+            Function: !GetAtt BucketWatcherLambda.Arn
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: aws:kms
+              KMSMasterKeyID: !GetAtt myKey.Arn
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+
+  BucketPermission:
+    Condition: IsAuditAccount
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: "lambda:InvokeFunction"
+      FunctionName: !Ref BucketWatcherLambda
+      Principal: s3.amazonaws.com
+      SourceAccount: !Ref "AWS::AccountId"
+      SourceArn: !Sub "arn:aws:s3:::gc-fedclient-${AWS::AccountId}-${AWS::Region}"
+
+  BucketWatcherLambda:
+    Condition: IsAuditAccount
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub "${OrganizationName}aws_bucket_watcher"
+      Description: Copy's file from source bucket to the destination bucket.
+      Code: "../../src/lambda/aws_bucket_watcher/build/BucketWatcherLambda/"
+      Handler: app.lambda_handler
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Timeout: 30
+      Runtime: python3.9
+      Environment:
+        Variables:
+          target_bucket: !Ref DestBucketName
+
+  LambdaExecutionRole:
+    Condition: IsAuditAccount
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub "${ExecutionName}${AWS::Region}"
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal: { Service: [lambda.amazonaws.com] }
+            Action: ["sts:AssumeRole"]
+      Path: /
+      ManagedPolicyArns:
+        - "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
+      Policies:
+        - PolicyName: S3Policy
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - "s3:GetObject"
+                Resource: !Sub "arn:aws:s3:::gc-fedclient-${AWS::AccountId}-${AWS::Region}/*"
+              - Effect: Allow
+                Action:
+                  - "kms:Decrypt"
+                Resource: !GetAtt myKey.Arn
+              - Effect: Allow
+                Action:
+                  - "s3:PutObject"
+                  - "s3:PutObjectAcl"
+                  - "s3:GetObjectTagging"
+                  - "s3:PutObjectTagging"
+                Resource: !Sub "arn:aws:s3:::${DestBucketName}/*"
+
+  # Cronjobs
+  ## Create your Lambda
+  CronjobsLambda:
+    Condition: IsAuditAccount
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub "${OrganizationName}aws_compile_audit_report"
+      Handler: app.lambda_handler
+      Code: "../../src/lambda/aws_compile_audit_report/build/CronjobsLambda/"
+      Role: !GetAtt CronLambdaExecutionRole.Arn
+      Environment:
+        Variables:
+          source_target_bucket: !Sub "gc-fedclient-${AWS::AccountId}-${AWS::Region}"
+          ORG_ID: !Ref OrganizationId
+          ASSESSMENT_NAME: !Ref AssessmentName
+          ORG_NAME: !Ref OrganizationName
+      Runtime: python3.9
+      Timeout: 360
+
+  CronLambdaExecutionRole:
+    Condition: IsAuditAccount
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal: { Service: [lambda.amazonaws.com] }
+            Action: ["sts:AssumeRole"]
+      Path: /
+      ManagedPolicyArns:
+        - "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
+      Policies:
+        - PolicyName: S3Policy
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - "s3:PutObject"
+                  - "s3:GetObject"
+                  - "s3:CreateBucket"
+                  - "s3:ListBucket"
+                Resource: !Sub "arn:aws:s3:::gc-fedclient-${AWS::AccountId}-${AWS::Region}/*"
+              - Effect: Allow
+                Action:
+                  - "s3:PutObject"
+                  - "s3:GetObject"
+                  - "s3:CreateBucket"
+                  - "s3:ListBucket"
+                Resource: !Sub "arn:aws:s3:::gc-fedclient-${AWS::AccountId}-${AWS::Region}"
+              - Effect: Allow
+                Action:
+                  - "kms:Decrypt"
+                  - "kms:Encrypt"
+                  - "kms:GenerateDataKey"
+                Resource: !GetAtt myKey.Arn
+              - Effect: Allow
+                Action:
+                  - "auditmanager:GetEvidenceByEvidenceFolder"
+                  - "auditmanager:GetEvidenceFoldersByAssessment"
+                  - "auditmanager:ListAssessments"
+                Resource: !Sub "arn:aws:auditmanager:${AWS::Region}:${AWS::AccountId}:assessment/*"
+              - Sid: AllowCreateLogGroup
+                Action:
+                  - "logs:CreateLogGroup"
+                Resource:
+                  - !Sub "arn:aws:logs:${AWS::Region}:${AWS::AccountId}:*"
+                Effect: Allow
+              - Sid: AllowLogging
+                Action:
+                  - "logs:CreateLogGroup"
+                  - "logs:CreateLogStream"
+                  - "logs:PutLogEvents"
+                Resource:
+                  - !Sub "arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/lambda/${OrganizationName}gc*"
+                Effect: Allow
+
+  ## Create schedule
+  CronjobsScheduledRule:
+    Condition: IsAuditAccount
+    Type: AWS::Events::Rule
+    Properties:
+      Description: Scheduled Rule
+      ScheduleExpression: cron(45 23 1/1 * ? *)
+      # ScheduleExpression: rate(1 day)
+      State: ENABLED
+      Targets:
+        - Arn: !GetAtt CronjobsLambda.Arn
+          Id: TargetFunctionV1
+
+  ## Grant permission to Events trigger Lambda.
+  PermissionForEventsToInvokeCronjobsLambda:
+    Condition: IsAuditAccount
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref CronjobsLambda
+      Action: lambda:InvokeFunction
+      Principal: events.amazonaws.com
+      SourceArn: !GetAtt CronjobsScheduledRule.Arn

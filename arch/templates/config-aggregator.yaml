@@ -1,0 +1,32 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: Deploys the Government of Canada Guardrails Assessment Package Configuration Aggregator
+
+Resources:
+  ConfigurationAggregator:
+      Type: 'AWS::Config::ConfigurationAggregator'
+      Properties:
+        OrganizationAggregationSource:
+          RoleArn: !GetAtt ConfigurationAggregatorRole.Arn
+          AllAwsRegions: true
+        ConfigurationAggregatorName: GC-Guardrails-Aggregator
+        Tags:
+          - Key: "Source"
+            Value: "ProServe Delivery Kit"
+  ConfigurationAggregatorRole:
+    Type: AWS::IAM::Role
+    Properties: 
+        ManagedPolicyArns: 
+          - arn:aws:iam::aws:policy/service-role/AWSConfigRoleForOrganizations
+        Path: "/service-role/"
+        AssumeRolePolicyDocument:
+          Version: "2012-10-17"
+          Statement:
+            - Effect: Allow
+              Principal:
+                Service:
+                  - config.amazonaws.com
+              Action:
+                - 'sts:AssumeRole'
+        Tags:
+          - Key: "Source"
+            Value: "ProServe Delivery Kit"

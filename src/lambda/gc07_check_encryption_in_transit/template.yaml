@@ -1,0 +1,19 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: >
+  gc07_check_encryption_in_transit
+
+Globals:
+  Function:
+    Timeout: 600
+    MemorySize: 128
+
+Resources:
+  GC07CheckEncryptionInTransitLambda:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: .
+      Handler: app.lambda_handler
+      Runtime: python3.9
+      Architectures:
+        - x86_64

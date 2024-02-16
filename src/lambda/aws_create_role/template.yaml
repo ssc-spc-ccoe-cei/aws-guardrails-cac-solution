@@ -1,0 +1,53 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: >
+  create-role
+
+Globals:
+  Function:
+    Timeout: 900
+    MemorySize: 128
+
+ 
+Resources:
+  LambdaCreateRole:
+    Type: "AWS::IAM::Role"
+    Properties:
+      RoleName: "AWSA-CreateRole-Test"
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action:
+              - sts:AssumeRole
+      Path: "/"
+      Policies:
+        - PolicyName: assume_role
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - sts:AssumeRole
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Resource: !Sub arn:aws:iam::*:role/OrganizationAccountAccessRole
+              - Effect: Allow
+                Action:
+                  - "organizations:ListAccounts"
+                Resource:
+                  - "*"
+
+  CreateRoleLambda:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: .
+      Handler: app.lambda_handler
+      Runtime: python3.10
+      Role: !GetAtt LambdaCreateRole.Arn
+      Architectures:
+        - x86_64
