@@ -170,6 +170,8 @@ Resources:
   InvokeCustomLambda:
     Type: Custom::InvokeCustomLambda
     Condition: DeployRoles
+    DependsOn:
+      - AllAccountPreRequisites
     Properties:
       Version: 15
       ServiceToken: !GetAtt CreateRoleLambda.Arn
@@ -299,6 +301,8 @@ Resources:
   InvokeCustomLambda2:
     Type: Custom::InvokeCustomLambda
     Condition: DeployRoles
+    DependsOn:
+      - AllAccountPreRequisites
     Properties:
       Version: 15
       ServiceToken: !GetAtt CreateRoleLambda.Arn

@@ -3,6 +3,7 @@ import json
 import logging
 
 import boto3
+from botocore.exceptions import ClientError
 import urllib3
 
 SUCCESS = "SUCCESS"
@@ -17,16 +18,19 @@ logger.setLevel(logging.INFO)
 
 def get_org_accounts():
     """
-    Returns a list of all accounts in the organization.
+    Returns a list of all active accounts in the organization.
     """
     org_client = boto3.client('organizations')
-    sts_response = org_client.list_accounts()
-    if 'NextToken' in sts_response:
-        while 'NextToken' in sts_response:
-            sts_response = org_client.list_accounts(
-                NextToken=sts_response['NextToken'])
-            sts_response['Accounts'].extend(sts_response['Accounts'])
-    return sts_response['Accounts']
+    active_accounts = []
+    paginator = org_client.get_paginator('list_accounts')
+
+    for page in paginator.paginate():
+        for account in page['Accounts']:
+            if account['Status'] == "ACTIVE":
+                logger.info(f"Account added {account}")
+                active_accounts.append(account)
+
+    return active_accounts
 
 
 def create_iam_policy(session, policy_name, policy_document):
@@ -96,16 +100,31 @@ def detach_all_policies_from_role(session, role_name):
     """
     Detaches all policies from a role.
     """
-    logger.info(f"Creating Role {role_name} with no policies")
+    logger.info(f"Detach all policies from {role_name}")
     iam_client = session.client('iam')
     sts_response = iam_client.list_attached_role_policies(
         RoleName=role_name
     )
+
+    logger.info(f"Attached Policies to role {role_name} are {sts_response['AttachedPolicies']}")
     for policy in sts_response['AttachedPolicies']:
+        logger.info(f"Deleting Policy: {policy}")
         sts_response = iam_client.detach_role_policy(
-            RoleName=role_name,
-            PolicyArn=policy['PolicyArn']
+        RoleName=role_name,
+        PolicyArn=policy['PolicyArn']
         )
+        delete_iam_policy(session=session, policy_arn=policy['PolicyArn'])
+
+    sts_response = iam_client.list_role_policies(
+        RoleName=role_name
+    )
+    logger.info(f"Inline Policies attached to role {role_name} are {sts_response['PolicyNames']}")
+    for policy_name in sts_response['PolicyNames']:
+      logger.info(f"Deleting Policy: {policy_name}")
+      sts_response = iam_client.delete_role_policy(
+          RoleName=role_name,
+          PolicyName=policy_name
+      )
     return sts_response
 
 
@@ -135,6 +154,23 @@ def delete_iam_policy(session, policy_arn):
     """
     Deletes an IAM policy.
     """
+    # Check if the policy is an AWS managed policy
+    if policy_arn.startswith("arn:aws:iam::aws:policy/"):
+        logger.info(f"Skipping deletion of AWS managed policy: {policy_arn}")
+        return {"Status": "Skipped", "Reason": "AWS Managed Policy"}
+
+    # List all versions of the policy
+    versions = iam_client.list_policy_versions(PolicyArn=policy_arn)
+
+    # Loop through the versions and delete the non-default versions
+    for version in versions['Versions']:
+        if not version['IsDefaultVersion']:
+            iam_client.delete_policy_version(
+                PolicyArn=policy_arn,
+                VersionId=version['VersionId']
+            )
+            logger.info(f"Deleted non-default policy version {version['VersionId']}")
+
     iam_client = session.client('iam')
     sts_response = iam_client.delete_policy(
         PolicyArn=policy_arn
@@ -223,25 +259,29 @@ def lambda_handler(event, context):
             try:
                 iam_role = create_iam_role(
                     session=sts_session, role_name=role_name, principal=trust_principal)
-            except Exception as err:
-                logger.info(
-                    f"Existing IAM Role {role_name} found, removing policies and deleting role. Exception: {err}")
-                detach_all_policies_from_role(
-                    session=sts_session, role_name=role_name)
-                delete_role(session=sts_session, role_name=role_name)
-                iam_role = create_iam_role(
-                    session=sts_session, role_name=role_name, principal=trust_principal)
+            except ClientError as e:
+                if e.response['Error']['Code'] == 'EntityAlreadyExists':
+                    logger.info(f"Existing IAM Role {role_name} found in account {account['Id']}, removing policies and deleting role.")
+                    detach_all_policies_from_role(session=sts_session, role_name=role_name)
+                    delete_role(session=sts_session, role_name=role_name)
+                    iam_role = create_iam_role(session=sts_session, role_name=role_name, principal=trust_principal)
+                else:
+                    logger.info(f"Exception ocured while creating role {role_name} in {account['Id']}: {e}")
             for policy_doc in policy_package['Docs']:
                 logger.info(f"Policy_Doc:{json.dumps(policy_doc)}")
                 try:
                     policy = create_iam_policy(
                         session=sts_session, policy_name=policy_doc['Statement'][0]['Sid'], policy_document=json.dumps(policy_doc))
-                except Exception as err:
-                    logger.info(
-                        f"Existing Policy {policy_doc['Statement'][0]['Sid']} found. Exception: {err}")
-                    response_data['Error'] = f"Existing Policy {policy_doc['Statement'][0]['Sid']} found. Exception: {err}"
-                    policy = {}
-                    policy['Arn'] = f"arn:aws:iam::{account['Id']}:policy/{policy_doc['Statement'][0]['Sid']}"
+                except ClientError as e:
+                    if e.response['Error']['Code'] == 'EntityAlreadyExists':
+                        logger.info(f"Existing Policy {policy_doc['Statement'][0]['Sid']} found. Recreating it.")
+                        try:  
+                            delete_iam_policy(session=sts_session, policy_arn=f"arn:aws:iam::{account['Id']}:policy/{policy_doc['Statement'][0]['Sid']}")
+                            policy = create_iam_policy(session=sts_session, policy_name=policy_doc['Statement'][0]['Sid'], policy_document=json.dumps(policy_doc))
+                        except Exception as e:
+                            logger.info(f"Error recreating {policy_doc['Statement'][0]['Sid']}. Exception: {e}")
+                    else:
+                        logger.info(f"Exception ocured while creating policy {policy_doc['Statement'][0]['Sid']}: {e}")
                 try:
                     attach_iam_policy_to_role(
                         session=sts_session, role_name=iam_role['RoleName'], policy_arn=policy['Arn'])
