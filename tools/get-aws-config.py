@@ -4,12 +4,16 @@
 # http://aws.amazon.com/agreement or other written agreement between Customer and either
 # Amazon Web Services, Inc. or Amazon Web Services EMEA SARL or both.
 import boto3
-import ruamel.yaml as yaml
+#import ruamel.yaml as yaml
+from ruamel.yaml import YAML
 import json
 from botocore.exceptions import ClientError
 import argparse
 import warnings
-warnings.simplefilter('ignore', yaml.error.UnsafeLoaderWarning)
+
+yaml = YAML(typ='rt')  # Create a YAML object with round-trip type for preserving styles and comments
+
+#warnings.simplefilter('ignore', yaml.error.UnsafeLoaderWarning)
 
 global config
 
@@ -87,10 +91,9 @@ parser.add_argument('--output', help='json file to output',
                     nargs='?', required=True)
 args = parser.parse_args()
 
-
 with open(args.input, "r") as config_file:
     config = yaml.load(config_file.read().replace(
-        '\t', '  '), yaml.RoundTripLoader)
+        '\t', '  '))
     print(f"using configuration in {args.input}")
 
 assumed_role = boto3.Session()
@@ -129,5 +132,4 @@ with open(args.output, 'w') as f:
     print(j, file=f)
 
 with open('out.yaml', 'w') as ofp:
-    yaml.dump(config, ofp, default_flow_style=False,
-              Dumper=yaml.RoundTripDumper)
+    yaml.dump(config, ofp)
