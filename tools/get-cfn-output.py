@@ -71,6 +71,3 @@ if output is None:
 else:
     # Proceed with updating the JSON only if the stack exists and outputs were retrieved
     update_json(json_file=args.update, output_list=output)
-
-
-update_json(json_file=args.update, output_list=output)
