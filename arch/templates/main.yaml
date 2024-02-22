@@ -1061,10 +1061,10 @@ Resources:
                       "Effect": "Allow",
                       "Principal": {
                           "AWS": [
-                              "arn:aws:sts::343164472410:assumed-role/${RolePrefix}default_assessment_role/configLambdaExecution",
-                              "arn:aws:sts::343164472410:assumed-role/${RolePrefix}default_assessment_role/${OrganizationName}gc06_check_encryption_at_rest_part1",
-                              "arn:aws:sts::343164472410:assumed-role/${RolePrefix}default_assessment_role/${OrganizationName}gc06_check_encryption_at_rest_part2",
-                              "arn:aws:sts::343164472410:assumed-role/${RolePrefix}default_assessment_role/${OrganizationName}gc07_check_encryption_in_transit"
+                              "arn:aws:sts::${AuditAccountID}:assumed-role/${RolePrefix}default_assessment_role/configLambdaExecution",
+                              "arn:aws:sts::${AuditAccountID}:assumed-role/${RolePrefix}default_assessment_role/${OrganizationName}gc06_check_encryption_at_rest_part1",
+                              "arn:aws:sts::${AuditAccountID}:assumed-role/${RolePrefix}default_assessment_role/${OrganizationName}gc06_check_encryption_at_rest_part2",
+                              "arn:aws:sts::${AuditAccountID}:assumed-role/${RolePrefix}default_assessment_role/${OrganizationName}gc07_check_encryption_in_transit"
                           ]
                       },
                       "Action": "sts:AssumeRole"
