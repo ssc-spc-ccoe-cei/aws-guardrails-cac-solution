@@ -4,17 +4,17 @@ Description: "Fed Client root resource cfn stack."
 Parameters:
   ApiKey:
     Type: String
-    Default: "**API_KEY**"
+    Default: "*API_KEY*"
   ApiUrl:
     Type: String
-    Default: "**API_URL**"
+    Default: "*API_URL*"
   Email:
     Type: String
-    Default: "**CSMPM_EMAIL**"
+    Default: "*CSPM_EMAIL*"
     Description: Subject to change, might not be used here
   OrganizationId:
     Type: String
-    Default: "**ORG_ID**" 
+    Default: "*ORG_ID*" 
     Description: Primary identifier for metadata of registered org
   InvokeUpdate:
     Type: String
@@ -28,7 +28,7 @@ Parameters:
   SecurityOUID:
     Type: String
     Default: '**SECURITY_OUID**'
-  AuditAccountId:
+  AuditAccountID:
     Type: String
     Default: '**AUDIT_ACCOUNT_ID**'
   OrganizationName:
@@ -135,8 +135,8 @@ Resources:
           API_KEY: !Ref ApiKey
           API_URL: !Ref ApiUrl
           ORG_ID: !Ref OrganizationId
-          EXECUTION_ARN: !Sub 'arn:aws:iam::${AuditAccountId}:role/${ExecutionName}${AWS::Region}'
-          ACCOUNT_ID: !Sub '${AuditAccountId}'
+          EXECUTION_ARN: !Sub 'arn:aws:iam::${AuditAccountID}:role/${ExecutionName}${AWS::Region}'
+          ACCOUNT_ID: !Sub '${AuditAccountID}'
 
   RotateKeyFunction:
     Type: 'AWS::Lambda::Function'
@@ -229,7 +229,7 @@ Resources:
         AccelRolePrefix: !Ref AccelRolePrefix
         AccleratorRole: !Ref AcceleratorRole
         SecurityOUID: !Ref SecurityOUID
-        AuditAccountID: !Ref AuditAccountId
+        AuditAccountID: !Ref AuditAccountID
         RootOUID: !Ref RootOUID
         PipelineBucket: !Ref PipelineBucket
         DeployRoles: !Ref DeployRoles
