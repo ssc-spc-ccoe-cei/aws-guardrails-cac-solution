@@ -212,7 +212,7 @@ def lambda_handler(event, context):
 
     valid_rule_parameters = evaluate_parameters(rule_parameters)
 
-    if "EXECUTION_ROLE_NAME" in valid_rule_parameters:
+    if "ExecutionRoleName" in valid_rule_parameters:
         EXECUTION_ROLE_NAME = valid_rule_parameters["ExecutionRoleName"]
     else:
         EXECUTION_ROLE_NAME = "AWSA-GCLambdaExecutionRole"
@@ -228,21 +228,20 @@ def lambda_handler(event, context):
     AWS_CONFIG_CLIENT = get_client("config", event)
     AWS_CLOUDTRAIL_CLIENT = get_client("cloudtrail", event)
 
-    if AWS_ACCOUNT_ID == AUDIT_ACCOUNT_ID:
-        # is this a scheduled invokation?
-        if is_scheduled_notification(invoking_event["messageType"]):
-            # yes, proceed with checking the cloud trails
-            result = check_trail_logging()
-            if result == 1:
-                # all trails are logging
-                compliance_value = "COMPLIANT"
-                custom_annotation = "All identified trails are logging"
-            elif result == 0:
-                compliance_value = "NON_COMPLIANT"
-                custom_annotation = "Found trail(s) that are not logging"
-            else:
-                compliance_value = "NON_COMPLIANT"
-                custom_annotation = "Unable to validate CloudTrail trails are logging"
+    # is this a scheduled invokation?
+    if is_scheduled_notification(invoking_event["messageType"]):
+        # yes, proceed with checking the cloud trails
+        result = check_trail_logging()
+        if result == 1:
+            # all trails are logging
+            compliance_value = "COMPLIANT"
+            custom_annotation = "All identified trails are logging"
+        elif result == 0:
+            compliance_value = "NON_COMPLIANT"
+            custom_annotation = "Found trail(s) that are not logging"
+        else:
+            compliance_value = "NON_COMPLIANT"
+            custom_annotation = "Unable to validate CloudTrail trails are logging"
         # Update AWS Config with the evaluation result
         evaluations.append(
             build_evaluation(
@@ -253,9 +252,4 @@ def lambda_handler(event, context):
                 annotation=custom_annotation,
             )
         )
-        AWS_CONFIG_CLIENT.put_evaluations(
-            Evaluations=evaluations,
-            ResultToken=event["resultToken"]
-        )
-    else:
-        logger.info("Cloud Trail Logging not checked in account %s - not the Audit account", AWS_ACCOUNT_ID)
+        AWS_CONFIG_CLIENT.put_evaluations(Evaluations=evaluations, ResultToken=event["resultToken"])

@@ -129,7 +129,7 @@ deploy-config-aggregator:
 deploy-stack:
 	$(info --- Deploying Stack ---)
 	@aws cloudformation deploy \
-		--template-file ./arch/templates/build/main.yaml \
+		--template-file ./arch/templates/build/root.yaml \
 		--stack-name "$(STACK)-$(ENV_NAME)" \
 		--parameter-overrides $(shell $(PARAMETERS_STRING)) "PipelineBucket"="$(PIPELINE_BUCKET)"\
 		--s3-bucket $(PIPELINE_BUCKET) \

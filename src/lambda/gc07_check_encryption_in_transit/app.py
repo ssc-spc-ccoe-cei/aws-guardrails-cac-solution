@@ -723,7 +723,7 @@ def lambda_handler(event, context):
 
     valid_rule_parameters = rule_parameters
 
-    if "EXECUTION_ROLE_NAME" in valid_rule_parameters:
+    if "ExecutionRoleName" in valid_rule_parameters:
         EXECUTION_ROLE_NAME = valid_rule_parameters["ExecutionRoleName"]
     else:
         EXECUTION_ROLE_NAME = "AWSA-GCLambdaExecutionRole2"
@@ -737,7 +737,62 @@ def lambda_handler(event, context):
         logger.error("Skipping assessments as this is not a scheduled invokation")
         return
 
-    if AWS_ACCOUNT_ID == AUDIT_ACCOUNT_ID:
+    AWS_S3_CLIENT = get_client("s3", event)
+    AWS_REDSHIFT_CLIENT = get_client("redshift", event)
+    AWS_ELBV2_CLIENT = get_client("elbv2", event)
+    AWS_APIGW_CLIENT = get_client("apigateway", event)
+    AWS_ES_CLIENT = get_client("es", event)
+    AWS_CONFIG_CLIENT = get_client("config", event)
+
+    evaluations.extend(assess_s3_buckets_ssl_enforcement(event))
+    evaluations.extend(assess_redshift_clusters_ssl_enforcement(event))
+    evaluations.extend(assess_elbv2_ssl_enforcement(event))
+    evaluations.extend(assess_rest_api_stages_ssl_enforcement(event))
+    evaluations.extend(assess_es_node_to_node_ssl_enforcement(event))
+
+    account_compliance_status = "COMPLIANT"
+    account_compliance_annotation = "No non-compliant resources found"
+
+    for evaluation in evaluations:
+        if evaluation.get("ComplianceType", "") == "NON_COMPLIANT":
+            account_compliance_status = "NON_COMPLIANT"
+            account_compliance_annotation = "Non-compliant resources in scope found"
+            break
+    evaluations.append(
+        build_evaluation(
+            AWS_ACCOUNT_ID,
+            account_compliance_status,
+            event,
+            "AWS::::Account",
+            annotation=account_compliance_annotation,
+        )
+    )
+    number_of_evaluations = len(evaluations)
+    if number_of_evaluations > 0:
+        max_evaluations_per_call = 100
+        rounds = number_of_evaluations // max_evaluations_per_call
+        logger.info("Reporting %s evaluations in %s rounds.", number_of_evaluations, rounds + 1)
+        if number_of_evaluations > max_evaluations_per_call:
+            for rnd in range(rounds):
+                start = rnd * max_evaluations_per_call
+                end = (rnd + 1) * max_evaluations_per_call
+                AWS_CONFIG_CLIENT.put_evaluations(
+                    Evaluations=evaluations[start:end],
+                    ResultToken=event["resultToken"]
+                )
+                time.sleep(0.3)
+            start = end
+            end = number_of_evaluations
+            AWS_CONFIG_CLIENT.put_evaluations(
+                Evaluations=evaluations[start:end],
+                ResultToken=event["resultToken"]
+            )
+        else:
+            AWS_CONFIG_CLIENT.put_evaluations(
+                Evaluations=evaluations,
+                ResultToken=event["resultToken"]
+            )
+
         AWS_S3_CLIENT = get_client("s3", event)
         AWS_REDSHIFT_CLIENT = get_client("redshift", event)
         AWS_ELBV2_CLIENT = get_client("elbv2", event)
@@ -793,5 +848,3 @@ def lambda_handler(event, context):
                     Evaluations=evaluations,
                     ResultToken=event["resultToken"]
                 )
-    else:
-        logger.info("Encryption-in-Transit not checked in account %s - not the Audit account", AWS_ACCOUNT_ID)

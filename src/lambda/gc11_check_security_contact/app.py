@@ -164,7 +164,7 @@ def lambda_handler(event, context):
 
     valid_rule_parameters = evaluate_parameters(rule_parameters)
 
-    if "EXECUTION_ROLE_NAME" in valid_rule_parameters:
+    if "ExecutionRoleName" in valid_rule_parameters:
         EXECUTION_ROLE_NAME = valid_rule_parameters["ExecutionRoleName"]
     else:
         EXECUTION_ROLE_NAME = "AWSA-GCLambdaExecutionRole"
@@ -180,19 +180,18 @@ def lambda_handler(event, context):
     AWS_CONFIG_CLIENT = get_client("config", event)
     AWS_ACCOUNT_CLIENT = get_client("account", event)
 
-    if AWS_ACCOUNT_ID == AUDIT_ACCOUNT_ID:
-        # is this a scheduled invokation?
-        if is_scheduled_notification(invoking_event["messageType"]):
-            # yes, proceed with checking the marketplace
-            # check if a private marketplace has been shared with us
-            if check_security_contact():
-                compliance_value = "COMPLIANT"
-                custom_annotation = "Security contact validated"
-                logger.info("Security contact registered")
-            else:
-                compliance_value = "NON_COMPLIANT"
-                custom_annotation = "Security contact NOT registered"
-                logger.info("Security contact NOT registered")
+    # is this a scheduled invokation?
+    if is_scheduled_notification(invoking_event["messageType"]):
+        # yes, proceed with checking the marketplace
+        # check if a private marketplace has been shared with us
+        if check_security_contact():
+            compliance_value = "COMPLIANT"
+            custom_annotation = "Security contact validated"
+            logger.info("Security contact registered")
+        else:
+            compliance_value = "NON_COMPLIANT"
+            custom_annotation = "Security contact NOT registered"
+            logger.info("Security contact NOT registered")
         # Update AWS Config with the evaluation result
         evaluations.append(
             build_evaluation(
@@ -207,5 +206,3 @@ def lambda_handler(event, context):
             Evaluations=evaluations,
             ResultToken=event["resultToken"]
         )
-    else:
-        logger.info("Security Contact not checked in account %s - not the Audit account", AWS_ACCOUNT_ID)

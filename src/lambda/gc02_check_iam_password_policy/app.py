@@ -231,7 +231,7 @@ def lambda_handler(event, context):
 
     valid_rule_parameters = evaluate_parameters(rule_parameters)
 
-    if "EXECUTION_ROLE_NAME" in valid_rule_parameters:
+    if "ExecutionRoleName" in valid_rule_parameters:
         EXECUTION_ROLE_NAME = valid_rule_parameters["ExecutionRoleName"]
     else:
         EXECUTION_ROLE_NAME = "AWSA-GCLambdaExecutionRole"
@@ -244,24 +244,21 @@ def lambda_handler(event, context):
     AWS_CONFIG_CLIENT = get_client("config", event)
     AWS_IAM_CLIENT = get_client("iam", event)
 
-    if AWS_ACCOUNT_ID == AUDIT_ACCOUNT_ID:
         # is this a scheduled invokation?
-        if is_scheduled_notification(invoking_event["messageType"]):
-            # yes, proceed
-            # Update AWS Config with the evaluation result
-            assessment_result = assess_iam_password_policy()
-            evaluations = [
-                build_evaluation(
-                    AWS_ACCOUNT_ID,
-                    assessment_result["status"],
-                    event,
-                    resource_type="AWS::::Account",
-                    annotation=assessment_result["annotation"],
-                )
-            ]
-            AWS_CONFIG_CLIENT.put_evaluations(
-                Evaluations=evaluations,
-                ResultToken=event["resultToken"]
+    if is_scheduled_notification(invoking_event["messageType"]):
+        # yes, proceed
+        # Update AWS Config with the evaluation result
+        assessment_result = assess_iam_password_policy()
+        evaluations = [
+            build_evaluation(
+                AWS_ACCOUNT_ID,
+                assessment_result["status"],
+                event,
+                resource_type="AWS::::Account",
+                annotation=assessment_result["annotation"],
             )
-    else:
-        logger.info("IAM Password Policy not checked in account %s - not the Audit account", AWS_ACCOUNT_ID)
+        ]
+        AWS_CONFIG_CLIENT.put_evaluations(
+            Evaluations=evaluations,
+            ResultToken=event["resultToken"]
+        )
