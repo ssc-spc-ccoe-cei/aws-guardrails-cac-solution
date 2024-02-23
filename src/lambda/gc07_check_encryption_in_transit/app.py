@@ -272,10 +272,7 @@ def assess_elbv2_ssl_enforcement(event=None):
                         listener_protocol = listener.get("Protocol", "")
                         if listener_protocol.lower() not in ["https", "tls"]:
                             listener_compliance = "NON_COMPLIANT"
-                            listener_annotation = (
-                                "Non HTTPS/TLS listener protocol - %s",
-                                listener_protocol,
-                            )
+                            listener_annotation = 'Non HTTPS/TLS listener protocol - {}'.format(listener_protocol)
                         else:
                             listener_compliance = "COMPLIANT"
                             listener_annotation = "All listeners leverage HTTPS/TLS"
