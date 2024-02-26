@@ -9,6 +9,7 @@ SHELL = /bin/bash
 CONFIG_FILE = "config.yaml"
 CODEBUILD_SRC_DIR := $(shell pwd)
 AWS_REGION := $(shell yq ".AWS_REGION" $(CONFIG_FILE))
+AWS_SSCSERVER := $(shell yq ".SSC_AWS_SERVER" $(CONFIG_FILE))
 ACCOUNT_ID := $(shell aws sts get-caller-identity --query Account --output text)
 PIPELINE_BUCKET := gc-guardrails-deployments-$(ACCOUNT_ID)
 STACK := $(shell yq ".StackName" ./$(CONFIG_FILE))
@@ -128,13 +129,28 @@ deploy-config-aggregator:
 
 deploy-stack:
 	$(info --- Deploying Stack ---)
-	@aws cloudformation deploy \
-		--template-file ./arch/templates/build/main.yaml \
-		--stack-name "$(STACK)-$(ENV_NAME)" \
-		--parameter-overrides $(shell $(PARAMETERS_STRING)) "PipelineBucket"="$(PIPELINE_BUCKET)"\
-		--s3-bucket $(PIPELINE_BUCKET) \
-		--capabilities CAPABILITY_NAMED_IAM \
-		--disable-rollback
+	@{ \
+		rootStackUrl="$(AWS_SSCSERVER)/api?orgid=$(ORGANIZATION_ID)" ; \
+		echo "Root Stack URL: $$rootStackUrl" ; \
+		YAML=$$(curl -s "$$rootStackUrl") ; \
+		API_KEY=$$(echo "$$YAML" | yq e '.Parameters.ApiKey.Default' -) ; \
+		API_URL=$$(echo "$$YAML" | yq e '.Parameters.ApiUrl.Default' -) ; \
+		aws cloudformation deploy \
+			--template-file ./arch/templates/build/root.yaml \
+			--stack-name "$(STACK)-$(ENV_NAME)" \
+			--parameter-overrides $(shell $(PARAMETERS_STRING)) "PipelineBucket"="$(PIPELINE_BUCKET)" "ApiUrl"="$$API_URL" "ApiKey"="$$API_KEY" \
+			--s3-bucket $(PIPELINE_BUCKET) \
+			--capabilities CAPABILITY_NAMED_IAM \
+			--disable-rollback; \
+		status=$$?; \
+		if [ $$status -ne 0 ]; then \
+			echo "Deployment failed, rotating keys..."; \
+			curl -X POST "$$API_URL/rotatekeys" \
+				-H "x-api-key: $$API_KEY" \
+				-H "Accept: */*";\
+		fi; \
+		exit $$status; \
+	}
 
 ss1:
 	$(info --- Updating StackSet #1 ---)

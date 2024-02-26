@@ -168,7 +168,7 @@ def lambda_handler(event, context):
 
     valid_rule_parameters = evaluate_parameters(rule_parameters)
 
-    if "EXECUTION_ROLE_NAME" in valid_rule_parameters:
+    if "ExecutionRoleName" in valid_rule_parameters:
         EXECUTION_ROLE_NAME = valid_rule_parameters["ExecutionRoleName"]
     else:
         EXECUTION_ROLE_NAME = "AWSA-GCLambdaExecutionRole"
@@ -188,18 +188,17 @@ def lambda_handler(event, context):
         region="us-east-1"
     )
 
-    if AWS_ACCOUNT_ID == AUDIT_ACCOUNT_ID:
-        # is this a scheduled invokation?
-        if is_scheduled_notification(invoking_event["messageType"]):
-            # yes, proceed with checking the marketplace
-            # check if a private marketplace has been shared with us
-            if check_private_marketplace():
-                compliance_value = "COMPLIANT"
-                custom_annotation = "Private Marketplace found"
-            else:
-                compliance_value = "NON_COMPLIANT"
-                custom_annotation = "Private Marketplace NOT found"
-            logger.info(custom_annotation)
+    # is this a scheduled invokation?
+    if is_scheduled_notification(invoking_event["messageType"]):
+        # yes, proceed with checking the marketplace
+        # check if a private marketplace has been shared with us
+        if check_private_marketplace():
+            compliance_value = "COMPLIANT"
+            custom_annotation = "Private Marketplace found"
+        else:
+            compliance_value = "NON_COMPLIANT"
+            custom_annotation = "Private Marketplace NOT found"
+        logger.info(custom_annotation)
 
         # Update AWS Config with the evaluation result
         evaluations.append(
@@ -215,5 +214,3 @@ def lambda_handler(event, context):
             Evaluations=evaluations,
             ResultToken=event["resultToken"]
         )
-    else:
-        logger.info("Private Marketplace not checked in account %s - not the Audit account", AWS_ACCOUNT_ID)

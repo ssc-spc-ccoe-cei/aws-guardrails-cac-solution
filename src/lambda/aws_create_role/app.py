@@ -158,7 +158,8 @@ def delete_iam_policy(session, policy_arn):
     if policy_arn.startswith("arn:aws:iam::aws:policy/"):
         logger.info(f"Skipping deletion of AWS managed policy: {policy_arn}")
         return {"Status": "Skipped", "Reason": "AWS Managed Policy"}
-
+    
+    iam_client = session.client('iam')
     # List all versions of the policy
     versions = iam_client.list_policy_versions(PolicyArn=policy_arn)
 
@@ -171,7 +172,6 @@ def delete_iam_policy(session, policy_arn):
             )
             logger.info(f"Deleted non-default policy version {version['VersionId']}")
 
-    iam_client = session.client('iam')
     sts_response = iam_client.delete_policy(
         PolicyArn=policy_arn
     )
