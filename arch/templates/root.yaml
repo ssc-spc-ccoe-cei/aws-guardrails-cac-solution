@@ -21,7 +21,7 @@ Parameters:
     Default: '5'
   ExecutionName:
     Type: String
-    Default: 'ssc-fedclient-copy-execution-role'
+    Default: 'gc-fedclient-copy-execution-role'
   RootOUID:
     Type: String
     Default: 'r-bv5z'
@@ -53,6 +53,10 @@ Parameters:
     Type: String
     Description: >-
       The deployment pipeline bucket holding child templates and packaged lambda code.
+  DestBucketName:
+    Type: String
+    Default: "*GCDestBucketName*"
+    Description: Bucket to which evidence will be shared
   DeployRoles:
     Type: String
     Default: true
@@ -232,4 +236,5 @@ Resources:
         AuditAccountID: !Ref AuditAccountID
         RootOUID: !Ref RootOUID
         PipelineBucket: !Ref PipelineBucket
+        DestBucketName: !Ref DestBucketName
         DeployRoles: !Ref DeployRoles
