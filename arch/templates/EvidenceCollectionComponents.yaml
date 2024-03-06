@@ -34,6 +34,7 @@ Resources:
   myKey:
     Condition: IsAuditAccount
     Type: "AWS::KMS::Key"
+    DeletionPolicy: Retain
     Properties:
       Description: An example symmetric encryption KMS key
       EnableKeyRotation: true
@@ -122,6 +123,7 @@ Resources:
       Environment:
         Variables:
           target_bucket: !Ref DestBucketName
+          ORG_ID: !Ref OrganizationId
 
   LambdaExecutionRole:
     Condition: IsAuditAccount

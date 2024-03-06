@@ -23,7 +23,14 @@ def get_cfn_outputs(stack_name, session):
   cfn_client = session.client('cloudformation')
   try:
     response = cfn_client.describe_stacks(StackName=stack_name)
-    outputs = response['Stacks'][0]['Outputs']
+    stacks = response.get('Stacks', [])
+    if stacks:
+        # Safely get the 'Outputs' key with a default value of an empty list
+        outputs = stacks[0].get('Outputs', [])
+    else:
+        # Handle the case where no stacks are returned
+        outputs = []
+        print(f"No stacks found for {stack_name}.")
     return outputs
   except ClientError as error:
     if error.response['Error']['Code'] == 'ValidationError' and 'does not exist' in error.response['Error']['Message']:
@@ -66,7 +73,7 @@ parser.add_argument('--update', help = 'json file to update',
 args=parser.parse_args()
 
 output = get_cfn_outputs(stack_name=args.stack, session=s)
-if output is None:
+if output is []:
     print(f"Stack {args.stack} does not exist. Please create the stack or verify the stack name.")
 else:
     # Proceed with updating the JSON only if the stack exists and outputs were retrieved

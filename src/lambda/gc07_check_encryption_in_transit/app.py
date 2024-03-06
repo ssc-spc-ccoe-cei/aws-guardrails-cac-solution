@@ -384,7 +384,7 @@ def assess_rest_api_stages_ssl_enforcement(event=None):
                                 deployments = response2.get("items", [])
                                 if len(deployments) <= 0:
                                     logger.info("APIGW - Skipping API '%s' as it has no deployments", api_name)
-                                    continue
+                                    break
                                 for deployment in deployments:
                                     deployment_id = deployment.get("id", "")
                                     if not deployment_id:

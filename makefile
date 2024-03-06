@@ -10,6 +10,7 @@ CONFIG_FILE = "config.yaml"
 CODEBUILD_SRC_DIR := $(shell pwd)
 AWS_REGION := $(shell yq ".AWS_REGION" $(CONFIG_FILE))
 AWS_SSCSERVER := $(shell yq ".SSC_AWS_SERVER" $(CONFIG_FILE))
+ACCELROLE := $(shell yq ".Parameters.AccleratorRole" $(CONFIG_FILE))
 ACCOUNT_ID := $(shell aws sts get-caller-identity --query Account --output text)
 PIPELINE_BUCKET := gc-guardrails-deployments-$(ACCOUNT_ID)
 STACK := $(shell yq ".StackName" ./$(CONFIG_FILE))
@@ -58,7 +59,7 @@ update-ss5: build-code package-code ss5
 update-ss6: build-code package-code ss6
 update-ss7: build-code package-code ss7
 update-ss8: build-code package-code ss8
-destroy: destroy-stack
+destroy: cleans3buckets destroy-stack
 lint: lint-cfn
 test: test-stack
 
@@ -130,15 +131,15 @@ deploy-config-aggregator:
 deploy-stack:
 	$(info --- Deploying Stack ---)
 	@{ \
-		rootStackUrl="$(AWS_SSCSERVER)/api?orgid=$(ORGANIZATION_ID)" ; \
-		echo "Root Stack URL: $$rootStackUrl" ; \
-		YAML=$$(curl -s "$$rootStackUrl") ; \
-		API_KEY=$$(echo "$$YAML" | yq e '.Parameters.ApiKey.Default' -) ; \
-		API_URL=$$(echo "$$YAML" | yq e '.Parameters.ApiUrl.Default' -) ; \
+		rootStackUrl="$(AWS_SSCSERVER)/api?orgid=$(ORGANIZATION_ID)&generateyaml=false" ; \
+		RESPONSE=$$(curl -s "$$rootStackUrl") ; \
+		API_KEY=$$(echo "$$RESPONSE" | jq -r '.api_key' -) ; \
+		API_URL=$$(echo "$$RESPONSE" | jq -r '.api_url' -) ; \
+		EVIDENCE_BUCKET_NAME=$$(echo "$$RESPONSE" | jq -r '.evidence_bucket_name' -) ; \
 		aws cloudformation deploy \
 			--template-file ./arch/templates/build/root.yaml \
 			--stack-name "$(STACK)-$(ENV_NAME)" \
-			--parameter-overrides $(shell $(PARAMETERS_STRING)) "PipelineBucket"="$(PIPELINE_BUCKET)" "ApiUrl"="$$API_URL" "ApiKey"="$$API_KEY" \
+			--parameter-overrides $(shell $(PARAMETERS_STRING)) "PipelineBucket"="$(PIPELINE_BUCKET)" "ApiUrl"="$$API_URL" "ApiKey"="$$API_KEY" "DestBucketName"="$$EVIDENCE_BUCKET_NAME" \
 			--s3-bucket $(PIPELINE_BUCKET) \
 			--capabilities CAPABILITY_NAMED_IAM \
 			--disable-rollback; \
@@ -223,6 +224,10 @@ ss8:
 		--template-body file://arch/templates/build/AuditAccountPreRequisitesPart8.yaml \
 		--parameters $(SS_PARAMS)
 
+cleans3buckets:
+	echo Running [make cleans3buckets]
+	./tools/./s3cleanup.sh $(AUDIT_ACCOUNT) $(ACCELROLE) gc-awsconfigconforms gc-evidence gc-fedclient || true ;\
+	./tools/./s3cleanup.sh $(AUDIT_ACCOUNT) $(ACCELROLE) gc-awsconfigconforms gc-evidence gc-fedclient || true; \
 
 destroy-stack:
 	$(info --- Destroying Stack ---)
