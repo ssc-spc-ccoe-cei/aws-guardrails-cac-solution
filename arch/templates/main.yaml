@@ -370,7 +370,10 @@ Resources:
                 "elasticloadbalancing:DescribeListeners",
                 "elasticloadbalancing:DescribeLoadBalancers",
                 "es:ListDomainNames",
+                "es:DescribeElasticsearchDomain",
                 "es:DescribeElasticsearchDomains",
+                "es:DescribeDomain",
+                "es:DescribeDomains",
                 "tag:GetResources"
               ],
               "Resource": [
