@@ -306,6 +306,8 @@ Resources:
             Action:
               - "es:ListDomainNames"
               - "es:DescribeDomain"
+              - "es:DescribeDomains"
+              - "es:DescribeElasticsearchDomain"
               - "es:DescribeElasticsearchDomains"
             Resource: "*"
             Effect: Allow

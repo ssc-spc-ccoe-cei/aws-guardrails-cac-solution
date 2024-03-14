@@ -295,6 +295,7 @@ Resources:
           - Sid: AllowES
             Action:
               - "es:ListDomainNames"
+              - "es:DescribeDomains"
               - "es:DescribeElasticsearchDomains"
             Resource: "*"
             Effect: Allow
