@@ -106,3 +106,31 @@ Resources:
         Variables:
           OrganizationName:
             Ref: OrganizationName
+  
+  CronTriggerLambdaPermissions:
+    Condition: IsAuditAccount
+    Type: AWS::Events::Rule
+    Properties:
+      EventBusName: default
+      Name: update-lambda-permissions-every-6-hours
+      ScheduleExpression: cron(0 */6 * * ? *)
+      State: ENABLED
+      Targets:
+        - Id: !Sub ${OrganizationName}update-lambda-permissions
+          Arn: !GetAtt LambdaPermissionsLambda.Arn
+          Input: |-
+            {
+                "RequestType": "Cron"
+            }
+
+  PermissionForEvent0ToInvokeLambda:
+    Condition: IsAuditAccount
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: LambdaPermissionsLambda
+      Action: "lambda:InvokeFunction"
+      Principal: "events.amazonaws.com"
+      SourceArn:
+        Fn::GetAtt:
+          - "CronTriggerLambdaPermissions"
+          - "Arn"
