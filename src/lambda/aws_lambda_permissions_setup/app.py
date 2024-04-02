@@ -1,4 +1,7 @@
 """ Setup Lambda Permissions """
+# This needs to be updated to run on a cronjob as well as modified to be used outside of a custom resource, otherwise new account will not
+# be able to access the config rules
+# Eventbridge rule run every 6 hours
 import os
 import json
 import logging
@@ -256,6 +259,15 @@ def lambda_handler(event, context):
         res = event["PhysicalResourceId"]
         response_data["lower"] = res.lower()
         send(event, context, SUCCESS, response_data)
+    elif event["RequestType"] == "Cron":
+        # try to validate the lambda permissions
+        result = apply_lambda_permissions()
+        if result != 1:
+            # we failed
+            response_data["Reason"] = "Failed to update the Lambda Permissions. Check CloudWatch Logs."
+        else:
+            # success
+            response_data["Reason"] = "Successfully validated the Lambda Permissions. Check CloudWatch Logs."
     else:  # delete / update
         # something else, need to raise error
         send(event, context, FAILED, response_data, response_data["lower"])
