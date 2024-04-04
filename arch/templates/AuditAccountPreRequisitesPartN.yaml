@@ -94,7 +94,7 @@ Resources:
 
   LambdaPermissionsLambda:
     Condition: IsAuditAccount
-    Type: AWS::Lambda::Function  
+    Type: AWS::Lambda::Function
     Properties:
       FunctionName: !Sub "${OrganizationName}aws_lambda_permissions_setup"
       Code: "../../src/lambda/aws_lambda_permissions_setup/build/LambdaPermissionsLambda/"
