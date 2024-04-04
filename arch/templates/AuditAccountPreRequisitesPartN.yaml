@@ -94,7 +94,7 @@ Resources:
 
   LambdaPermissionsLambda:
     Condition: IsAuditAccount
-    Type: AWS::Lambda::Function
+    Type: AWS::Lambda::Function  
     Properties:
       FunctionName: !Sub "${OrganizationName}aws_lambda_permissions_setup"
       Code: "../../src/lambda/aws_lambda_permissions_setup/build/LambdaPermissionsLambda/"
@@ -122,15 +122,19 @@ Resources:
             {
                 "RequestType": "Cron"
             }
+    DependsOn:
+      - LambdaPermissionsLambda
 
   PermissionForEvent0ToInvokeLambda:
     Condition: IsAuditAccount
     Type: AWS::Lambda::Permission
     Properties:
-      FunctionName: LambdaPermissionsLambda
+      FunctionName: !Ref LambdaPermissionsLambda
       Action: "lambda:InvokeFunction"
       Principal: "events.amazonaws.com"
       SourceArn:
         Fn::GetAtt:
           - "CronTriggerLambdaPermissions"
           - "Arn"
+    DependsOn:
+      - LambdaPermissionsLambda
