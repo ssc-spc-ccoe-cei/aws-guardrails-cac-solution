@@ -100,6 +100,7 @@ def build_evaluation(
 def get_iam_users():
     """Get a list of IAM users in the account."""
     result_iam_users = []
+    excluded_accounts = "bgUser"
     try:
         response = AWS_IAM_CLIENT.list_users()
         b_more_data = True
@@ -109,7 +110,8 @@ def get_iam_users():
                 users = response.get("Users")
                 if users:
                     for user in users:
-                        result_iam_users.append({"UserName": user.get("UserName"), "Arn": user.get("Arn")})
+                        if excluded_accounts not in user.get("UserName"):
+                            result_iam_users.append({"UserName": user.get("UserName"), "Arn": user.get("Arn")})
                     if response.get("IsTruncated"):
                         marker = response.get("Marker")
                         response = AWS_IAM_CLIENT.list_users(Marker=marker)
@@ -125,6 +127,7 @@ def get_iam_users():
         logger.error("Error while trying to list_users. %s", ex)
         raise ex
     return result_iam_users
+
 
 
 def check_iam_users_mfa(event):
