@@ -124,6 +124,9 @@ Parameters:
     Type: String
     Default: false
     AllowedValues: [true, false]
+  InvokeUpdate:
+    Type: String
+    Default: '5'
 
 Conditions:
   GenerateEvidenceBucketName: !Equals [ !Ref EvidenceBucketName, "" ]
@@ -170,12 +173,10 @@ Resources:
   InvokeCustomLambda:
     Type: Custom::InvokeCustomLambda
     Condition: DeployRoles
-    DependsOn:
-      - AllAccountPreRequisites
     Properties:
       Version: 15
       ServiceToken: !GetAtt CreateRoleLambda.Arn
-      TrustPrincipal: !Sub arn:aws:iam::${AuditAccountID}:assumed-role/${RolePrefix}default_assessment_role/configLambdaExecution,arn:aws:iam::${AuditAccountID}:assumed-role/${RolePrefix}default_assessment_role/${OrganizationName}gc02_check_iam_password_policy,arn:aws:iam::${AuditAccountID}:assumed-role/${RolePrefix}default_assessment_role/${OrganizationName}gc02_check_iam_users_mfa,arn:aws:iam::${AuditAccountID}:assumed-role/${RolePrefix}default_assessment_role/${OrganizationName}gc05_check_data_location,arn:aws:iam::${AuditAccountID}:assumed-role/${RolePrefix}default_assessment_role/${OrganizationName}gc11_check_security_contact,arn:aws:iam::${AuditAccountID}:assumed-role/${RolePrefix}default_assessment_role/${OrganizationName}gc11_check_trail_logging,arn:aws:iam::${AuditAccountID}:assumed-role/${RolePrefix}default_assessment_role/${OrganizationName}gc12_check_marketplace,arn:aws:iam::${AuditAccountID}:assumed-role/${RolePrefix}default_assessment_role/${OrganizationName}gc03_check_iam_cloudwatch_alarms,arn:aws:iam::${AuditAccountID}:assumed-role/${RolePrefix}default_assessment_role/${OrganizationName}gc04_check_enterprise_monitoring,arn:aws:iam::${AuditAccountID}:assumed-role/${RolePrefix}default_assessment_role/${OrganizationName}gc07_check_secure_network_transmission_policy,arn:aws:iam::${AuditAccountID}:assumed-role/${RolePrefix}default_assessment_role/${OrganizationName}gc08_check_target_network_architecture,arn:aws:iam::${AuditAccountID}:assumed-role/${RolePrefix}default_assessment_role/${OrganizationName}gc10_confirmation_of_mou,arn:aws:iam::${AuditAccountID}:assumed-role/${RolePrefix}default_assessment_role/${OrganizationName}gc01_check_attestation_letter,arn:aws:iam::${AuditAccountID}:assumed-role/${RolePrefix}default_assessment_role/${OrganizationName}gc09_check_netsec_architecture,arn:aws:iam::${AuditAccountID}:assumed-role/${RolePrefix}default_assessment_role/${OrganizationName}gc01_check_root_mfa
+      TrustPrincipal: !Sub arn:${AWS::Partition}:iam::${AuditAccountID}:root
       SwitchRole: !Ref AccleratorRole
       RoleName: !Sub ${AccelRolePrefix}GCLambdaExecutionRole
       PolicyPackage: !Sub
@@ -281,6 +282,17 @@ Resources:
                   "Resource": "*",
                   "Effect": "Allow",
                   "Sid": "GcComplianceAllowListBucketAccess"
+                },
+                {
+                  "Action": [
+                    "account:GetAlternateContact"
+                  ],
+                  "Resource": [
+                    "arn:aws:account::*:account",
+                    "arn:aws:account::*:account/o-*/*"
+                  ],
+                  "Effect": "Allow",
+                  "Sid": "AllowReadAccountInfo"
                 }
               ]
             }]
@@ -301,12 +313,10 @@ Resources:
   InvokeCustomLambda2:
     Type: Custom::InvokeCustomLambda
     Condition: DeployRoles
-    DependsOn:
-      - AllAccountPreRequisites
     Properties:
       Version: 15
       ServiceToken: !GetAtt CreateRoleLambda.Arn
-      TrustPrincipal: !Sub arn:aws:iam::${AuditAccountID}:assumed-role/${RolePrefix}default_assessment_role/configLambdaExecution,arn:aws:iam::${AuditAccountID}:assumed-role/${RolePrefix}default_assessment_role/${OrganizationName}gc06_check_encryption_at_rest_part1,arn:aws:iam::${AuditAccountID}:assumed-role/${RolePrefix}default_assessment_role/${OrganizationName}gc06_check_encryption_at_rest_part2,arn:aws:iam::${AuditAccountID}:assumed-role/${RolePrefix}default_assessment_role/${OrganizationName}gc07_check_encryption_in_transit
+      TrustPrincipal: !Sub arn:${AWS::Partition}:iam::${AuditAccountID}:root
       SwitchRole: !Ref AccleratorRole
       RoleName: !Sub ${AccelRolePrefix}GCLambdaExecutionRole2
       PolicyPackage: |
@@ -948,61 +958,6 @@ Resources:
           Value: "ProServe Delivery Kit"
       TemplateURL: !Sub https://${PipelineBucket}.s3.${AWS::Region}.amazonaws.com/AuditAccountPreRequisitesPartN.yaml
 
-  #######################################################
-  # Part 3 - Assessment Pre-requisites for All accounts
-  #######################################################
-  AllAccountPreRequisites:
-    Condition: DeployRoles
-    Type: AWS::CloudFormation::StackSet
-    DependsOn:
-      - AuditAccountPreRequisitesPart1
-      - AuditAccountPreRequisitesPart2
-      - AuditAccountPreRequisitesPart3
-      - AuditAccountPreRequisitesPart4
-      - AuditAccountPreRequisitesPart5
-      - AuditAccountPreRequisitesPart6
-      - AuditAccountPreRequisitesPart7
-      - AuditAccountPreRequisitesPart8
-      - AuditAccountPreRequisitesPartN
-    Properties:
-      AutoDeployment:
-        Enabled: true
-        RetainStacksOnAccountRemoval: true
-      Capabilities:
-        - CAPABILITY_IAM
-        - CAPABILITY_NAMED_IAM
-      Description: GC Guardrails Assessment - Pre-requisites
-      ManagedExecution:
-        Active: true
-      OperationPreferences:
-        FailureToleranceCount: 100
-        MaxConcurrentCount: 10
-        RegionOrder:
-          - ca-central-1
-      Parameters:
-        - ParameterKey: OrganizationName
-          ParameterValue: !Ref OrganizationName
-        - ParameterKey: AuditAccountID
-          ParameterValue: !Ref AuditAccountID
-        - ParameterKey: EvidenceBucketName
-          ParameterValue: !If [ GenerateEvidenceBucketName, !GetAtt GenerateEvidenceBucketName.EvidenceBucketName, !Ref EvidenceBucketName ]
-        - ParameterKey: RolePrefix
-          ParameterValue: !Ref RolePrefix
-        - ParameterKey: AccelRolePrefix
-          ParameterValue: !Ref AccelRolePrefix
-      PermissionModel: SERVICE_MANAGED
-      StackInstancesGroup:
-        - DeploymentTargets:
-            OrganizationalUnitIds:
-              - !Ref RootOUID
-          Regions:
-            - ca-central-1
-      StackSetName: !Sub "${OrganizationName}-GC-ALL-Accounts-PreReqs"
-      Tags:
-        - Key: Source
-          Value: "ProServe Delivery Kit"
-      TemplateURL: !Sub https://${PipelineBucket}.s3.${AWS::Region}.amazonaws.com/AllAccountPreRequisites.yaml
-
   # MGMT-Account-Pre-Requisites:
   GCLambdaExecutionRole:
     Condition: DeployRoles
@@ -1019,21 +974,7 @@ Resources:
                       "Effect": "Allow",
                       "Principal": {
                           "AWS": [
-                              "arn:aws:sts::${AuditAccountID}:assumed-role/${RolePrefix}default_assessment_role/configLambdaExecution",
-                              "arn:aws:sts::${AuditAccountID}:assumed-role/${RolePrefix}default_assessment_role/${OrganizationName}gc07_check_secure_network_transmission_policy",
-                              "arn:aws:sts::${AuditAccountID}:assumed-role/${RolePrefix}default_assessment_role/${OrganizationName}gc04_check_enterprise_monitoring",
-                              "arn:aws:sts::${AuditAccountID}:assumed-role/${RolePrefix}default_assessment_role/${OrganizationName}gc01_check_attestation_letter",
-                              "arn:aws:sts::${AuditAccountID}:assumed-role/${RolePrefix}default_assessment_role/${OrganizationName}gc11_check_security_contact",
-                              "arn:aws:sts::${AuditAccountID}:assumed-role/${RolePrefix}default_assessment_role/${OrganizationName}gc02_check_iam_users_mfa",
-                              "arn:aws:sts::${AuditAccountID}:assumed-role/${RolePrefix}default_assessment_role/${OrganizationName}gc05_check_data_location",
-                              "arn:aws:sts::${AuditAccountID}:assumed-role/${RolePrefix}default_assessment_role/${OrganizationName}gc11_check_trail_logging",
-                              "arn:aws:sts::${AuditAccountID}:assumed-role/${RolePrefix}default_assessment_role/${OrganizationName}gc02_check_iam_password_policy",
-                              "arn:aws:sts::${AuditAccountID}:assumed-role/${RolePrefix}default_assessment_role/${OrganizationName}gc09_check_netsec_architecture",
-                              "arn:aws:sts::${AuditAccountID}:assumed-role/${RolePrefix}default_assessment_role/${OrganizationName}gc03_check_iam_cloudwatch_alarms",
-                              "arn:aws:sts::${AuditAccountID}:assumed-role/${RolePrefix}default_assessment_role/${OrganizationName}gc10_confirmation_of_mou",
-                              "arn:aws:sts::${AuditAccountID}:assumed-role/${RolePrefix}default_assessment_role/${OrganizationName}gc08_check_target_network_architecture",
-                              "arn:aws:sts::${AuditAccountID}:assumed-role/${RolePrefix}default_assessment_role/${OrganizationName}gc01_check_root_mfa",
-                              "arn:aws:sts::${AuditAccountID}:assumed-role/${RolePrefix}default_assessment_role/${OrganizationName}gc12_check_marketplace"
+                              "arn:${AWS::Partition}:sts::${AuditAccountID}:root"
                           ]
                       },
                       "Action": "sts:AssumeRole"
@@ -1064,10 +1005,7 @@ Resources:
                       "Effect": "Allow",
                       "Principal": {
                           "AWS": [
-                              "arn:aws:sts::${AuditAccountID}:assumed-role/${RolePrefix}default_assessment_role/configLambdaExecution",
-                              "arn:aws:sts::${AuditAccountID}:assumed-role/${RolePrefix}default_assessment_role/${OrganizationName}gc06_check_encryption_at_rest_part1",
-                              "arn:aws:sts::${AuditAccountID}:assumed-role/${RolePrefix}default_assessment_role/${OrganizationName}gc06_check_encryption_at_rest_part2",
-                              "arn:aws:sts::${AuditAccountID}:assumed-role/${RolePrefix}default_assessment_role/${OrganizationName}gc07_check_encryption_in_transit"
+                              "arn:${AWS::Partition}:sts::${AuditAccountID}:root"
                           ]
                       },
                       "Action": "sts:AssumeRole"
