@@ -1,3 +1,4 @@
+#This template is obsolete now and is not used in the current version of the solution. It is kept here for reference purposes only. It was duplicating efforts done by InvokeCustomLambda to create pre req roles.
 AWSTemplateFormatVersion: 2010-09-09
 Description: AWS CloudFormation template to deploy the GC Guardrails Assessment Resources - Workload Accounts
 
@@ -295,7 +296,6 @@ Resources:
           - Sid: AllowES
             Action:
               - "es:ListDomainNames"
-              - "es:DescribeDomains"
               - "es:DescribeElasticsearchDomains"
             Resource: "*"
             Effect: Allow

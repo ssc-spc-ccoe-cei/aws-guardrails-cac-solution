@@ -18,7 +18,8 @@ Parameters:
     Description: Primary identifier for metadata of registered org
   InvokeUpdate:
     Type: String
-    Default: '5'
+    Default: ''
+    Description: UUID to trigger updates
   ExecutionName:
     Type: String
     Default: 'gc-fedclient-copy-execution-role'
@@ -238,3 +239,6 @@ Resources:
         PipelineBucket: !Ref PipelineBucket
         DestBucketName: !Ref DestBucketName
         DeployRoles: !Ref DeployRoles
+      Tags:
+        - Key: "UpdateTrigger"
+          Value: !Ref InvokeUpdate

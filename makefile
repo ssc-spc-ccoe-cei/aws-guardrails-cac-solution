@@ -65,7 +65,7 @@ test: test-stack
 
 create-cloudshell-package:
 	echo Packaging current directory for upload to Cloudshell
-	zip -r -9 cloudshell_package.zip .
+	zip -r -9 cloudshell_package.zip . -x '*.git*' '*.github*'
 
 ## Generate cloudformation parameter file from config
 configure:
@@ -136,10 +136,11 @@ deploy-stack:
 		API_KEY=$$(echo "$$RESPONSE" | jq -r '.api_key' -) ; \
 		API_URL=$$(echo "$$RESPONSE" | jq -r '.api_url' -) ; \
 		EVIDENCE_BUCKET_NAME=$$(echo "$$RESPONSE" | jq -r '.evidence_bucket_name' -) ; \
+		UUID=$$(uuidgen) ; \
 		aws cloudformation deploy \
 			--template-file ./arch/templates/build/root.yaml \
 			--stack-name "$(STACK)-$(ENV_NAME)" \
-			--parameter-overrides $(shell $(PARAMETERS_STRING)) "PipelineBucket"="$(PIPELINE_BUCKET)" "ApiUrl"="$$API_URL" "ApiKey"="$$API_KEY" "DestBucketName"="$$EVIDENCE_BUCKET_NAME" \
+			--parameter-overrides $(shell $(PARAMETERS_STRING)) "PipelineBucket"="$(PIPELINE_BUCKET)" "ApiUrl"="$$API_URL" "ApiKey"="$$API_KEY" "DestBucketName"="$$EVIDENCE_BUCKET_NAME" "InvokeUpdate"="$$UUID" \
 			--s3-bucket $(PIPELINE_BUCKET) \
 			--capabilities CAPABILITY_NAMED_IAM \
 			--disable-rollback; \

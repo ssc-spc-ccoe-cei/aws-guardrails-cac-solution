@@ -34,7 +34,6 @@ Resources:
   myKey:
     Condition: IsAuditAccount
     Type: "AWS::KMS::Key"
-    DeletionPolicy: Retain
     Properties:
       Description: An example symmetric encryption KMS key
       EnableKeyRotation: true
@@ -60,6 +59,8 @@ Resources:
               - "kms:Delete*"
               - "kms:ScheduleKeyDeletion"
               - "kms:CancelKeyDeletion"
+              - "kms:TagResource"
+              - "kms:UntagResource"
             Resource: "*"
           - Sid: Allow use of the key
             Effect: Allow
