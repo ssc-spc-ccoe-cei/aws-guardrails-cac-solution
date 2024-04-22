@@ -11,6 +11,10 @@ Parameters:
     Type: String
   AuditAccountID:
     Type: String
+  BGA1:
+    Type: String
+  BGA2:
+    Type: String
   OrganizationName:
     Type: String
   # GC01
@@ -186,6 +190,16 @@ Resources:
           Fn::If:
             - auditAccountID
             - Ref: AuditAccountID
+            - Ref: AWS::NoValue
+        BgUser1:
+          Fn::If:
+            - BGA1
+            - Ref: BGA1
+            - Ref: AWS::NoValue
+        BgUser2:
+          Fn::If:
+            - BGA2
+            - Ref: BGA2
             - Ref: AWS::NoValue
       Scope:
         ComplianceResourceTypes:
