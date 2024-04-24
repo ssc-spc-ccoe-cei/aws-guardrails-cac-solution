@@ -193,12 +193,12 @@ Resources:
             - Ref: AWS::NoValue
         BgUser1:
           Fn::If:
-            - BGA1
+            - bgUser1
             - Ref: BGA1
             - Ref: AWS::NoValue
         BgUser2:
           Fn::If:
-            - BGA2
+            - bgUser2
             - Ref: BGA2
             - Ref: AWS::NoValue
       Scope:
@@ -803,6 +803,16 @@ Conditions:
       - Fn::Equals:
           - ""
           - Ref: AuditAccountID
+  bgUser1:
+    Fn::Not:
+      - Fn::Equals:
+          - ""
+          - Ref: BGA1
+  bgUser2:
+    Fn::Not:
+      - Fn::Equals:
+          - ""
+          - Ref: BGA2
   # GC01
   s3AttestationLetterPath:
     Fn::Not:
