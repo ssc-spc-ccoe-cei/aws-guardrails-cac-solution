@@ -97,7 +97,7 @@ def build_evaluation(
     return eval_cc
 
 
-def get_iam_users():
+def get_iam_users(bg_accounts):
     """Get a list of IAM users in the account."""
     result_iam_users = []
     try:
@@ -109,7 +109,8 @@ def get_iam_users():
                 users = response.get("Users")
                 if users:
                     for user in users:
-                        result_iam_users.append({"UserName": user.get("UserName"), "Arn": user.get("Arn")})
+                        if user.get("UserName") not in bg_accounts:
+                            result_iam_users.append({"UserName": user.get("UserName"), "Arn": user.get("Arn")})
                     if response.get("IsTruncated"):
                         marker = response.get("Marker")
                         response = AWS_IAM_CLIENT.list_users(Marker=marker)
@@ -127,14 +128,14 @@ def get_iam_users():
     return result_iam_users
 
 
-def check_iam_users_mfa(event):
+def check_iam_users_mfa(event, bg_accounts):
     """Check if any IAM users have MFA enabled.
     Keyword arguments:
     event -- the event variable given in the lambda handler
     """
     result = []
     # get a list of usernames and ARNs
-    iam_users = get_iam_users()
+    iam_users = get_iam_users(bg_accounts)
     if iam_users:
         # check each user
         for user in iam_users:
@@ -234,6 +235,9 @@ def lambda_handler(event, context):
 
     valid_rule_parameters = evaluate_parameters(rule_parameters)
 
+    # Retrieve breakglass accounts
+    bg_accounts = [valid_rule_parameters["BgUser1"], valid_rule_parameters["BgUser2"]]
+
     if "ExecutionRoleName" in valid_rule_parameters:
         EXECUTION_ROLE_NAME = valid_rule_parameters["ExecutionRoleName"]
     else:
@@ -251,7 +255,7 @@ def lambda_handler(event, context):
     if is_scheduled_notification(invoking_event["messageType"]):
         # yes, proceed
         # Update AWS Config with the evaluation result
-        evaluations = check_iam_users_mfa(event)
+        evaluations = check_iam_users_mfa(event, bg_accounts)
         AWS_CONFIG_CLIENT.put_evaluations(
             Evaluations=evaluations,
             ResultToken=event["resultToken"]
