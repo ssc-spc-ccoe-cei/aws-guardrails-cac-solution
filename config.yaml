@@ -21,3 +21,5 @@ Parameters:
   AdditionalAssessmentAdminRoleARN: ""
   ExecutionName: "gc-fedclient-execution-role"
   DeployRoles: "true"
+  BGA1: "bgUser1"
+  BGA2: "bgUser2"

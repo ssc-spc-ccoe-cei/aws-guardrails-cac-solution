@@ -54,5 +54,13 @@
   {
     "ParameterKey": "AdditionalAssessmentAdminRoleARN",
     "ParameterValue": ""
+  },
+  {
+    "ParameterKey": "BGA1",
+    "ParameterValue": ""
+  },
+  {
+    "ParameterKey": "BGA2",
+    "ParameterValue": ""
   }
 ]

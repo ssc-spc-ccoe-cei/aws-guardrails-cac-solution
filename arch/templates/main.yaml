@@ -17,6 +17,8 @@ Metadata:
           - AccelRolePrefix
           - AccleratorRole
           - PipelineBucket
+          - BGA1
+          - BGA2
       - Label:
           default: Optional Parameters
         Parameters:
@@ -36,6 +38,10 @@ Metadata:
         default: ID of the AWS Organizations Root OU
       AuditAccountID:
         default: AWS Account ID of the Audit Account
+      BGA1:
+        default: First Breakglass Account
+      BGA2:
+        default: Second Breakglass Account
       SecurityOUID:
         default: ID of the AWS Organizations Security OU
       RolePrefix:
@@ -80,6 +86,14 @@ Parameters:
     Type: String
     Default: ""
     Description: 12-digit AWS Account ID (e.g., '222222222222')
+  BGA1:
+    Type: String
+    Default: "bgUser1"
+    Description: First breakglass account name
+  BGA2:
+    Type: String
+    Default: "bgUser2"
+    Description: Second breakglass account name
   SecurityOUID:
     Type: String
     Default: ""
@@ -1341,6 +1355,10 @@ Resources:
           ParameterValue: !Ref AuditAccountID
         - ParameterName: DeployVersion
           ParameterValue: !Ref DeployVersion
+        - ParameterName: BGA1
+          ParameterValue: !Ref BGA1
+        - ParameterName: BGA2
+          ParameterValue: !Ref BGA2
         - ParameterName: OrganizationName
           ParameterValue: !Ref OrganizationName
         - ParameterName: S3AttestationLetterPath
