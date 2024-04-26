@@ -55,7 +55,9 @@ Metadata:
       DestBucketName:
         default: Name of the S3 bucket (leave as is unless instructed otherwise)
       DeployRoles:
-        default: True/ False flag used to create GC Guardrails Roles (default - True)
+        default: True/ False flag used to create GC Guardrails Roles (default - False)
+      DeployVersion:
+        default: The version to deploy
 
 Parameters:
   OrganizationName:
@@ -126,7 +128,10 @@ Parameters:
     AllowedValues: [true, false]
   InvokeUpdate:
     Type: String
-    Default: '5'
+    Default: '17d78b5e-9745-41e4-a926-9fd9f660bf23'
+  DeployVersion:
+    Type: String
+    Default: 1.0.0
 
 Conditions:
   GenerateEvidenceBucketName: !Equals [ !Ref EvidenceBucketName, "" ]
@@ -636,7 +641,7 @@ Resources:
       Tags:
         - Key: Source
           Value: "ProServe Delivery Kit"
-      TemplateURL: !Sub https://${PipelineBucket}.s3.${AWS::Region}.amazonaws.com/AuditAccountPreRequisitesPart1.yaml
+      TemplateURL: !Sub https://${PipelineBucket}.s3.${AWS::Region}.amazonaws.com/${DeployVersion}/AuditAccountPreRequisitesPart1.yaml
 
   AuditAccountPreRequisitesPart2:
     Type: AWS::CloudFormation::StackSet
@@ -675,7 +680,7 @@ Resources:
       Tags:
         - Key: Source
           Value: "ProServe Delivery Kit"
-      TemplateURL: !Sub https://${PipelineBucket}.s3.${AWS::Region}.amazonaws.com/AuditAccountPreRequisitesPart2.yaml
+      TemplateURL: !Sub https://${PipelineBucket}.s3.${AWS::Region}.amazonaws.com/${DeployVersion}/AuditAccountPreRequisitesPart2.yaml
 
   AuditAccountPreRequisitesPart3:
     Type: AWS::CloudFormation::StackSet
@@ -714,7 +719,7 @@ Resources:
       Tags:
         - Key: Source
           Value: "ProServe Delivery Kit"
-      TemplateURL: !Sub https://${PipelineBucket}.s3.${AWS::Region}.amazonaws.com/AuditAccountPreRequisitesPart3.yaml
+      TemplateURL: !Sub https://${PipelineBucket}.s3.${AWS::Region}.amazonaws.com/${DeployVersion}/AuditAccountPreRequisitesPart3.yaml
 
   AuditAccountPreRequisitesPart4:
     Type: AWS::CloudFormation::StackSet
@@ -753,7 +758,7 @@ Resources:
       Tags:
         - Key: Source
           Value: "ProServe Delivery Kit"
-      TemplateURL: !Sub https://${PipelineBucket}.s3.${AWS::Region}.amazonaws.com/AuditAccountPreRequisitesPart4.yaml
+      TemplateURL: !Sub https://${PipelineBucket}.s3.${AWS::Region}.amazonaws.com/${DeployVersion}/AuditAccountPreRequisitesPart4.yaml
 
   AuditAccountPreRequisitesPart5:
     Type: AWS::CloudFormation::StackSet
@@ -793,7 +798,7 @@ Resources:
       Tags:
         - Key: Source
           Value: "ProServe Delivery Kit"
-      TemplateURL: !Sub https://${PipelineBucket}.s3.${AWS::Region}.amazonaws.com/AuditAccountPreRequisitesPart5.yaml
+      TemplateURL: !Sub https://${PipelineBucket}.s3.${AWS::Region}.amazonaws.com/${DeployVersion}/AuditAccountPreRequisitesPart5.yaml
 
   AuditAccountPreRequisitesPart6:
     Type: AWS::CloudFormation::StackSet
@@ -832,7 +837,7 @@ Resources:
       Tags:
         - Key: Source
           Value: "ProServe Delivery Kit"
-      TemplateURL: !Sub https://${PipelineBucket}.s3.${AWS::Region}.amazonaws.com/AuditAccountPreRequisitesPart6.yaml
+      TemplateURL: !Sub https://${PipelineBucket}.s3.${AWS::Region}.amazonaws.com/${DeployVersion}/AuditAccountPreRequisitesPart6.yaml
 
   AuditAccountPreRequisitesPart7:
     Type: AWS::CloudFormation::StackSet
@@ -871,7 +876,7 @@ Resources:
       Tags:
         - Key: Source
           Value: "ProServe Delivery Kit"
-      TemplateURL: !Sub https://${PipelineBucket}.s3.${AWS::Region}.amazonaws.com/AuditAccountPreRequisitesPart7.yaml
+      TemplateURL: !Sub https://${PipelineBucket}.s3.${AWS::Region}.amazonaws.com/${DeployVersion}/AuditAccountPreRequisitesPart7.yaml
 
   AuditAccountPreRequisitesPart8:
     Type: AWS::CloudFormation::StackSet
@@ -910,7 +915,7 @@ Resources:
       Tags:
         - Key: Source
           Value: "ProServe Delivery Kit"
-      TemplateURL: !Sub https://${PipelineBucket}.s3.${AWS::Region}.amazonaws.com/AuditAccountPreRequisitesPart8.yaml
+      TemplateURL: !Sub https://${PipelineBucket}.s3.${AWS::Region}.amazonaws.com/${DeployVersion}/AuditAccountPreRequisitesPart8.yaml
 
   AuditAccountPreRequisitesPartN:
     Type: AWS::CloudFormation::StackSet
@@ -956,7 +961,7 @@ Resources:
       Tags:
         - Key: Source
           Value: "ProServe Delivery Kit"
-      TemplateURL: !Sub https://${PipelineBucket}.s3.${AWS::Region}.amazonaws.com/AuditAccountPreRequisitesPartN.yaml
+      TemplateURL: !Sub https://${PipelineBucket}.s3.${AWS::Region}.amazonaws.com/${DeployVersion}/AuditAccountPreRequisitesPartN.yaml
 
   # MGMT-Account-Pre-Requisites:
   GCLambdaExecutionRole:
@@ -1334,6 +1339,8 @@ Resources:
           ParameterValue: !Sub ${AccelRolePrefix}GCLambdaExecutionRole2
         - ParameterName: AuditAccountID
           ParameterValue: !Ref AuditAccountID
+        - ParameterName: DeployVersion
+          ParameterValue: !Ref DeployVersion
         - ParameterName: OrganizationName
           ParameterValue: !Ref OrganizationName
         - ParameterName: S3AttestationLetterPath
@@ -1361,7 +1368,7 @@ Resources:
             - "s3://${ClientEvidenceBucket}/gc-10/signed_mou.pdf"
             - ClientEvidenceBucket: !If [ GenerateEvidenceBucketName, !GetAtt GenerateEvidenceBucketName.EvidenceBucketName, !Ref EvidenceBucketName ]
       OrganizationConformancePackName: !Sub "${OrganizationName}-GC-CP-Guardrails"
-      TemplateS3Uri: !Sub s3://${PipelineBucket}/ConformancePack.yaml
+      TemplateS3Uri: !Sub s3://${PipelineBucket}/${DeployVersion}/ConformancePack.yaml
 
   #######################################################
   # Part 5 - Audit Manager Components
@@ -1418,7 +1425,7 @@ Resources:
       Tags:
         - Key: Source
           Value: "ProServe Delivery Kit"
-      TemplateURL: !Sub https://${PipelineBucket}.s3.${AWS::Region}.amazonaws.com/AuditAccountAuditManager.yaml
+      TemplateURL: !Sub https://${PipelineBucket}.s3.${AWS::Region}.amazonaws.com/${DeployVersion}/AuditAccountAuditManager.yaml
 
   #######################################################
   # Part 6 - Evidence Collection Components
@@ -1466,9 +1473,60 @@ Resources:
       Tags:
         - Key: Source
           Value: "ProServe Delivery Kit"
-      TemplateURL: !Sub https://${PipelineBucket}.s3.${AWS::Region}.amazonaws.com/EvidenceCollectionComponents.yaml
+      TemplateURL: !Sub https://${PipelineBucket}.s3.${AWS::Region}.amazonaws.com/${DeployVersion}/EvidenceCollectionComponents.yaml
 
 Outputs:
   EvidenceBucketNameOut:
+    Description: Amazon S3 bucket where evidence documents should be uploaded to
+    Value: !If [ GenerateEvidenceBucketName, !GetAtt GenerateEvidenceBucketName.EvidenceBucketName, !Ref EvidenceBucketName ]
+
+  #######################################################
+  # Part 7 - Role creation components
+  #######################################################
+  ManagementAccountOrgRoleGenerator:
+    Type: AWS::CloudFormation::StackSet
+    Properties:
+      TemplateURL: !Sub https://${PipelineBucket}.s3.${AWS::Region}.amazonaws.com/${DeployVersion}/OrgRoleGenerator.yaml
+#      AutoDeployment:
+#        Enabled: true
+#        RetainStacksOnAccountRemoval: true
+      Capabilities:
+        - CAPABILITY_IAM
+        - CAPABILITY_NAMED_IAM
+      Description: Compliance Dashboard - Org Role Generation
+      CallAs: SELF
+      ManagedExecution:
+        Active: true
+      OperationPreferences:
+        FailureToleranceCount: 0
+        MaxConcurrentCount: 1
+        RegionOrder:
+          - us-east-1
+      Parameters:
+        - ParameterKey: OrganizationName
+          ParameterValue: !Ref OrganizationName
+        - ParameterKey: AuditAccountID
+          ParameterValue: !Ref AuditAccountID
+        - ParameterKey: ClientEvidenceBucket
+          ParameterValue: !If [ ConditionGenerateEvidenceBucketName, !GetAtt GenerateEvidenceBucketName.EvidenceBucketName, !Ref EvidenceBucketName ]
+        - ParameterKey: AWSConfigConformsBucketName
+          ParameterValue: !If [ GenerateAWSConfigConformsBucketName, !GetAtt GenerateEvidenceBucketName.AWSConfigBucketName, !Ref AWSConfigConformsBucketName ]
+        - ParameterKey: AccelRolePrefix
+          ParameterValue: !Ref AccelRolePrefix
+        - ParameterKey: RolePrefix
+          ParameterValue: !Ref RolePrefix
+        - ParameterKey: AccleratorRole
+          ParameterValue: !Ref AccleratorRole
+      PermissionModel: SELF_MANAGED # SERVICE_MANAGED
+      StackInstancesGroup:
+        - DeploymentTargets:
+            Accounts:
+              - !Sub ${AWS::AccountId}
+          Regions:
+            - us-east-1
+      StackSetName: !Sub "${OrganizationName}-Compliance-Role-Generator"
+
+Outputs:
+  ClientEvidenceBucket:
     Description: Amazon S3 bucket where evidence documents should be uploaded to
     Value: !If [ GenerateEvidenceBucketName, !GetAtt GenerateEvidenceBucketName.EvidenceBucketName, !Ref EvidenceBucketName ]

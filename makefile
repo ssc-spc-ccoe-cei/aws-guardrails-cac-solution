@@ -13,6 +13,7 @@ AWS_SSCSERVER := $(shell yq ".SSC_AWS_SERVER" $(CONFIG_FILE))
 ACCELROLE := $(shell yq ".Parameters.AccleratorRole" $(CONFIG_FILE))
 ACCOUNT_ID := $(shell aws sts get-caller-identity --query Account --output text)
 PIPELINE_BUCKET := gc-guardrails-deployments-$(ACCOUNT_ID)
+DEPLOY_VERSION := $(shell yq ".CACVersion" ./$(CONFIG_FILE))
 STACK := $(shell yq ".StackName" ./$(CONFIG_FILE))
 ENV_NAME := $(shell yq ".EnvironmentName" ./$(CONFIG_FILE))
 GIT_VERSION := $(shell yq ".GitSourceVersion" ./$(CONFIG_FILE))
@@ -76,11 +77,23 @@ configure:
 
 setup-organizations:
 	$(info --- Setup organizations for deployment ---)
-	aws organizations enable-aws-service-access --service-principal=config-multiaccountsetup.amazonaws.com || true ;\
-	aws organizations enable-aws-service-access --service-principal=config.amazonaws.com || true ;\
-	aws organizations register-delegated-administrator --account-id $(AUDIT_ACCOUNT) --service-principal config-multiaccountsetup.amazonaws.com || true ;\
-	aws organizations register-delegated-administrator --account-id $(AUDIT_ACCOUNT) --service-principal config.amazonaws.com || true ;\
+	@aws organizations enable-aws-service-access --service-principal=config-multiaccountsetup.amazonaws.com || true
+	@aws organizations enable-aws-service-access --service-principal=config.amazonaws.com || true
+	@echo "Checking if $(AUDIT_ACCOUNT) is already a delegated administrator for config-multiaccountsetup.amazonaws.com..."
 
+	@if aws organizations list-delegated-administrators --service-principal=config-multiaccountsetup.amazonaws.com | grep -q $(AUDIT_ACCOUNT); then \
+		echo "Account $(AUDIT_ACCOUNT) is already a delegated administrator for config-multiaccountsetup.amazonaws.com."; \
+	else \
+		echo "Registering $(AUDIT_ACCOUNT) as a delegated administrator for config-multiaccountsetup.amazonaws.com..."; \
+		aws organizations register-delegated-administrator --account-id $(AUDIT_ACCOUNT) --service-principal=config-multiaccountsetup.amazonaws.com; \
+	fi
+	@echo "Checking if $(AUDIT_ACCOUNT) is already a delegated administrator for config.amazonaws.com..."
+	@if aws organizations list-delegated-administrators --service-principal=config.amazonaws.com | grep -q $(AUDIT_ACCOUNT); then \
+		echo "Account $(AUDIT_ACCOUNT) is already a delegated administrator for config.amazonaws.com."; \
+	else \
+		echo "Registering $(AUDIT_ACCOUNT) as a delegated administrator for config.amazonaws.com..."; \
+		aws organizations register-delegated-administrator --account-id $(AUDIT_ACCOUNT) --service-principal=config.amazonaws.com; \
+	fi
 
 mb:
 	$(info --- Creating Pipeline Bucket if does not exist ---)
@@ -105,10 +118,11 @@ build-code:
 
 package-code:
 	$(info --- Packaging Lambdas Code & CFN Templates ---)
-	@$(CODEBUILD_SRC_DIR)/tools/package.sh \
+	@$(CODEBUILD_SRC_DIR)/tools/package-deploy.sh \
 		-b $(PIPELINE_BUCKET) -r $(AWS_REGION) \
 		-t $(CODEBUILD_SRC_DIR)/arch/templates \
 		-p $(CODEBUILD_SRC_DIR)/arch/templates/build \
+		-x $(DEPLOY_VERSION) \
 		-g $(GIT_VERSION)
 
 setup-admin-delegate:
@@ -140,7 +154,7 @@ deploy-stack:
 		aws cloudformation deploy \
 			--template-file ./arch/templates/build/root.yaml \
 			--stack-name "$(STACK)-$(ENV_NAME)" \
-			--parameter-overrides $(shell $(PARAMETERS_STRING)) "PipelineBucket"="$(PIPELINE_BUCKET)" "ApiUrl"="$$API_URL" "ApiKey"="$$API_KEY" "DestBucketName"="$$EVIDENCE_BUCKET_NAME" "InvokeUpdate"="$$UUID" \
+			--parameter-overrides $(shell $(PARAMETERS_STRING)) "PipelineBucket"="$(PIPELINE_BUCKET)" "ApiUrl"="$$API_URL" "ApiKey"="$$API_KEY" "DestBucketName"="$$EVIDENCE_BUCKET_NAME" "InvokeUpdate"="$$UUID" "DeployVersion"="$(DEPLOY_VERSION)" \
 			--s3-bucket $(PIPELINE_BUCKET) \
 			--capabilities CAPABILITY_NAMED_IAM \
 			--disable-rollback; \
@@ -242,7 +256,7 @@ lint-cfn:
 ## Backup the config file
 backup-config:
 	echo Running [make backup-config]; \
-	aws s3 cp ./$(CONFIG_FILE) s3://$(PIPELINE_BUCKET)/ ;
+	aws s3 cp ./$(CONFIG_FILE) s3://$(PIPELINE_BUCKET)/$(DEPLOY_VERSION)/ ;
 
 
 test-stack:
