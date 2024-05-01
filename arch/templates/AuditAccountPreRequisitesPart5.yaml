@@ -15,6 +15,11 @@ Parameters:
     Default: "ASEA-"
     Description: >-
       The prefix to apply to generated role names, in ASEA this is generally ASEA- for lza this could be cdk-accel etc
+  PythonRuntime:
+    Type: String
+    Default: 'python3.12'
+    Description:
+      The python runtime to use for the compliance dashboard
 Conditions:
   IsAuditAccount: !Equals
     - !Ref AWS::AccountId
@@ -30,8 +35,11 @@ Resources:
       Code: "../../src/lambda/gc04_check_enterprise_monitoring/build/GC04CheckEnterpriseMonitoringLambda/"
       Handler: app.lambda_handler
       Role: !Sub "arn:aws:iam::${AuditAccountID}:role/${RolePrefix}default_assessment_role"
-      Runtime: python3.9
+      Runtime: !Ref PythonRuntime
       Timeout: 90
+      LoggingConfig:
+        LogGroup: !Sub "${OrganizationName}gc_guardrails"
+        LogFormat: "JSON"
 
   ## GC05
   GC05CheckDataLocationLambda:
@@ -42,5 +50,8 @@ Resources:
       Code: "../../src/lambda/gc05_check_data_location/build/GC05CheckDataLocationLambda/"
       Handler: app.lambda_handler
       Role: !Sub "arn:aws:iam::${AuditAccountID}:role/${RolePrefix}default_assessment_role"
-      Runtime: python3.9
+      Runtime: !Ref PythonRuntime
       Timeout: 900
+      LoggingConfig:
+        LogGroup: !Sub "${OrganizationName}gc_guardrails"
+        LogFormat: "JSON"

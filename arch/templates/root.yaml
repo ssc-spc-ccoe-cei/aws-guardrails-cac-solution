@@ -241,7 +241,7 @@ Resources:
         OrganizationName: !Ref OrganizationName
         RolePrefix: !Ref RolePrefix
         AccelRolePrefix: !Ref AccelRolePrefix
-        AccleratorRole: !Ref AcceleratorRole
+        AcceleratorRole: !Ref AcceleratorRole
         SecurityOUID: !Ref SecurityOUID
         AuditAccountID: !Ref AuditAccountID
         RootOUID: !Ref RootOUID
@@ -253,3 +253,6 @@ Resources:
       Tags:
         - Key: "UpdateTrigger"
           Value: !Ref InvokeUpdate
+        - Key: "DeployVersion"
+          Value: !Ref DeployVersion
+

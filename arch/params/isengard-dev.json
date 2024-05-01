@@ -32,7 +32,7 @@
     "ParameterValue": "AWSA-"
   },
   {
-    "ParameterKey": "AccleratorRole",
+    "ParameterKey": "AcceleratorRole",
     "ParameterValue": "OrganizationAccountAccessRole"
   },
   {

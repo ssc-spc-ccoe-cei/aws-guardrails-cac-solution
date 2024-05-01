@@ -13,6 +13,11 @@ Parameters:
   RolePrefix:
     Type: String
     Description: prefix for roles created by this template
+  PythonRuntime:
+    Type: String
+    Default: 'python3.12'
+    Description:
+      The python runtime to use for the compliance dashboard
 
 Conditions:
   IsAuditAccount: !Equals
@@ -29,7 +34,7 @@ Resources:
       Code: "../../src/lambda/gc02_check_iam_users_mfa/build/GC02CheckIAMUsersMFALambda/"
       Handler: app.lambda_handler
       Role: !Sub "arn:aws:iam::${AuditAccountID}:role/${RolePrefix}default_assessment_role"
-      Runtime: python3.9
+      Runtime: !Ref PythonRuntime
       Timeout: 180
 
   GC02CheckIAMPasswordPolicyLambda:
@@ -40,5 +45,5 @@ Resources:
       Code: "../../src/lambda/gc02_check_iam_password_policy/build/GC02CheckIAMPasswordPolicyLambda/"
       Handler: app.lambda_handler
       Role: !Sub "arn:aws:iam::${AuditAccountID}:role/${RolePrefix}default_assessment_role"
-      Runtime: python3.9
+      Runtime: !Ref PythonRuntime
       Timeout: 180

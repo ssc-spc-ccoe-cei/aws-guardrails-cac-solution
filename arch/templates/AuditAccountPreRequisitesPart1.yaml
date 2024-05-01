@@ -28,6 +28,11 @@ Parameters:
     Type: String
     Default: "AWSA-"
     Description: The Accelerator role prefix for priveledged access
+  PythonRuntime:
+    Type: String
+    Default: 'python3.12'
+    Description:
+      The python runtime to use for the compliance dashboard
 
 Conditions:
   GenerateEvidenceBucketName: !Equals
@@ -114,7 +119,7 @@ Resources:
       Code: "../../src/lambda/aws_buckets_setup/build/BucketsSetupLambda/"
       Handler: app.lambda_handler
       Role: !GetAtt BucketSetupLambdaExecutionRole.Arn
-      Runtime: python3.9
+      Runtime: !Ref PythonRuntime
       Timeout: 300
     DependsOn:
       - BucketSetupLambdaExecutionRolePolicy
@@ -386,8 +391,11 @@ Resources:
       Code: "../../src/lambda/gc01_check_attestation_letter/build/GC01CheckAttestationLetterLambda/"
       Handler: app.lambda_handler
       Role: !GetAtt GCDefaultLambdaExecutionRole.Arn
-      Runtime: python3.9
+      Runtime: !Ref PythonRuntime
       Timeout: 90
+      LoggingConfig:
+        LogGroup: !Sub "${OrganizationName}gc_guardrails"
+        LogFormat: "JSON"
 
   ## GC02
   GC02CheckAccountManagementPlanLambda:
@@ -398,5 +406,8 @@ Resources:
       Code: "../../src/lambda/gc02_check_account_mgmt_plan/build/GC02CheckAccountManagementPlanLambda/"
       Handler: app.lambda_handler
       Role: !GetAtt GCDefaultLambdaExecutionRole.Arn
-      Runtime: python3.9
+      Runtime: !Ref PythonRuntime
       Timeout: 90
+      LoggingConfig:
+        LogGroup: !Sub "${OrganizationName}gc_guardrails"
+        LogFormat: "JSON"

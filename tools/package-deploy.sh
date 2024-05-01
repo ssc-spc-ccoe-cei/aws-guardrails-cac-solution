@@ -59,15 +59,10 @@ echo "$REGION"
 ## any child templates that is not the main template
 for fp in "$TEMPLATE_DIR"/*.yaml; do
   file=$(basename $fp)
-  if [ $file != 'root.yaml' ]; then
-    aws cloudformation package --s3-bucket $BUCKET --s3-prefix $S3PREFIX --force-upload --template-file "$fp" --output-template-file "$TEMPLATEPACKAGED_DIR/$file" --region $REGION || { echo "Error while packaging file $file."; exit 1; }
-    aws s3 cp "$TEMPLATEPACKAGED_DIR/$file" "s3://$BUCKET/$S3PREFIX/$file" --region $REGION
-  fi
+  aws cloudformation package --s3-bucket $BUCKET --s3-prefix $S3PREFIX --force-upload --template-file "$fp" --output-template-file "$TEMPLATEPACKAGED_DIR/$file" --region $REGION || { echo "Error while packaging file $file."; exit 1; }
+  aws s3 cp "$TEMPLATEPACKAGED_DIR/$file" "s3://$BUCKET/$S3PREFIX/$file" --region $REGION
 done
 
-## root template packaging
-aws cloudformation package --s3-bucket $BUCKET --s3-prefix $S3PREFIX --force-upload --template-file "$TEMPLATE_DIR/root.yaml" --output-template-file "$TEMPLATEPACKAGED_DIR/root.yaml" --region $REGION  || { echo "Error while packaging file root.yaml."; exit 1; }
-aws s3 cp "$TEMPLATEPACKAGED_DIR/main.yaml" "s3://$BUCKET/$S3PREFIX/main.yaml" --region $REGION
 ## Store the pipeline git hash as an artifact.
 JSON_FMT='{"CodeBuildResolvedSourceVersion":"%s"}\n'
 printf "$JSON_FMT" "$GIT_SOURCE_VERSION" > "$TEMPLATEPACKAGED_DIR/git.json"

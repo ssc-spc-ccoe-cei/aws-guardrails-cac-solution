@@ -41,18 +41,23 @@ for prefix in "$@"; do
             echo "Failed to empty bucket ${bucket}."
             continue
         fi
-        
-        #Note: Deleting the bucket is not recommended as it may cause issues when deleting stack, use it only when needed
-        # echo "Deleting bucket: $bucket"
 
-        # # Delete the bucket
-        # aws s3api delete-bucket --bucket $bucket
+        # Check if the bucket name starts with the prefix "gc-fedclient"
+        # Note: Deleting this bucket is not recommended as it may cause issues when deleting stack as cloudformation should delete this bucket upon stack deletion
+        if [[ $bucket == gc-fedclient* ]]; then
+            echo "Skipping deletion of bucket ${bucket} with protected prefix."
+        else
+            echo "Deleting bucket: $bucket"
 
-        # if [ $? -ne 0 ]; then
-        #     echo "Failed to delete bucket ${bucket}."
-        # else
-        #     echo "Bucket $bucket deleted successfully."
-        # fi
+            # Delete the bucket
+            aws s3api delete-bucket --bucket $bucket
+
+            if [ $? -ne 0 ]; then
+                echo "Failed to delete bucket ${bucket}."
+            else
+                echo "Bucket $bucket deleted successfully."
+            fi
+        fi
     done
 done
 

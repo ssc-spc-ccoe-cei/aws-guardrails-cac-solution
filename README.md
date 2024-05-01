@@ -63,7 +63,7 @@ Parameters:
   RolePrefix: "gc-"
 # Role prefix used to create roles with permissions to access all aws resources, this is usually defined in an SCP.
   AccelRolePrefix: "AWSA-"
-  AccleratorRole: "OrganizationAccountAccessRole"
+  AcceleratorRole: "OrganizationAccountAccessRole"
   DestBucketName: ""
   EvidenceBucketName: ""
   AWSConfigConformsBucketName: ""

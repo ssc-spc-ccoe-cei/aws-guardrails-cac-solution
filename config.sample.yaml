@@ -12,7 +12,7 @@ Parameters:
   # Can be left default
   RolePrefix: "gc-"
   AccelRolePrefix: "AWSA-"
-  AccleratorRole: "OrganizationAccountAccessRole"
+  AcceleratorRole: "OrganizationAccountAccessRole"
   DestBucketName: ""
   EvidenceBucketName: ""
   AWSConfigConformsBucketName: ""
