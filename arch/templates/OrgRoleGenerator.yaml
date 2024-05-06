@@ -377,6 +377,7 @@ Resources:
                                   f"Error attaching {iam_role['RoleName']} to {policy['Arn']}. Exception: {err}")
               logger.info(f"Accounts Modified {accounts_modified}")
 
+
   EventBridgeCreateAccount:
     Type: AWS::Events::Rule
     Properties: 
@@ -390,7 +391,7 @@ Resources:
               eventSource:
                 - "organizations.amazonaws.com"
               serviceEventDetails:
-                createAccountResult:
+                createAccountStatus:
                   state:
                     - SUCCEEDED
       State: "ENABLED"
@@ -578,7 +579,18 @@ Resources:
                             },
                             {
                               "Action": [
-                                "s3: ListAllMyBuckets"
+                                "account:GetAlternateContact"
+                              ],
+                              "Resource": [
+                                "arn:aws:account::*:account",
+                                "arn:aws:account::*:account/o-*/*"
+                              ],
+                              "Effect": "Allow",
+                              "Sid": "AllowReadAccountInfo"
+                            },
+                            {
+                              "Action": [
+                                "s3:ListAllMyBuckets"
                               ],
                               "Resource": "*",
                               "Effect": "Allow",
