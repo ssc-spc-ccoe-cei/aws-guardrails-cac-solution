@@ -18,7 +18,7 @@ Parameters:
     Description: Primary identifier for metadata of registered org
   InvokeUpdate:
     Type: String
-    Default: ''
+    Default: '17d78b5e-9745-41e4-a926-9fd9f660bf23'
     Description: UUID to trigger updates
   ExecutionName:
     Type: String
@@ -68,6 +68,9 @@ Parameters:
     Type: String
     Default: true
     AllowedValues: [true, false]
+  DeployVersion:
+    Type: String
+    Default: 1.0.0
 
 Resources:  
   InvokeCustomLambdaApplyPolicyFunction:
@@ -231,14 +234,14 @@ Resources:
   GuardRailsStack:
     Type: AWS::CloudFormation::Stack
     Properties:
-      TemplateURL: !Sub https://${PipelineBucket}.s3.${AWS::Region}.amazonaws.com/main.yaml
+      TemplateURL: !Sub https://${PipelineBucket}.s3.${AWS::Region}.amazonaws.com/${DeployVersion}/main.yaml
       Parameters:
         ExecutionName: !Ref ExecutionName
         OrganizationId: !Ref OrganizationId
         OrganizationName: !Ref OrganizationName
         RolePrefix: !Ref RolePrefix
         AccelRolePrefix: !Ref AccelRolePrefix
-        AccleratorRole: !Ref AcceleratorRole
+        AcceleratorRole: !Ref AcceleratorRole
         SecurityOUID: !Ref SecurityOUID
         AuditAccountID: !Ref AuditAccountID
         RootOUID: !Ref RootOUID
@@ -250,3 +253,6 @@ Resources:
       Tags:
         - Key: "UpdateTrigger"
           Value: !Ref InvokeUpdate
+        - Key: "DeployVersion"
+          Value: !Ref DeployVersion
+

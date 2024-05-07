@@ -15,6 +15,11 @@ Parameters:
     Default: "ASEA-"
     Description: >-
       The prefix to apply to generated role names, in ASEA this is generally ASEA- for lza this could be cdk-accel etc
+  PythonRuntime:
+    Type: String
+    Default: 'python3.12'
+    Description:
+      The python runtime to use for the compliance dashboard
 
 Conditions:
   IsAuditAccount: !Equals
@@ -35,8 +40,11 @@ Resources:
       Code: "../../src/lambda/gc07_check_secure_network_transmission_policy/build/GC07CheckSecureNetworkTransmissionPolicyLambda/"
       Handler: app.lambda_handler
       Role: !Sub "arn:aws:iam::${AuditAccountID}:role/${RolePrefix}default_assessment_role"
-      Runtime: python3.9
+      Runtime: !Ref PythonRuntime
       Timeout: 90
+      LoggingConfig:
+        LogGroup: !Sub "${OrganizationName}gc_guardrails"
+        LogFormat: "JSON"
 
   ## GC08
   GC08CheckTargetNetworkArchitectureLambda:
@@ -47,8 +55,11 @@ Resources:
       Code: "../../src/lambda/gc08_check_target_network_architecture/build/GC08CheckTargetNetworkArchitectureLambda/"
       Handler: app.lambda_handler
       Role: !Sub "arn:aws:iam::${AuditAccountID}:role/${RolePrefix}default_assessment_role"
-      Runtime: python3.9
+      Runtime: !Ref PythonRuntime
       Timeout: 90
+      LoggingConfig:
+        LogGroup: !Sub "${OrganizationName}gc_guardrails"
+        LogFormat: "JSON"
 
   ## GC09
   GC09CheckNetworkSecurityArchitectureDocumentLambda:
@@ -59,8 +70,11 @@ Resources:
       Code: "../../src/lambda/gc09_check_netsec_architecture/build/GC09CheckNetworkSecurityArchitectureDocumentLambda/"
       Handler: app.lambda_handler
       Role: !Sub "arn:aws:iam::${AuditAccountID}:role/${RolePrefix}default_assessment_role"
-      Runtime: python3.9
+      Runtime: !Ref PythonRuntime
       Timeout: 90
+      LoggingConfig:
+        LogGroup: !Sub "${OrganizationName}gc_guardrails"
+        LogFormat: "JSON"
 
   ## GC10
   GC10CheckSignedMOULambda:
@@ -71,8 +85,11 @@ Resources:
       Code: "../../src/lambda/gc10_confirmation_of_mou/build/GC10CheckSignedMOULambda/"
       Handler: app.lambda_handler
       Role: !Sub "arn:aws:iam::${AuditAccountID}:role/${RolePrefix}default_assessment_role"
-      Runtime: python3.9
+      Runtime: !Ref PythonRuntime
       Timeout: 90
+      LoggingConfig:
+        LogGroup: !Sub "${OrganizationName}gc_guardrails"
+        LogFormat: "JSON"
 
   ## GC11
   GC11CheckSecurityContactLambda:
@@ -83,5 +100,8 @@ Resources:
       Code: "../../src/lambda/gc11_check_security_contact/build/GC11CheckSecurityContactLambda/"
       Handler: app.lambda_handler
       Role: !Sub "arn:aws:iam::${AuditAccountID}:role/${RolePrefix}default_assessment_role"
-      Runtime: python3.9
+      Runtime: !Ref PythonRuntime
       Timeout: 90
+      LoggingConfig:
+        LogGroup: !Sub "${OrganizationName}gc_guardrails"
+        LogFormat: "JSON"

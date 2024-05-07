@@ -15,7 +15,7 @@ Metadata:
           - SecurityOUID
           - RolePrefix
           - AccelRolePrefix
-          - AccleratorRole
+          - AcceleratorRole
           - PipelineBucket
           - BGA1
           - BGA2
@@ -27,6 +27,7 @@ Metadata:
           - AdditionalAssessmentAdminRoleARN
           - DestBucketName
           - DeployRoles
+          - DeployVersion
     ParameterLabels:
       OrganizationName:
         default: The name of the organization
@@ -48,7 +49,7 @@ Metadata:
         default: The prefix to apply to generated role names
       AccelRolePrefix:
         default: The Accelerator role prefix for priveledged access, in ASEA or LZA deployed by ProServices this could be AWSA- etc
-      AccleratorRole:
+      AcceleratorRole:
         default: The role used to assume access to organizational accounts, in ASEA = ASEA-PipelineRole, LZA = OrganizationAccountAccessRole could also be PBMMAccel etc.
       PipelineBucket:
         default: The deployment pipeline bucket holding child templates and packaged lambda code.
@@ -61,7 +62,15 @@ Metadata:
       DestBucketName:
         default: Name of the S3 bucket (leave as is unless instructed otherwise)
       DeployRoles:
-        default: True/ False flag used to create GC Guardrails Roles (default - True)
+        default: True/ False flag used to create GC Guardrails Roles (default - False)
+      DeployVersion:
+        default: The version to deploy
+      GC04EnterpriseMonitoringIAMRoleName:
+        default: GC04 Enterprise Monitoring IAM Role Name
+      GC04EnterpriseMonitoringIAMTrustedPrincipal:
+        default: GC04 Enterprise Monitoring IAM Trusted Principal
+      PythonRuntime:
+        default: Python Runtime
 
 Parameters:
   OrganizationName:
@@ -107,7 +116,7 @@ Parameters:
     Default: "AWSA-"
     Description: >-
       The Accelerator role prefix for priveledged access, in ASEA or LZA deployed by ProServices this could be AWSA- etc
-  AccleratorRole:
+  AcceleratorRole:
     Type: String
     Description: >-
       The role used to assume access to organizational accounts, in ASEA = ASEA-PipelineRole, LZA = OrganizationAccountAccessRole could also be PBMMAccel etc.
@@ -134,13 +143,27 @@ Parameters:
     Type: String
     Default: "*GCDestBucketName*"
     Description: Bucket to which evidence will be shared
+  GC04EnterpriseMonitoringIAMRoleName:
+    Type: String
+    Default: "CloudBrokering"
+  GC04EnterpriseMonitoringIAMTrustedPrincipal:
+    Type: String
+    Default: "arn:aws:iam::939755092653:root"        
   DeployRoles:
     Type: String
     Default: false
     AllowedValues: [true, false]
   InvokeUpdate:
     Type: String
-    Default: '5'
+    Default: '17d78b5e-9745-41e4-a926-9fd9f660bf23'
+  DeployVersion:
+    Type: String
+    Default: 1.0.0
+  PythonRuntime:
+    Type: String
+    Default: 'python3.12'
+    Description:
+      The python runtime to use for the compliance dashboard
 
 Conditions:
   GenerateEvidenceBucketName: !Equals [ !Ref EvidenceBucketName, "" ]
@@ -157,7 +180,7 @@ Resources:
     Condition: DeployRoles
     Properties:
       ManagedPolicyArns:
-        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+        - !Sub arn:${AWS::Partition}:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
       AssumeRolePolicyDocument:
         Version: "2012-10-17"
         Statement:
@@ -177,7 +200,7 @@ Resources:
                   - sts:AssumeRole
                   - logs:CreateLogStream
                   - logs:PutLogEvents
-                Resource: !Sub arn:aws:iam::*:role/${AccleratorRole}
+                Resource: !Sub arn:${AWS::Partition}:iam::*:role/${AcceleratorRole}
               - Effect: Allow
                 Action:
                   - "organizations:ListAccounts"
@@ -188,10 +211,10 @@ Resources:
     Type: Custom::InvokeCustomLambda
     Condition: DeployRoles
     Properties:
-      Version: 15
+      Version: 16
       ServiceToken: !GetAtt CreateRoleLambda.Arn
       TrustPrincipal: !Sub arn:${AWS::Partition}:iam::${AuditAccountID}:root
-      SwitchRole: !Ref AccleratorRole
+      SwitchRole: !Ref AcceleratorRole
       RoleName: !Sub ${AccelRolePrefix}GCLambdaExecutionRole
       PolicyPackage: !Sub
         - |
@@ -254,8 +277,10 @@ Resources:
                     "iam:ListAttachedRolePolicies",
                     "iam:ListMFADevices",
                     "iam:ListUsers",
+                    "iam:ListRoles",
                     "aws-marketplace:ListEntities",
-                    "organizations:DescribeOrganization"
+                    "organizations:DescribeOrganization",
+                    "organizations:ListAccounts"
                   ],
                   "Resource": [
                     "*"
@@ -281,10 +306,10 @@ Resources:
                     "s3:GetObjectVersion"
                   ],
                   "Resource": [
-                    "arn:aws:s3:::${ClientEvidenceBucket}/*",
-                    "arn:aws:s3:::${ClientEvidenceBucket}",
-                    "arn:aws:s3:::${AWSConfigConformsBucketName}/*",
-                    "arn:aws:s3:::${AWSConfigConformsBucketName}"
+                    "arn:${AWS::Partition}:s3:::${ClientEvidenceBucket}/*",
+                    "arn:${AWS::Partition}:s3:::${ClientEvidenceBucket}",
+                    "arn:${AWS::Partition}:s3:::${AWSConfigConformsBucketName}/*",
+                    "arn:${AWS::Partition}:s3:::${AWSConfigConformsBucketName}"
                   ],
                   "Effect": "Allow",
                   "Sid": "GcComplianceAllowBucketAccess"
@@ -328,10 +353,10 @@ Resources:
     Type: Custom::InvokeCustomLambda
     Condition: DeployRoles
     Properties:
-      Version: 15
+      Version: 16
       ServiceToken: !GetAtt CreateRoleLambda.Arn
       TrustPrincipal: !Sub arn:${AWS::Partition}:iam::${AuditAccountID}:root
-      SwitchRole: !Ref AccleratorRole
+      SwitchRole: !Ref AcceleratorRole
       RoleName: !Sub ${AccelRolePrefix}GCLambdaExecutionRole2
       PolicyPackage: |
         {
@@ -417,7 +442,7 @@ Resources:
       Code: "../../src/lambda/aws_create_role/build/CreateRoleLambda/"
       Handler: app.lambda_handler
       Role: !GetAtt LambdaCreateRole.Arn
-      Runtime: python3.10
+      Runtime: !Ref PythonRuntime
       Timeout: 900
 
   # AWS Config setup requirements
@@ -431,7 +456,7 @@ Resources:
             Action:
               - "logs:CreateLogGroup"
             Resource:
-              - !Sub "arn:aws:logs:${AWS::Region}:${AWS::AccountId}:*"
+              - !Sub "arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:*"
             Effect: Allow
           - Sid: AllowLogging
             Action:
@@ -439,7 +464,7 @@ Resources:
               - "logs:CreateLogStream"
               - "logs:PutLogEvents"
             Resource:
-              - !Sub "arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/lambda/${OrganizationName}gc*"
+              - !Sub "arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/lambda/${OrganizationName}gc*"
             Effect: Allow
           - Sid: AllowOrganizationsSetup
             Action:
@@ -466,7 +491,7 @@ Resources:
               - "sts:AssumeRole"
       Description: "Setup AWS Organizations"
       ManagedPolicyArns:
-        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+        - !Sub arn:${AWS::Partition}:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
       Path: "/"
       RoleName: !Sub ${RolePrefix}setup_organizations_role
       Tags:
@@ -483,13 +508,13 @@ Resources:
       Code: "../../src/lambda/aws_config_setup/build/AWSConfigSetupLambda/"
       Handler: app.lambda_handler
       Role: !GetAtt SetupAWSConfigLambdaExecutionRole.Arn
-      Runtime: python3.9
+      Runtime: !Ref PythonRuntime
       Timeout: 90
 
   AWSConfigOrganizationsSetup:
     Type: Custom::AWSConfigOrganizationsSetup
     Properties:
-      ServiceToken: !Sub "arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:${OrganizationName}aws_config_setup"
+      ServiceToken: !Sub "arn:${AWS::Partition}:lambda:${AWS::Region}:${AWS::AccountId}:function:${OrganizationName}aws_config_setup"
       AuditAccountId: !Ref AuditAccountID
     DependsOn:
       - AWSConfigSetupLambda
@@ -505,7 +530,7 @@ Resources:
             Action:
               - "logs:CreateLogGroup"
             Resource:
-              - !Sub "arn:aws:logs:${AWS::Region}:${AWS::AccountId}:*"
+              - !Sub "arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:*"
             Effect: Allow
           - Sid: AllowLogging
             Action:
@@ -513,7 +538,7 @@ Resources:
               - "logs:CreateLogStream"
               - "logs:PutLogEvents"
             Resource:
-              - !Sub "arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/lambda/${OrganizationName}gc*"
+              - !Sub "arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/lambda/${OrganizationName}gc*"
             Effect: Allow
           - Sid: AllowOrganizationsSetup
             Action:
@@ -541,8 +566,8 @@ Resources:
               - "sts:AssumeRole"
       Description: "Setup AWS Audit Manager"
       ManagedPolicyArns:
-        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
-        - arn:aws:iam::aws:policy/AWSAuditManagerAdministratorAccess
+        - !Sub arn:${AWS::Partition}:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+        - !Sub arn:${AWS::Partition}:iam::aws:policy/AWSAuditManagerAdministratorAccess
       Path: "/"
       RoleName: !Sub ${RolePrefix}setup_auditmanager_role
       Tags:
@@ -556,13 +581,13 @@ Resources:
       Code: "../../src/lambda/aws_auditmanager_setup/build/AWSAuditManagerSetupLambda/"
       Handler: app.lambda_handler
       Role: !GetAtt SetupAWSAuditManagerLambdaExecutionRole.Arn
-      Runtime: python3.9
+      Runtime: !Ref PythonRuntime
       Timeout: 90
 
   AWSAuditManagerOrganizationsSetup:
     Type: Custom::AWSAuditManagerOrganizationsSetup
     Properties:
-      ServiceToken: !Sub "arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:${OrganizationName}aws_auditmanager_setup"
+      ServiceToken: !Sub "arn:${AWS::Partition}:lambda:${AWS::Region}:${AWS::AccountId}:function:${OrganizationName}aws_auditmanager_setup"
       AuditAccountId: !Ref AuditAccountID
     DependsOn:
       - AWSAuditManagerSetupLambda
@@ -576,14 +601,14 @@ Resources:
       Code: "../../src/lambda/aws_generate_bucket_name/build/GenerateEvidenceBucketNameLambda/"
       Handler: app.lambda_handler
       Role: !GetAtt SetupAWSAuditManagerLambdaExecutionRole.Arn
-      Runtime: python3.9
+      Runtime: !Ref PythonRuntime
       Timeout: 90
 
   GenerateEvidenceBucketName:
     Type: Custom::GenerateEvidenceBucketName
     Condition: GenerateEvidenceBucketName
     Properties:
-      ServiceToken: !Sub "arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:${OrganizationName}aws_generate_bucket_name"
+      ServiceToken: !Sub "arn:${AWS::Partition}:lambda:${AWS::Region}:${AWS::AccountId}:function:${OrganizationName}aws_generate_bucket_name"
       AuditAccountId: !Ref AuditAccountID
     DependsOn:
       - GenerateEvidenceBucketNameLambda
@@ -650,7 +675,7 @@ Resources:
       Tags:
         - Key: Source
           Value: "ProServe Delivery Kit"
-      TemplateURL: !Sub https://${PipelineBucket}.s3.${AWS::Region}.amazonaws.com/AuditAccountPreRequisitesPart1.yaml
+      TemplateURL: !Sub https://${PipelineBucket}.s3.${AWS::Region}.amazonaws.com/${DeployVersion}/AuditAccountPreRequisitesPart1.yaml
 
   AuditAccountPreRequisitesPart2:
     Type: AWS::CloudFormation::StackSet
@@ -689,7 +714,7 @@ Resources:
       Tags:
         - Key: Source
           Value: "ProServe Delivery Kit"
-      TemplateURL: !Sub https://${PipelineBucket}.s3.${AWS::Region}.amazonaws.com/AuditAccountPreRequisitesPart2.yaml
+      TemplateURL: !Sub https://${PipelineBucket}.s3.${AWS::Region}.amazonaws.com/${DeployVersion}/AuditAccountPreRequisitesPart2.yaml
 
   AuditAccountPreRequisitesPart3:
     Type: AWS::CloudFormation::StackSet
@@ -728,7 +753,7 @@ Resources:
       Tags:
         - Key: Source
           Value: "ProServe Delivery Kit"
-      TemplateURL: !Sub https://${PipelineBucket}.s3.${AWS::Region}.amazonaws.com/AuditAccountPreRequisitesPart3.yaml
+      TemplateURL: !Sub https://${PipelineBucket}.s3.${AWS::Region}.amazonaws.com/${DeployVersion}/AuditAccountPreRequisitesPart3.yaml
 
   AuditAccountPreRequisitesPart4:
     Type: AWS::CloudFormation::StackSet
@@ -767,7 +792,7 @@ Resources:
       Tags:
         - Key: Source
           Value: "ProServe Delivery Kit"
-      TemplateURL: !Sub https://${PipelineBucket}.s3.${AWS::Region}.amazonaws.com/AuditAccountPreRequisitesPart4.yaml
+      TemplateURL: !Sub https://${PipelineBucket}.s3.${AWS::Region}.amazonaws.com/${DeployVersion}/AuditAccountPreRequisitesPart4.yaml
 
   AuditAccountPreRequisitesPart5:
     Type: AWS::CloudFormation::StackSet
@@ -807,7 +832,7 @@ Resources:
       Tags:
         - Key: Source
           Value: "ProServe Delivery Kit"
-      TemplateURL: !Sub https://${PipelineBucket}.s3.${AWS::Region}.amazonaws.com/AuditAccountPreRequisitesPart5.yaml
+      TemplateURL: !Sub https://${PipelineBucket}.s3.${AWS::Region}.amazonaws.com/${DeployVersion}/AuditAccountPreRequisitesPart5.yaml
 
   AuditAccountPreRequisitesPart6:
     Type: AWS::CloudFormation::StackSet
@@ -846,7 +871,7 @@ Resources:
       Tags:
         - Key: Source
           Value: "ProServe Delivery Kit"
-      TemplateURL: !Sub https://${PipelineBucket}.s3.${AWS::Region}.amazonaws.com/AuditAccountPreRequisitesPart6.yaml
+      TemplateURL: !Sub https://${PipelineBucket}.s3.${AWS::Region}.amazonaws.com/${DeployVersion}/AuditAccountPreRequisitesPart6.yaml
 
   AuditAccountPreRequisitesPart7:
     Type: AWS::CloudFormation::StackSet
@@ -885,7 +910,7 @@ Resources:
       Tags:
         - Key: Source
           Value: "ProServe Delivery Kit"
-      TemplateURL: !Sub https://${PipelineBucket}.s3.${AWS::Region}.amazonaws.com/AuditAccountPreRequisitesPart7.yaml
+      TemplateURL: !Sub https://${PipelineBucket}.s3.${AWS::Region}.amazonaws.com/${DeployVersion}/AuditAccountPreRequisitesPart7.yaml
 
   AuditAccountPreRequisitesPart8:
     Type: AWS::CloudFormation::StackSet
@@ -924,7 +949,7 @@ Resources:
       Tags:
         - Key: Source
           Value: "ProServe Delivery Kit"
-      TemplateURL: !Sub https://${PipelineBucket}.s3.${AWS::Region}.amazonaws.com/AuditAccountPreRequisitesPart8.yaml
+      TemplateURL: !Sub https://${PipelineBucket}.s3.${AWS::Region}.amazonaws.com/${DeployVersion}/AuditAccountPreRequisitesPart8.yaml
 
   AuditAccountPreRequisitesPartN:
     Type: AWS::CloudFormation::StackSet
@@ -970,7 +995,7 @@ Resources:
       Tags:
         - Key: Source
           Value: "ProServe Delivery Kit"
-      TemplateURL: !Sub https://${PipelineBucket}.s3.${AWS::Region}.amazonaws.com/AuditAccountPreRequisitesPartN.yaml
+      TemplateURL: !Sub https://${PipelineBucket}.s3.${AWS::Region}.amazonaws.com/${DeployVersion}/AuditAccountPreRequisitesPartN.yaml
 
   # MGMT-Account-Pre-Requisites:
   GCLambdaExecutionRole:
@@ -997,7 +1022,7 @@ Resources:
           }
       Description: "GC Guardrails - Assessment Role"
       ManagedPolicyArns:
-        - arn:aws:iam::aws:policy/service-role/AWSConfigRulesExecutionRole
+        - !Sub arn:${AWS::Partition}:iam::aws:policy/service-role/AWSConfigRulesExecutionRole
       Path: "/"
       RoleName: !Sub ${AccelRolePrefix}GCLambdaExecutionRole
       Tags:
@@ -1028,7 +1053,7 @@ Resources:
           }
       Description: "GC Guardrails - Assessment Role 2"
       ManagedPolicyArns:
-        - arn:aws:iam::aws:policy/service-role/AWSConfigRulesExecutionRole
+        - !Sub arn:${AWS::Partition}:iam::aws:policy/service-role/AWSConfigRulesExecutionRole
       Path: "/"
       RoleName: !Sub ${AccelRolePrefix}GCLambdaExecutionRole2
       Tags:
@@ -1054,7 +1079,7 @@ Resources:
             Action:
               - "redshift:DescribeClusters"
               - "redshift:DescribeClusterParameters"
-            Resource: "arn:aws:redshift:*:*:cluster:*"
+            Resource: !Sub "arn:${AWS::Partition}:redshift:*:*:cluster:*"
             Effect: Allow
           - Sid: AllowAPI
             Action:
@@ -1108,7 +1133,7 @@ Resources:
               - "s3:GetObjectVersion"
             Resource:
               - !Sub
-                - "arn:aws:s3:::${ClientEvidenceBucket}"
+                - "arn:${AWS::Partition}:s3:::${ClientEvidenceBucket}"
                 - ClientEvidenceBucket:
                     !If [
                       GenerateEvidenceBucketName,
@@ -1116,7 +1141,7 @@ Resources:
                       !Ref EvidenceBucketName,
                     ]
               - !Sub
-                - "arn:aws:s3:::${ClientEvidenceBucket}/*"
+                - "arn:${AWS::Partition}:s3:::${ClientEvidenceBucket}/*"
                 - ClientEvidenceBucket:
                     !If [
                       GenerateEvidenceBucketName,
@@ -1145,7 +1170,7 @@ Resources:
             Action:
               - "logs:CreateLogGroup"
             Resource:
-              - !Sub "arn:aws:logs:${AWS::Region}:${AWS::AccountId}:*"
+              - !Sub "arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:*"
             Effect: Allow
           - Sid: AllowLogging
             Action:
@@ -1153,7 +1178,7 @@ Resources:
               - "logs:CreateLogStream"
               - "logs:PutLogEvents"
             Resource:
-              - !Sub "arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/lambda/${OrganizationName}gc*"
+              - !Sub "arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/lambda/${OrganizationName}gc*"
             Effect: Allow
       PolicyName: !Sub "${OrganizationName}GCLambdaExecutionRoleCWLogsPolicy"
       Roles:
@@ -1260,8 +1285,8 @@ Resources:
             Action:
               - "account:GetAlternateContact"
             Resource:
-              - "arn:aws:account::*:account"
-              - "arn:aws:account::*:account/o-*/*"
+              - !Sub "arn:${AWS::Partition}:account::*:account"
+              - !Sub "arn:${AWS::Partition}:account::*:account/o-*/*"
             Effect: Allow
       PolicyName: GCLambdaExecutionRoleAccountPolicy
       Roles:
@@ -1348,12 +1373,18 @@ Resources:
           ParameterValue: !Sub ${AccelRolePrefix}GCLambdaExecutionRole2
         - ParameterName: AuditAccountID
           ParameterValue: !Ref AuditAccountID
+        - ParameterName: DeployVersion
+          ParameterValue: !Ref DeployVersion
         - ParameterName: BGA1
           ParameterValue: !Ref BGA1
         - ParameterName: BGA2
           ParameterValue: !Ref BGA2
         - ParameterName: OrganizationName
           ParameterValue: !Ref OrganizationName
+        - ParameterName: EnterpriseMonitoringIAMRoleName
+          ParameterValue: !Ref GC04EnterpriseMonitoringIAMRoleName
+        - ParameterName: EnterpriseMonitoringIAMTrustedPrincipal
+          ParameterValue: !Ref GC04EnterpriseMonitoringIAMTrustedPrincipal
         - ParameterName: S3AttestationLetterPath
           ParameterValue: !Sub
             - "s3://${ClientEvidenceBucket}/gc-01/attestation_letter.pdf"
@@ -1379,7 +1410,7 @@ Resources:
             - "s3://${ClientEvidenceBucket}/gc-10/signed_mou.pdf"
             - ClientEvidenceBucket: !If [ GenerateEvidenceBucketName, !GetAtt GenerateEvidenceBucketName.EvidenceBucketName, !Ref EvidenceBucketName ]
       OrganizationConformancePackName: !Sub "${OrganizationName}-GC-CP-Guardrails"
-      TemplateS3Uri: !Sub s3://${PipelineBucket}/ConformancePack.yaml
+      TemplateS3Uri: !Sub s3://${PipelineBucket}/${DeployVersion}/ConformancePack.yaml
 
   #######################################################
   # Part 5 - Audit Manager Components
@@ -1436,7 +1467,7 @@ Resources:
       Tags:
         - Key: Source
           Value: "ProServe Delivery Kit"
-      TemplateURL: !Sub https://${PipelineBucket}.s3.${AWS::Region}.amazonaws.com/AuditAccountAuditManager.yaml
+      TemplateURL: !Sub https://${PipelineBucket}.s3.${AWS::Region}.amazonaws.com/${DeployVersion}/AuditAccountAuditManager.yaml
 
   #######################################################
   # Part 6 - Evidence Collection Components
@@ -1484,9 +1515,54 @@ Resources:
       Tags:
         - Key: Source
           Value: "ProServe Delivery Kit"
-      TemplateURL: !Sub https://${PipelineBucket}.s3.${AWS::Region}.amazonaws.com/EvidenceCollectionComponents.yaml
+      TemplateURL: !Sub https://${PipelineBucket}.s3.${AWS::Region}.amazonaws.com/${DeployVersion}/EvidenceCollectionComponents.yaml
+  #######################################################
+  # Part 7 - Role creation components
+  #######################################################
+  ManagementAccountOrgRoleGenerator:
+    Type: AWS::CloudFormation::StackSet
+    Properties:
+      TemplateURL: !Sub https://${PipelineBucket}.s3.${AWS::Region}.amazonaws.com/${DeployVersion}/OrgRoleGenerator.yaml
+#      AutoDeployment:
+#        Enabled: true
+#        RetainStacksOnAccountRemoval: true
+      Capabilities:
+        - CAPABILITY_IAM
+        - CAPABILITY_NAMED_IAM
+      Description: Compliance Dashboard - Org Role Generation
+      CallAs: SELF
+      ManagedExecution:
+        Active: true
+      OperationPreferences:
+        FailureToleranceCount: 0
+        MaxConcurrentCount: 1
+        RegionOrder:
+          - us-east-1
+      Parameters:
+        - ParameterKey: OrganizationName
+          ParameterValue: !Ref OrganizationName
+        - ParameterKey: AuditAccountID
+          ParameterValue: !Ref AuditAccountID
+        - ParameterKey: ClientEvidenceBucket
+          ParameterValue: !If [ GenerateEvidenceBucketName, !GetAtt GenerateEvidenceBucketName.EvidenceBucketName, !Ref EvidenceBucketName ]
+        - ParameterKey: AWSConfigConformsBucketName
+          ParameterValue: !If [ GenerateAWSConfigConformsBucketName, !GetAtt GenerateEvidenceBucketName.AWSConfigBucketName, !Ref AWSConfigConformsBucketName ]
+        - ParameterKey: AccelRolePrefix
+          ParameterValue: !Ref AccelRolePrefix
+        - ParameterKey: RolePrefix
+          ParameterValue: !Ref RolePrefix
+        - ParameterKey: AcceleratorRole
+          ParameterValue: !Ref AcceleratorRole
+      PermissionModel: SELF_MANAGED # SERVICE_MANAGED
+      StackInstancesGroup:
+        - DeploymentTargets:
+            Accounts:
+              - !Sub ${AWS::AccountId}
+          Regions:
+            - us-east-1
+      StackSetName: !Sub "${OrganizationName}-Compliance-Role-Generator"
 
 Outputs:
-  EvidenceBucketNameOut:
+  ClientEvidenceBucket:
     Description: Amazon S3 bucket where evidence documents should be uploaded to
     Value: !If [ GenerateEvidenceBucketName, !GetAtt GenerateEvidenceBucketName.EvidenceBucketName, !Ref EvidenceBucketName ]

@@ -25,6 +25,11 @@ Parameters:
     Default: "ASEA-"
     Description: >-
       The prefix to apply to generated role names, in ASEA this is generally ASEA- for lza this could be cdk-accel etc
+  PythonRuntime:
+    Type: String
+    Default: 'python3.12'
+    Description:
+      The python runtime to use for the compliance dashboard
 
 Conditions:
   IsAuditAccount: !Equals
@@ -123,7 +128,7 @@ Resources:
       Code: "../../src/lambda/aws_auditmanager_resources_config_setup/build/AuditManagerResourcesLambda/"
       Handler: app.lambda_handler
       Role: !GetAtt AuditManagerResourcesLambdaExecutionRole.Arn
-      Runtime: python3.9
+      Runtime: !Ref PythonRuntime
       Timeout: 180
 
   AWSAuditManagerSetup:

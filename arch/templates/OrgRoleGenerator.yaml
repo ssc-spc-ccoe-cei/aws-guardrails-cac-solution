@@ -1,0 +1,612 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: AWS CloudFormation template to deploy the GC Guardrails Organizational Role Generator
+
+Parameters:
+  OrganizationName:
+    Type: String
+    Default: ""
+    Description: The name of the organization. Used as a prefix in resource names.
+  AuditAccountID:
+    Type: String
+    Description: >-
+      The AWS Account ID (12 digits) of the Audit Account
+  ClientEvidenceBucket:
+    Type: String
+    Description: >-
+      The name of the Amazon S3 bucket to be created to store the required documents for assessment.
+  AWSConfigConformsBucketName:
+    Type: String
+    Description: >-
+      The name of the Amazon S3 bucket used for the conformance pack deployment .
+  RolePrefix:
+    Type: String
+    Default: "ASEA-"
+    Description: >-
+      The prefix to apply to generated role names, in ASEA this is generally ASEA- for lza this could be cdk-accel etc
+  AccelRolePrefix:
+    Type: String
+    Default: "AWSA-"
+    Description: >-
+      The Accelerator role prefix for priveledged access, in ASEA or LZA deployed by Proservices this could be AWSA- etc
+  AcceleratorRole:
+    Type: String
+    Description: >-
+      The role used to assume access to organizational accounts, in ASEA = ASEA-PipelineRole, LZA = OrganizationAccountAccessRole could also be PBMMAccel etc.
+  PythonRuntime:
+    Type: String
+    Default: 'python3.12'
+    Description:
+      The python runtime to use for the compliance dashboard
+
+Resources:
+  LambdaCreateRole:
+    Type: "AWS::IAM::Role"
+    Properties:
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action:
+              - sts:AssumeRole
+      Path: "/"
+      Policies:
+        - PolicyName: assume_role
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - sts:AssumeRole
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Resource: !Sub arn:aws:iam::*:role/${AcceleratorRole}
+              - Effect: Allow
+                Action:
+                  - "organizations:ListAccounts"
+                Resource:
+                  - "*"
+  CreateRoleLambda:
+    Type: "AWS::Lambda::Function"
+    Properties:
+      FunctionName: !Sub ${OrganizationName}aws_org_create_role
+      Handler: index.lambda_handler
+      Role: !GetAtt LambdaCreateRole.Arn
+      Runtime: !Ref PythonRuntime
+      Timeout: 900
+      Code: 
+        ZipFile: |
+          """ Lambda function used to create roles in all organizational accounts. """
+          import json
+          import logging
+          import boto3
+          from boto3.session import Session
+          import urllib3
+          import time
+          import random
+          import string
+
+          SUCCESS = "SUCCESS"
+          FAILED = "FAILED"
+          # cfnresponse replacement
+          http = urllib3.PoolManager()
+          logger = logging.getLogger()
+          logger.setLevel(logging.INFO)
+
+          def get_org_accounts():
+              """
+              Returns a list of all accounts in the organization.
+              """
+
+              session = Session()
+              org_client = session.client('organizations')
+
+              paginator = org_client.get_paginator('list_accounts')
+              page_iterator = paginator.paginate()
+
+              accounts = []
+              for page in page_iterator:
+                  accounts.extend(page['Accounts'])
+
+              return accounts
+
+
+          def create_iam_policy(session, policy_name, policy_document):
+              """
+              Creates an IAM policy.
+              """
+              logger.info(f"Create Policy {policy_name} using {policy_document}")
+              iam_client = session.client('iam')
+              sts_response = iam_client.create_policy(
+                  PolicyName=policy_name,
+                  PolicyDocument=policy_document
+              )
+              return sts_response['Policy']
+
+
+          def attach_iam_policy_to_role(session, role_name, policy_arn):
+              """
+              Attaches an IAM policy to a role.
+              """
+              logger.info(f"Attach Policy: {policy_arn} to Role {role_name}")
+              iam_client = session.client('iam')
+              sts_response = iam_client.attach_role_policy(
+                  RoleName=role_name,
+                  PolicyArn=policy_arn
+              )
+              return sts_response
+
+
+          def create_iam_role(session, role_name, principal):
+              """
+              Creates an IAM role.
+              """
+              logger.info(f"Creating Role {role_name}")
+              iam_client = session.client('iam')
+              assume_role_policy_document = {
+                  'Version': '2012-10-17',
+                  'Statement': [
+                      {
+                          'Effect': 'Allow',
+                          'Principal': {
+                              'AWS': principal
+                          },
+                          'Action': 'sts:AssumeRole'
+                      }
+                  ]
+              }
+              sts_response = iam_client.create_role(
+                  RoleName=role_name,
+                  AssumeRolePolicyDocument=json.dumps(assume_role_policy_document)
+              )
+              return sts_response['Role']
+
+
+          def delete_role(session, role_name):
+              """
+              Deletes an IAM role.
+              """
+              logger.info(f"Deleting Role {role_name}")
+              iam_client = session.client('iam')
+              sts_response = iam_client.delete_role(
+                  RoleName=role_name
+              )
+              return sts_response
+
+
+          def delete_all_inline_policy(session,role_name):
+              """
+              Deletes all inline policies from a role.
+              """
+              logger.info(f"Deleting all inline policies from: {role_name}")
+              iam_client = session.client('iam')
+              sts_response = iam_client.list_role_policies(
+                  RoleName=role_name
+              )
+              logger.info(f"Deleting inline policies: {sts_response['PolicyNames']}")
+              for policy in sts_response['PolicyNames']:
+                  sts_response = iam_client.delete_role_policy(
+                      RoleName=role_name,
+                      PolicyName=policy
+                  )
+              sts_response = iam_client.list_role_policies(
+                  RoleName=role_name
+              )
+              logger.info(f"current inline policies: {sts_response['PolicyNames']}")
+              return sts_response
+
+
+          def detach_all_policies_from_role(session, role_name):
+              """
+              Detaches all policies from a role.
+              """
+              logger.info(f"Detaching all policies from: {role_name}")
+              iam_client = session.client('iam')
+              sts_response = iam_client.list_attached_role_policies(
+                  RoleName=role_name
+              )
+              logger.info(f"Detaching policies: {sts_response['AttachedPolicies']}")
+              for policy in sts_response['AttachedPolicies']:
+                  sts_response = iam_client.detach_role_policy(
+                      RoleName=role_name,
+                      PolicyArn=policy['PolicyArn']
+                  )
+                  delete_iam_policy(session, policy_arn=policy['PolicyArn'])
+              return sts_response
+
+          def detach_policy_from_all_roles(session, policy_arn):
+              """
+              Detaches a policy from all roles.
+              """
+              logger.info(f"Detach Policy: {policy_arn} from all roles")
+              iam_client = session.client('iam')
+              sts_response = iam_client.list_roles()
+              for role in sts_response['Roles']:
+                  try:
+                      sts_response = iam_client.detach_role_policy(
+                          RoleName=role['RoleName'],
+                          PolicyArn=policy_arn
+                      )
+                  except:
+                      pass
+              return sts_response
+
+
+          def get_account_id(session):
+              """
+              Returns the account ID.
+              """
+              sts_client = session.client('sts')
+              return sts_client.get_caller_identity()['Account']
+
+
+          def assume_role(session, account_id, role_name):
+              """
+              Assumes a role.
+              """
+              sts_client = session.client('sts')
+              sts_response = sts_client.assume_role(
+                  RoleArn=f"arn:aws:iam::{account_id}:role/{role_name}",
+                  RoleSessionName=str(account_id)
+              )
+              sts_session = boto3.Session(aws_access_key_id=sts_response['Credentials']['AccessKeyId'], aws_secret_access_key=sts_response[
+                                          'Credentials']['SecretAccessKey'], aws_session_token=sts_response['Credentials']['SessionToken'])
+              return sts_session
+
+
+          def delete_iam_policy(session, policy_arn):
+              """
+              Deletes an IAM policy.
+              """
+              logger.info(f"Deleting IAM policy {policy_arn}")
+              iam_client = session.client('iam')
+              try:
+                  sts_response = iam_client.delete_policy(
+                      PolicyArn=policy_arn
+                  )
+              except Exception as err:
+                  logger.info(f"{policy_arn} {err}")
+                  # Policy is attached to something, detach it from everything, then delete it again
+                  detach_policy_from_all_roles(session,policy_arn)
+                  logger.info(f"Deleting IAM policy {policy_arn}")
+                  sts_response = iam_client.delete_policy(
+                      PolicyArn=policy_arn
+                  )
+              return sts_response
+
+
+          def get_random_string(length):
+              # choose from all lowercase letter
+              letters = string.ascii_lowercase
+              result_str = ''.join(random.choice(letters) for i in range(length))
+              return result_str
+
+
+          def lambda_handler(event, context):
+              """This function is the main entry point for Lambda.
+              Keyword arguments:
+              event -- the event variable given in the lambda handler
+              context -- the context variable given in the lambda handler
+              """
+              response_data = {}
+              logger.info('Event: {}'.format(event))
+              roles = event['Roles']
+              accounts_modified = []
+                  
+              try: # Get the Management account id
+                  session = boto3.Session()
+              except Exception as err:
+                  logger.error(f"Error getting session: {err}")
+                  response_data['Error'] = f"Error getting session: {err}"
+                  raise err
+              try:
+                  account_id = get_account_id(session)
+              except Exception as err:
+                  logger.error(f"Error getting account ID: {err}")
+                  response_data['Error'] = f"Error getting account ID: {err}"
+                  raise err
+              try: # Get every account in the organization
+                  accounts = get_org_accounts()
+              except Exception as err:
+                  logger.error(f"Error getting accounts: {err}")
+                  response_data['Error'] = f"Error getting accounts: {err}"
+                  raise err
+                  
+              # For every account in the organization
+              logger.info(f"Accounts {accounts}")
+              for account in accounts:
+                  if account['Status'] != "ACTIVE":
+                      logger.info(f"Found inactive account {account['Id']}")
+                      continue  # Skip non-active accounts
+                  if account_id in account['Id']:  # Skip the managment account
+                      logger.info(f"Skipping the management account {account['Id']}")
+                      continue # do not skip the management account
+                  logger.info(f"Account: {account['Id']}")
+                  accounts_modified.append(account['Id'])
+              
+                  for role in roles: # For every role supplied
+                      logger.info(f"Role: {role}")
+                      # Get parameters from event
+                      trust_principal = role['TrustPrincipal']
+                      switch_role = role['SwitchRole']
+                      role_name = role['Name']
+                      policy_string = role['PolicyPackage']
+                      logger.info(f"Policy String: {policy_string}")
+                      policy_package = policy_string #json.loads(policy_string, strict=False)
+                      try: # Assume the supplied switch_role in the account we are deploying roles to
+                          sts_session = assume_role(
+                              session=session, account_id=account['Id'], role_name=switch_role)
+                      except Exception as err:
+                          logger.error(f"Error assuming role: {err}")
+                          response_data['Error'] = f"Error assuming role: {err}"
+                          raise err
+                      try: # Create the IAM role
+                          iam_role = create_iam_role(
+                              session=sts_session, role_name=role_name, principal=trust_principal)
+                      except Exception as err: # On error, remove all the policies from the role, delete, then re-create it
+                          logger.info(
+                              f"Existing IAM Role {role_name} found, removing policies and deleting role. Exception: {err}")
+                          delete_all_inline_policy(
+                              session=sts_session, role_name=role_name)
+                          detach_all_policies_from_role(
+                              session=sts_session, role_name=role_name)
+                          time.sleep(3)
+                          delete_role(session=sts_session, role_name=role_name)
+                          iam_role = create_iam_role(
+                              session=sts_session, role_name=role_name, principal=trust_principal)
+                      
+                      for policy_doc in policy_package['Docs']: # For each policy in the supplied policy document
+                          logger.info(f"Policy_Doc:{json.dumps(policy_doc)}")
+                          try:
+                              policy = create_iam_policy(
+                                  session=sts_session, policy_name=f"{policy_doc['Statement'][0]['Sid']}-{get_random_string(6)}", policy_document=json.dumps(policy_doc))
+                          except Exception as err: # The policy exists already, so attach it to the role
+                              logger.info(
+                                  f"Existing Policy {policy_doc['Statement'][0]['Sid']} found. Exception: {err}")
+                              response_data['Error'] = f"Existing Policy {policy_doc['Statement'][0]['Sid']} found. Exception: {err}"
+                              policy = {}
+                              policy['Arn'] = f"arn:aws:iam::{account['Id']}:policy/{policy_doc['Statement'][0]['Sid']}"
+                          try:
+                              attach_iam_policy_to_role(
+                                  session=sts_session, role_name=iam_role['RoleName'], policy_arn=policy['Arn'])
+                          except Exception as err:
+                              logger.info(
+                                  f"Error attaching {iam_role['RoleName']} to {policy['Arn']}. Exception: {err}")
+              logger.info(f"Accounts Modified {accounts_modified}")
+
+
+  EventBridgeCreateAccount:
+    Type: AWS::Events::Rule
+    Properties: 
+      Description: !Sub ${OrganizationName}-New-Account-Role-Trigger
+      EventPattern: 
+            source: 
+              - "aws.organizations"
+            detail: 
+              eventName:
+                - "CreateAccountResult"
+              eventSource:
+                - "organizations.amazonaws.com"
+              serviceEventDetails:
+                createAccountStatus:
+                  state:
+                    - SUCCEEDED
+      State: "ENABLED"
+      Targets: 
+        - 
+          Arn: !GetAtt CreateRoleLambda.Arn
+          Id: "TargetFunctionV1"
+          Input: !Sub |-
+              {
+                
+                "Roles": [
+                  {
+                    "Name": "${AccelRolePrefix}GCLambdaExecutionRole2",
+                    "TrustPrincipal": "arn:${AWS::Partition}:iam::${AuditAccountID}:root",
+                    "SwitchRole": "${AcceleratorRole}",
+                    "PolicyPackage": {
+                      "Docs": [{
+                        "Version": "2012-10-17",
+                        "Statement": [{
+                          "Action": [
+                            "apigateway:GET",
+                            "apigateway:GET", 
+                            "backup:ListBackupVaults",
+                            "backup:ListRecoveryPointsByBackupVault",
+                            "cassandra:Select",
+                            "codebuild:BatchGetProjects",
+                            "codebuild:ListProjects",
+                            "config:PutEvaluations",
+                            "docdb-elastic:ListClusterSnapshots",
+                            "docdb-elastic:ListClusters",
+                            "dynamodb:DescribeTable",
+                            "dynamodb:ListTables",
+                            "ec2:DescribeRegions",
+                            "ec2:DescribeVolumes",
+                            "ec2:GetEbsEncryptionByDefault",
+                            "elasticache:DescribeCacheClusters",
+                            "elasticache:DescribeSnapshots",
+                            "elasticfilesystem:DescribeFileSystems",
+                            "elasticloadbalancing:DescribeListeners",
+                            "elasticloadbalancing:DescribeLoadBalancers",
+                            "eks:DescribeCluster",
+                            "eks:ListClusters",
+                            "es:DescribeElasticsearchDomains",  
+                            "es:ListDomainNames",
+                            "kinesis:DescribeStream",
+                            "kinesis:ListStreams",
+                            "memorydb:DescribeClusters",
+                            "memorydb:DescribeSnapshots",
+                            "qldb:DescribeLedger",
+                            "qldb:ListLedgers",
+                            "rds:DescribeDBClusters",
+                            "rds:DescribeDBClusterSnapshots",
+                            "rds:DescribeDBInstances",
+                            "rds:DescribeDBSnapshots",
+                            "redshift:DescribeClusterParameters",
+                            "redshift:DescribeClusters",
+                            "resource-explorer-2:ListIndexes",
+                            "resource-explorer-2:Search",
+                            "s3:GetBucketLocation",
+                            "s3:GetBucketPolicy",
+                            "s3:GetEncryptionConfiguration",
+                            "s3:ListAllMyBuckets",  
+                            "s3:ListBucket",
+                            "sns:GetTopicAttributes",
+                            "sns:ListTopics",
+                            "tag:GetResources",
+                            "tag:GetResources",
+                            "timestream:DescribeEndpoints",
+                            "timestream:ListDatabases",
+                            "timestream:ListTables",
+                            "cloudtrail:DescribeTrails",
+                            "cloudtrail:GetTrailStatus",
+                            "cloudtrail:ListTrails",
+                            "organizations:DescribeOrganization",
+                            "organizations:ListAccounts"
+                          ],
+                          "Resource": [
+                            "*"
+                          ],
+                          "Effect": "Allow",
+                          "Sid": "GCComplianceAllowAccess2"
+                        }]
+                      }]
+                    }
+                  },
+                  {
+                    "Name": "${AccelRolePrefix}GCLambdaExecutionRole",
+                    "TrustPrincipal": "arn:${AWS::Partition}:iam::${AuditAccountID}:root",
+                    "SwitchRole": "${AcceleratorRole}",
+                    "PolicyPackage": {
+                        "Docs": [{
+                          "Version": "2012-10-17",
+                            "Statement": [{
+                              "Action": [
+                                "config:PutEvaluations",
+                                "cloudtrail:DescribeTrails",
+                                "cloudtrail:GetTrailStatus",
+                                "cloudtrail:ListTrails",
+                                "apigateway:GET",
+                                "backup:ListRecoveryPointsByBackupVault",
+                                "backup:ListBackupVaults",
+                                "cassandra:Select",
+                                "codebuild:BatchGetProjects",
+                                "codebuild:ListProjects",
+                                "dax:DescribeClusters",
+                                "dynamodb:DescribeTable",
+                                "dynamodb:ListTables",
+                                "docdb-elastic:ListClusters",
+                                "docdb-elastic:ListClusterSnapshots",
+                                "ec2:DescribeRegions",
+                                "ec2:DescribeVolumes",
+                                "ec2:GetEbsEncryptionByDefault",
+                                "elasticfilesystem:DescribeFileSystems",
+                                "eks:DescribeCluster",
+                                "eks:ListClusters",
+                                "elasticache:DescribeCacheClusters",
+                                "elasticache:DescribeSnapshots",
+                                "kinesis:DescribeStream",
+                                "kinesis:ListStreams",
+                                "memorydb:DescribeClusters",
+                                "memorydb:DescribeSnapshots",
+                                "qldb:DescribeLedger",
+                                "qldb:ListLedgers",
+                                "rds:DescribeDBClusters",
+                                "rds:DescribeDBClusterSnapshots",
+                                "rds:DescribeDBInstances",
+                                "rds:DescribeDBSnapshots",
+                                "resource-explorer-2:ListIndexes",
+                                "resource-explorer-2:Search",
+                                "s3:GetEncryptionConfiguration",
+                                "s3:GetBucketLocation",
+                                "s3:GetBucketPolicy",
+                                "s3:ListAllMyBuckets",
+                                "s3:ListBucket",
+                                "sns:GetTopicAttributes",
+                                "sns:ListTopics",
+                                "timestream:DescribeEndpoints",
+                                "timestream:ListDatabases",
+                                "timestream:ListTables",
+                                "tag:GetResources",
+                                "iam:GenerateCredentialReport",
+                                "iam:GetAccountPasswordPolicy",
+                                "iam:GetCredentialReport",
+                                "iam:GetLoginProfile",
+                                "iam:GetRole",
+                                "iam:ListAttachedRolePolicies",
+                                "iam:ListMFADevices",
+                                "iam:ListUsers",
+                                "iam:ListRoles",
+                                "aws-marketplace:ListEntities",
+                                "organizations:DescribeOrganization",
+                                "organizations:ListAccounts"
+                              ],
+                              "Resource": [
+                                "*"
+                              ],
+                              "Effect": "Allow",
+                              "Sid": "GCComplianceAllowAccess"
+                            },
+                            {
+                              "Action": [
+                                "s3:GetObjectRetention",
+                                "s3:GetObjectVersionTagging",
+                                "s3:GetObjectAttributes",
+                                "s3:ListBucket",
+                                "s3:GetObjectLegalHold",
+                                "s3:GetObjectVersionAttributes",
+                                "s3:GetObjectVersionTorrent",
+                                "s3:GetObjectAcl",
+                                "s3:GetObject",
+                                "s3:GetObjectTorrent",
+                                "s3:GetObjectVersionAcl",
+                                "s3:GetObjectTagging",
+                                "s3:GetObjectVersionForReplication",
+                                "s3:GetObjectVersion"
+                              ],
+                              "Resource": [
+                                "arn:${AWS::Partition}:s3:::${ClientEvidenceBucket}/*",
+                                "arn:${AWS::Partition}:s3:::${ClientEvidenceBucket}",
+                                "arn:${AWS::Partition}:s3:::${AWSConfigConformsBucketName}/*",
+                                "arn:${AWS::Partition}:s3:::${AWSConfigConformsBucketName}"
+                              ],
+                              "Effect": "Allow",
+                              "Sid": "GcComplianceAllowBucketAccess"
+                            },
+                            {
+                              "Action": [
+                                "account:GetAlternateContact"
+                              ],
+                              "Resource": [
+                                "arn:aws:account::*:account",
+                                "arn:aws:account::*:account/o-*/*"
+                              ],
+                              "Effect": "Allow",
+                              "Sid": "AllowReadAccountInfo"
+                            },
+                            {
+                              "Action": [
+                                "s3:ListAllMyBuckets"
+                              ],
+                              "Resource": "*",
+                              "Effect": "Allow",
+                              "Sid": "GcComplianceAllowListBucketAccess"
+                            }
+                          ]
+                        }]
+                      }
+                  }
+                ] 
+              }
+
+  PermissionForEventsToInvokeLambda: 
+    Type: AWS::Lambda::Permission
+    Properties: 
+      FunctionName: !Ref "CreateRoleLambda"
+      Action: "lambda:InvokeFunction"
+      Principal: "events.amazonaws.com"
+      SourceArn: !GetAtt EventBridgeCreateAccount.Arn

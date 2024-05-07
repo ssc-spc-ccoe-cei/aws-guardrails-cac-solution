@@ -14,6 +14,11 @@ Parameters:
     Type: String
     Default: ""
     Description: Role name prefix
+  PythonRuntime:
+    Type: String
+    Default: 'python3.12'
+    Description:
+      The python runtime to use for the compliance dashboard
 
 Conditions:
   IsAuditAccount: !Equals
@@ -100,7 +105,7 @@ Resources:
       Code: "../../src/lambda/aws_lambda_permissions_setup/build/LambdaPermissionsLambda/"
       Handler: app.lambda_handler
       Role: !GetAtt LambdaPermissionsExecutionRole.Arn
-      Runtime: python3.9
+      Runtime: !Ref PythonRuntime
       Timeout: 600
       Environment:
         Variables:
