@@ -6,14 +6,14 @@
 .ONESHELL:
 SHELL = /bin/bash
 
-CONFIG_FILE = "config.yaml"
+CONFIG_FILE ?= "config.yaml"
 CODEBUILD_SRC_DIR := $(shell pwd)
 AWS_REGION := $(shell yq ".AWS_REGION" $(CONFIG_FILE))
 AWS_SSCSERVER := $(shell yq ".SSC_AWS_SERVER" $(CONFIG_FILE))
 ACCELROLE := $(shell yq ".Parameters.AcceleratorRole" $(CONFIG_FILE))
 ACCOUNT_ID := $(shell aws sts get-caller-identity --query Account --output text)
 PIPELINE_BUCKET := gc-guardrails-deployments-$(ACCOUNT_ID)
-DEPLOY_VERSION := $(shell yq ".CACVersion" ./$(CONFIG_FILE))
+DEPLOY_VERSION ?= $(shell yq ".CACVersion" ./$(CONFIG_FILE))
 STACK := $(shell yq ".StackName" ./$(CONFIG_FILE))
 ENV_NAME := $(shell yq ".EnvironmentName" ./$(CONFIG_FILE))
 GIT_VERSION := $(shell yq ".GitSourceVersion" ./$(CONFIG_FILE))

@@ -1,0 +1,54 @@
+name: Deploy to Environment
+
+on:
+  workflow_call:
+    inputs:
+      aws-region:
+        description: 'The AWS region to deploy to'
+        required: true
+        type: string
+      deploy-version:
+        description: 'The version to deploy'
+        required: true
+        type: string
+    secrets:
+      aws-role-arn:
+        description: 'The AWS role to assume'
+        required: true
+      config-file-content:
+        description: 'The content of the config file'
+        required: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    permissions:
+      id-token: write
+      contents: read
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.aws-role-arn }}
+          role-session-name: GitHubActions
+          aws-region: ${{ inputs.aws-region }}
+
+      - name: Create config file from secret
+        run: echo "${{ secrets.config-file-content }}" > config.yaml
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y jq
+          pip install yq
+
+      - name: Run Makefile
+        env:
+          CONFIG_FILE: config.yaml
+          DEPLOY_VERSION: ${{ inputs.deploy-version }}
+        run: make all
