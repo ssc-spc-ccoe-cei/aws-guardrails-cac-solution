@@ -6,13 +6,16 @@ on:
     branches:
       - main
 
-jobs:
-  deploy:
-    environment: test
+env:
+  AWS_REGION: 'ca-central-1'  
 
-    uses: ./.github/workflows/deploy.yml
+jobs:
+  deployToTest:
+    environment: test
+    uses: github.com/ssc-spc-ccoe-cei/aws-guardrails-cac-solution/.github/workflows/deploy.yml@main
     with:
-      aws-region: 'ca-central-1'
+      aws-region: ${{ env.AWS_REGION }}
+      deploy-version: ${{ vars.DEPLOY_VERSION }}
+    secrets:
       aws-role-arn: ${{ secrets.AWS_ROLE_ARN }}
       config-file-content: ${{ secrets.CONFIG_FILE_CONTENT }}
-      deploy-version: ${{ vars.DEPLOY_VERSION }}

@@ -7,21 +7,20 @@ on:
         description: 'The AWS region to deploy to'
         required: true
         type: string
-      aws-role-arn:
-        description: 'The AWS role to assume'
-        required: true
-        type: string
-      config-file-content:
-        description: 'The content of the config file'
-        required: true
-        type: string
       deploy-version:
         description: 'The version to deploy'
         required: true
         type: string
+    secrets:
+      aws-role-arn:
+        description: 'The AWS role to assume'
+        required: true
+      config-file-content:
+        description: 'The content of the config file'
+        required: true
 
 jobs:
-  upload:
+  deploy:
     runs-on: ubuntu-latest
 
     permissions:
@@ -35,12 +34,12 @@ jobs:
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          role-to-assume: ${{ inputs.aws-role-arn }}
+          role-to-assume: ${{ secrets.aws-role-arn }}
           role-session-name: GitHubActions
           aws-region: ${{ inputs.aws-region }}
 
       - name: Create config file from secret
-        run: echo "${{ inputs.config-file-content }}" > config.yaml
+        run: echo "${{ secrets.config-file-content }}" > config.yaml
 
       - name: Install dependencies
         run: |
