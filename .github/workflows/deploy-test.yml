@@ -1,0 +1,18 @@
+name: Deploy to Test
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+
+jobs:
+  deploy:
+    environment: test
+
+    uses: ./.github/workflows/deploy.yml
+    with:
+      aws-region: 'ca-central-1'
+      aws-role-arn: ${{ secrets.AWS_ROLE_ARN }}
+      config-file-content: ${{ secrets.CONFIG_FILE_CONTENT }}
+      deploy-version: ${{ vars.DEPLOY_VERSION }}
