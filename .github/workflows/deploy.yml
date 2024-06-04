@@ -27,15 +27,25 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v3
 
+      - name: Set environment variables
+        run: |
+          if [ "${{ inputs.environment }}" == "test" ]; then
+            echo "AWS_ROLE_ARN=${{ secrets.TEST_AWS_ROLE_ARN }}" >> $GITHUB_ENV
+            echo "CONFIG_FILE_CONTENT=${{ secrets.TEST_CONFIG_FILE_CONTENT }}" >> $GITHUB_ENV
+          elif [ "${{ inputs.environment }}" == "prod" ]; then
+            echo "AWS_ROLE_ARN=${{ secrets.PROD_AWS_ROLE_ARN }}" >> $GITHUB_ENV
+            echo "CONFIG_FILE_CONTENT=${{ secrets.PROD_CONFIG_FILE_CONTENT }}" >> $GITHUB_ENV
+          fi
+        
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          role-to-assume: ${{ secrets[inputs.environment | upper | concat('_AWS_ROLE_ARN') ] }}
+          role-to-assume: ${{ env.AWS_ROLE_ARN }}
           role-session-name: GitHubActions
           aws-region: ${{ inputs.aws-region }}  
 
       - name: Create config file from secret
-        run: echo "${{ secrets[inputs.environment | upper | concat('_CONFIG_FILE_CONTENT') ] }}" > config.yaml
+        run: echo "${{ env.CONFIG_FILE_CONTENT }}" > config.yaml
 
       - name: Install dependencies
         run: |
@@ -43,7 +53,7 @@ jobs:
           sudo apt-get install -y jq
           pip install yq
 
-      - name: Get environment variables from secrets
+      - name: Get Deploy Version
         run: |
            echo "DEPLOY_VERSION=${{ inputs.deploy-version }}" >> $GITHUB_ENV
            
