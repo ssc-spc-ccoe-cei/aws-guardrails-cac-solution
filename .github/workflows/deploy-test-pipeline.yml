@@ -11,19 +11,19 @@ env:
   ENVIRONMENT: test
 
 jobs:
-  set-env-vars:
-    runs-on: ubuntu-latest
-    outputs:
-      aws_role_arn: ${{ steps.set-aws-arn.outputs.aws_role_arn }}
-      config_file_content: ${{ steps.set-config-content.outputs.config_file_content }}
-    steps:
-      - id: set-aws-arn
-        run: echo "aws_role_arn=${{ secrets.TEST_AWS_ROLE_ARN }}" >> "$GITHUB_OUTPUT"
-      # - id: set-config-content
-      #   run: echo "config_file_content=${{ secrets.TEST_CONFIG_FILE_CONTENT }}" >> "$GITHUB_OUTPUT"
+  # set-env-vars:
+  #   runs-on: ubuntu-latest
+  #   outputs:
+  #     aws_role_arn: ${{ steps.set-aws-arn.outputs.aws_role_arn }}
+  #     config_file_content: ${{ steps.set-config-content.outputs.config_file_content }}
+  #   steps:
+  #     - id: set-aws-arn
+  #       run: echo "aws_role_arn=${{ secrets.TEST_AWS_ROLE_ARN }}" >> "$GITHUB_OUTPUT"
+  #     # - id: set-config-content
+  #     #   run: echo "config_file_content=${{ secrets.TEST_CONFIG_FILE_CONTENT }}" >> "$GITHUB_OUTPUT"
 
   deployToTest:
-    needs: set-env-vars
+    # needs: set-env-vars
     permissions:
       id-token: write
       contents: read
@@ -33,7 +33,7 @@ jobs:
       aws-region: ca-central-1
       deploy-version: 1.0.0
     secrets:
-      AWS_ROLE_ARN: ${{ needs.set-env-vars.outputs.aws_role_arn }}
+      AWS_ROLE_ARN: ${{ secrets.TEST_AWS_ROLE_ARN }}
       CONFIG_FILE_CONTENT: ${{ secrets.TEST_CONFIG_FILE_CONTENT }}
 
 
