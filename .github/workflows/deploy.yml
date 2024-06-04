@@ -30,6 +30,7 @@ jobs:
       - name: Set environment variables
         run: |
           if [ "${{ inputs.environment }}" == "test" ]; then
+            echo "Secret is ${{ secrets.TEST_AWS_ROLE_ARN }}"
             echo "AWS_ROLE_ARN=${{ secrets.TEST_AWS_ROLE_ARN }}" >> $GITHUB_ENV
             echo "CONFIG_FILE_CONTENT=${{ secrets.TEST_CONFIG_FILE_CONTENT }}" >> $GITHUB_ENV
           elif [ "${{ inputs.environment }}" == "prod" ]; then
