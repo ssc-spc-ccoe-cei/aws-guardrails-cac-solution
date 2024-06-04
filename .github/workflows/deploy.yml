@@ -59,6 +59,8 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y jq
           ./cloudshell-config.sh
+          python -m pip install --upgrade pip
+          pip install boto3
 
       - name: Get Deploy Version
         run: |
