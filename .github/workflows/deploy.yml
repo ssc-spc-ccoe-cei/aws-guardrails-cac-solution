@@ -57,7 +57,7 @@ jobs:
       - name: Install dependencies
         run: |
           sudo apt-get update
-          wget -O jq https://github.com/jqlang/jq/releases/download/jq-1.7.1/jq-linux-arm64
+          wget -O jq https://github.com/jqlang/jq/releases/download/jq-1.7.1/jq-linux64
           chmod +x jq
           sudo mv jq /usr/local/bin
           ./cloudshell-config.sh
