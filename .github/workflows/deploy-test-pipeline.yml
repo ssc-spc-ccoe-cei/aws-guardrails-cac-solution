@@ -12,12 +12,30 @@ env:
 
 jobs:
   deployToTest:
+    runs-on: ubuntu-latest
     permissions:
       id-token: write
-      contents: read  
-    uses: ssc-spc-ccoe-cei/aws-guardrails-cac-solution/.github/workflows/deploy.yml@singhgss-patch-1
-    with:
-      environment: test
-      aws-region: ca-central-1
-      deploy-version: 1.0.0
+      contents: read
+    environment: ${{ env.ENVIRONMENT }}
+    steps:
+      - name: Set environment variables for secrets
+        id: set-env
+        run: |
+          if [ "${{ env.ENVIRONMENT }}" == "test" ]; then
+            echo "Secret is ${{ secrets.TEST_AWS_ROLE_ARN }}"
+            echo "AWS_ROLE_ARN=${{ secrets.TEST_AWS_ROLE_ARN }}" >> $GITHUB_ENV
+            echo "CONFIG_FILE_CONTENT=${{ secrets.TEST_CONFIG_FILE_CONTENT }}" >> $GITHUB_ENV
+          elif [ "${{ env.ENVIRONMENT }}" == "prod" ]; then
+            echo "AWS_ROLE_ARN=${{ secrets.PROD_AWS_ROLE_ARN }}" >> $GITHUB_ENV
+            echo "CONFIG_FILE_CONTENT=${{ secrets.PROD_CONFIG_FILE_CONTENT }}" >> $GITHUB_ENV
+          fi
+      - name: Call Reusable Workflow
+        uses: ssc-spc-ccoe-cei/aws-guardrails-cac-solution/.github/workflows/deploy.yml@singhgss-patch-1
+        with:
+          environment: ${{ env.ENVIRONMENT }}
+          aws-region: ${{ env.AWS_REGION }}
+          deploy-version: 1.0.0
+        env:
+          AWS_ROLE_ARN: ${{ env.AWS_ROLE_ARN }}
+          CONFIG_FILE_CONTENT: ${{ env.CONFIG_FILE_CONTENT }}
 
