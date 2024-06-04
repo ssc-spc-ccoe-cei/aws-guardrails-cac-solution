@@ -22,7 +22,6 @@ jobs:
     permissions:
       id-token: write
       contents: read
-      secrets: read
       
     steps:
       - name: Checkout code
