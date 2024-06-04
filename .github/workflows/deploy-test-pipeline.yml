@@ -12,7 +12,7 @@ env:
 jobs:
   deployToTest:
     environment: test
-    uses: github.com/ssc-spc-ccoe-cei/aws-guardrails-cac-solution/.github/workflows/deploy.yml@main
+    uses: ssc-spc-ccoe-cei/aws-guardrails-cac-solution/.github/workflows/deploy.yml@main
     with:
       aws-region: ${{ env.AWS_REGION }}
       deploy-version: ${{ vars.DEPLOY_VERSION }}
