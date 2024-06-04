@@ -11,6 +11,10 @@ env:
 
 jobs:
   deployToTest:
+    permissions:
+      id-token: write
+      contents: read
+  
     uses: ssc-spc-ccoe-cei/aws-guardrails-cac-solution/.github/workflows/deploy.yml@singhgss-patch-1
     with:
       environment: test
