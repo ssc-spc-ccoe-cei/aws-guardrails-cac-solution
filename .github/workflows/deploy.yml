@@ -3,6 +3,9 @@ name: Deploy to Environment
 on:
   workflow_call:
     inputs:
+      environment:
+        required: true
+        type: string    
       aws-region:
         description: 'The AWS region to deploy to'
         required: true
@@ -34,12 +37,12 @@ jobs:
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          role-to-assume: ${{ secrets.aws-role-arn }}
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN  }}
           role-session-name: GitHubActions
-          aws-region: ${{ inputs.aws-region }}
+          aws-region: 'ca-central-1'
 
       - name: Create config file from secret
-        run: echo "${{ secrets.config-file-content }}" > config.yaml
+        run: echo "${{ secrets.CONFIG_FILE_CONTENT }}" > config.yaml
 
       - name: Install dependencies
         run: |
@@ -50,5 +53,5 @@ jobs:
       - name: Run Makefile
         env:
           CONFIG_FILE: config.yaml
-          DEPLOY_VERSION: ${{ inputs.deploy-version }}
+          DEPLOY_VERSION: ${{ vars.DEPLOY_VERSION  }}
         run: make all
