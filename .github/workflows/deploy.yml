@@ -30,12 +30,12 @@ jobs:
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          role-to-assume: ${{ secrets[ format('{0}_AWS_ROLE_ARN', inputs.environment) ] }}  
+          role-to-assume: ${{ secrets[inputs.environment | upper | concat('_AWS_ROLE_ARN') ] }}
           role-session-name: GitHubActions
           aws-region: ${{ inputs.aws-region }}  
 
       - name: Create config file from secret
-        run: echo "${{ secrets[ format('{0}_CONFIG_FILE_CONTENT', inputs.environment) ] }}" > config.yaml
+        run: echo "${{ secrets[inputs.environment | upper | concat('_CONFIG_FILE_CONTENT') ] }}" > config.yaml
 
       - name: Install dependencies
         run: |
