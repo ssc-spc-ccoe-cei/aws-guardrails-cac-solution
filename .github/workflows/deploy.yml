@@ -52,13 +52,13 @@ jobs:
           chmod +x ./tools/package-deploy.sh
           chmod +x ./tools/package.sh
           chmod +x ./tools/s3cleanup.sh
-          chmod +x ./tools/cloudshell-config.sh
+          chmod +x ./cloudshell-config.sh
 
       - name: Install dependencies
         run: |
           sudo apt-get update
           sudo apt-get install -y jq
-          ./tools/cloudshell-config.sh
+          ./cloudshell-config.sh
 
       - name: Get Deploy Version
         run: |
