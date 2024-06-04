@@ -19,5 +19,5 @@ jobs:
     with:
       environment: test
       aws-region: ca-central-1
-      deploy-version: '1.0.0'
+      deploy-version: 1.0.0
 
