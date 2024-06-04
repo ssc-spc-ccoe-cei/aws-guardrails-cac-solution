@@ -19,8 +19,8 @@ jobs:
     steps:
       - id: set-aws-arn
         run: echo "aws_role_arn=${{ secrets.TEST_AWS_ROLE_ARN }}" >> "$GITHUB_OUTPUT"
-      - id: set-config-content
-        run: echo "config_file_content=${{ secrets.TEST_CONFIG_FILE_CONTENT }}" >> "$GITHUB_OUTPUT"
+      # - id: set-config-content
+      #   run: echo "config_file_content=${{ secrets.TEST_CONFIG_FILE_CONTENT }}" >> "$GITHUB_OUTPUT"
 
   deployToTest:
     needs: set-env-vars
@@ -34,6 +34,6 @@ jobs:
       deploy-version: 1.0.0
     secrets:
       AWS_ROLE_ARN: ${{ needs.set-env-vars.outputs.aws_role_arn }}
-      CONFIG_FILE_CONTENT: ${{ needs.set-env-vars.outputs.config_file_content }}
+      CONFIG_FILE_CONTENT: ${{ secrets.TEST_CONFIG_FILE_CONTENT }}
 
 
