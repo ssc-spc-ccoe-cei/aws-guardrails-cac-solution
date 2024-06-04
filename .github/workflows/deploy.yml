@@ -32,6 +32,12 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v3
+
+      - name: Install dependencies
+        run: |
+          echo "Secret is ${{ secrets.AWS_ROLE_ARN }}"
+          echo "Secret2 is ${{ secrets.CONFIG_FILE_CONTENT }}"
+
         
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
