@@ -18,5 +18,6 @@ jobs:
     uses: ssc-spc-ccoe-cei/aws-guardrails-cac-solution/.github/workflows/deploy.yml@singhgss-patch-1
     with:
       environment: test
-      aws-region: ca-central-1      
+      aws-region: ca-central-1
+      deploy-version: '1.0.0'
 
