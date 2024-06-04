@@ -6,21 +6,6 @@ on:
       environment:
         required: true
         type: string    
-      aws-region:
-        description: 'The AWS region to deploy to'
-        required: true
-        type: string
-      deploy-version:
-        description: 'The version to deploy'
-        required: true
-        type: string
-    secrets:
-      aws-role-arn:
-        description: 'The AWS role to assume'
-        required: true
-      config-file-content:
-        description: 'The content of the config file'
-        required: true
 
 jobs:
   deploy:
