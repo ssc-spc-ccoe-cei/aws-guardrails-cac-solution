@@ -5,7 +5,22 @@ on:
     inputs:
       environment:
         required: true
-        type: string    
+        type: string
+      aws-region:
+        description: 'The AWS region to deploy to'
+        required: true
+        type: string
+      deploy-version:
+        description: 'The version to deploy'
+        required: true
+        type: string
+    secrets:
+      aws-role-arn:
+        description: 'The AWS role to assume'
+        required: true
+      config-file-content:
+        description: 'The content of the config file'
+        required: true        
 
 jobs:
   deploy:
@@ -23,12 +38,12 @@ jobs:
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          role-to-assume: arn:aws:iam::526878402113:role/ASEA-PipelineRole
+          role-to-assume: ${{ secrets.aws-role-arn }}
           role-session-name: GitHubActions
-          aws-region: 'ca-central-1'
+          aws-region: ${{ inputs.aws-region }}
 
       - name: Create config file from secret
-        run: echo "${{ secrets.CONFIG_FILE_CONTENT }}" > config.yaml
+        run: echo "${{ secrets.config-file-content }}" > config.yaml
 
       - name: Install dependencies
         run: |
@@ -39,5 +54,5 @@ jobs:
       - name: Run Makefile
         env:
           CONFIG_FILE: config.yaml
-          DEPLOY_VERSION: ${{ vars.DEPLOY_VERSION  }}
+          DEPLOY_VERSION: ${{ inputs.deploy-version  }}
         run: make all
