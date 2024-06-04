@@ -14,6 +14,12 @@ on:
         description: 'The version to deploy'
         required: true
         type: string
+    secrets:
+      AWS_ROLE_ARN:
+        required: true
+      CONFIG_FILE_CONTENT:
+        required: true
+        
 jobs:
   deploy:
     environment: ${{ inputs.environment }}
@@ -26,18 +32,6 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v3
-
-      - name: Set environment variables
-        run: |
-          if [ "${{ inputs.environment }}" == "test" ]; then
-            echo "Secret is ${{ secrets.TEST_AWS_ROLE_ARN }}"
-            echo "Secret2 is ${{ secrets.AWS_ROLE_ARN }}"
-            echo "AWS_ROLE_ARN=${{ secrets.TEST_AWS_ROLE_ARN }}" >> $GITHUB_ENV
-            echo "CONFIG_FILE_CONTENT=${{ secrets.TEST_CONFIG_FILE_CONTENT }}" >> $GITHUB_ENV
-          elif [ "${{ inputs.environment }}" == "prod" ]; then
-            echo "AWS_ROLE_ARN=${{ secrets.PROD_AWS_ROLE_ARN }}" >> $GITHUB_ENV
-            echo "CONFIG_FILE_CONTENT=${{ secrets.PROD_CONFIG_FILE_CONTENT }}" >> $GITHUB_ENV
-          fi
         
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
@@ -47,7 +41,7 @@ jobs:
           aws-region: ${{ inputs.aws-region }}  
 
       - name: Create config file from secret
-        run: echo "${{ env.CONFIG_FILE_CONTENT }}" > config.yaml
+        run: echo "${{ secrets.CONFIG_FILE_CONTENT }}" > config.yaml
 
       - name: Install dependencies
         run: |
