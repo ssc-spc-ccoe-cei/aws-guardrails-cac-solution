@@ -34,8 +34,8 @@ jobs:
       contents: read
     uses: ssc-spc-ccoe-cei/aws-guardrails-cac-solution/.github/workflows/deploy.yml@singhgss-patch-1
     with:
-      environment: ${{ env.ENVIRONMENT }}
-      aws-region: ${{ env.AWS_REGION }}
+      environment: test
+      aws-region: ca-central-1
       deploy-version: 1.0.0
     secrets:
       AWS_ROLE_ARN: ${{ needs.set-env-vars.outputs.aws_role_arn }}
