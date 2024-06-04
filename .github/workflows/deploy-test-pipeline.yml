@@ -19,10 +19,5 @@ jobs:
     uses: ssc-spc-ccoe-cei/aws-guardrails-cac-solution/.github/workflows/deploy.yml@singhgss-patch-1
     with:
       environment: ${{ env.ENVIRONMENT }}
-      aws-region: ${{ env.AWS_REGION }}
-      deploy-version: ${{ vars[ format('{0}_DEPLOY_VERSION', env.ENVIRONMENT) ] }} 
-    secrets:
-      aws-role-arn: ${{ secrets[ format('{0}_AWS_ROLE_ARN', env.ENVIRONMENT) ] }}
-      config-file-content: ${{ secrets[ format('{0}_CONFIG_FILE_CONTENT', env.ENVIRONMENT) ] }}
-      
+      aws-region: ${{ env.AWS_REGION }}      
 
