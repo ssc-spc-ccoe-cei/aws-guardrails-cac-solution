@@ -11,31 +11,34 @@ env:
   ENVIRONMENT: test
 
 jobs:
-  deployToTest:
+  set-env-vars:
     runs-on: ubuntu-latest
+    outputs:
+      aws_role_arn: ${{ steps.set-vars.outputs.aws_role_arn }}
+      config_file_content: ${{ steps.set-vars.outputs.config_file_content }}
+    steps:
+      - id: set-vars
+        run: |
+          if [ "${{ env.ENVIRONMENT }}" == "test" ]; then
+            echo "::set-output name=aws_role_arn::${{ secrets.TEST_AWS_ROLE_ARN }}"
+            echo "::set-output name=config_file_content::${{ secrets.TEST_CONFIG_FILE_CONTENT }}"
+          elif [ "${{ env.ENVIRONMENT }}" == "prod" ]; then
+            echo "::set-output name=aws_role_arn::${{ secrets.PROD_AWS_ROLE_ARN }}"
+            echo "::set-output name=config_file_content::${{ secrets.PROD_CONFIG_FILE_CONTENT }}"
+          fi
+
+  deployToTest:
+    needs: set-env-vars
     permissions:
       id-token: write
       contents: read
-    environment: ${{ env.ENVIRONMENT }}
-    steps:
-      - name: Set environment variables for secrets
-        id: set-env
-        run: |
-          if [ "${{ env.ENVIRONMENT }}" == "test" ]; then
-            echo "Secret is ${{ secrets.TEST_AWS_ROLE_ARN }}"
-            echo "AWS_ROLE_ARN=${{ secrets.TEST_AWS_ROLE_ARN }}" >> $GITHUB_ENV
-            echo "CONFIG_FILE_CONTENT=${{ secrets.TEST_CONFIG_FILE_CONTENT }}" >> $GITHUB_ENV
-          elif [ "${{ env.ENVIRONMENT }}" == "prod" ]; then
-            echo "AWS_ROLE_ARN=${{ secrets.PROD_AWS_ROLE_ARN }}" >> $GITHUB_ENV
-            echo "CONFIG_FILE_CONTENT=${{ secrets.PROD_CONFIG_FILE_CONTENT }}" >> $GITHUB_ENV
-          fi
-      - name: Call Reusable Workflow
-        uses: ssc-spc-ccoe-cei/aws-guardrails-cac-solution/.github/workflows/deploy.yml@singhgss-patch-1
-        with:
-          environment: ${{ env.ENVIRONMENT }}
-          aws-region: ${{ env.AWS_REGION }}
-          deploy-version: 1.0.0
-        env:
-          AWS_ROLE_ARN: ${{ env.AWS_ROLE_ARN }}
-          CONFIG_FILE_CONTENT: ${{ env.CONFIG_FILE_CONTENT }}
+    uses: ssc-spc-ccoe-cei/aws-guardrails-cac-solution/.github/workflows/deploy.yml@singhgss-patch-1
+    with:
+      environment: ${{ env.ENVIRONMENT }}
+      aws-region: ${{ env.AWS_REGION }}
+      deploy-version: 1.0.0
+    secrets:
+      AWS_ROLE_ARN: ${{ needs.set-env-vars.outputs.aws_role_arn }}
+      CONFIG_FILE_CONTENT: ${{ needs.set-env-vars.outputs.config_file_content }}
+
 
