@@ -45,7 +45,7 @@ jobs:
 
       - name: Get environment variables from secrets
         run: |
-           echo "DEPLOY_VERSION=${{ secrets[ format('{0}_DEPLOY_VERSION', inputs.environment) ] }}" >> $GITHUB_ENV
+           echo "DEPLOY_VERSION=${{ deploy-version }}" >> $GITHUB_ENV
            
       - name: Run Makefile
         env:
