@@ -14,18 +14,13 @@ jobs:
   set-env-vars:
     runs-on: ubuntu-latest
     outputs:
-      aws_role_arn: ${{ steps.set-vars.outputs.aws_role_arn }}
-      config_file_content: ${{ steps.set-vars.outputs.config_file_content }}
+      aws_role_arn: ${{ steps.set-aws-arn.outputs.aws_role_arn }}
+      config_file_content: ${{ steps.set-config-content.outputs.config_file_content }}
     steps:
-      - id: set-vars
-        run: |
-          if [ "${{ env.ENVIRONMENT }}" == "test" ]; then
-            echo "::set-output name=aws_role_arn::${{ secrets.TEST_AWS_ROLE_ARN }}"
-            echo "::set-output name=config_file_content::${{ secrets.TEST_CONFIG_FILE_CONTENT }}"
-          elif [ "${{ env.ENVIRONMENT }}" == "prod" ]; then
-            echo "::set-output name=aws_role_arn::${{ secrets.PROD_AWS_ROLE_ARN }}"
-            echo "::set-output name=config_file_content::${{ secrets.PROD_CONFIG_FILE_CONTENT }}"
-          fi
+      - id: set-aws-arn
+        run: echo "aws_role_arn=${{ secrets.TEST_AWS_ROLE_ARN }}" >> "$GITHUB_OUTPUT"
+      - id: set-config-content
+        run: echo "config_file_content=${{ secrets.TEST_CONFIG_FILE_CONTENT }}" >> "$GITHUB_OUTPUT"
 
   deployToTest:
     needs: set-env-vars
