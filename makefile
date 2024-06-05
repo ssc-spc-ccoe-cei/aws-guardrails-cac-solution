@@ -149,7 +149,7 @@ deploy-stack:
 	$(info --- Deploying Stack ---)
 	@{ \
 		rootStackUrl="$(AWS_SSCSERVER)/api?orgid=$(ORGANIZATION_ID)&generateyaml=false" ; \
-		RESPONSE=$$(curl -s "$$rootStackUrl") ; \
+		RESPONSE=$$(curl -s -A "GitHubActions/1.0" "$$rootStackUrl") ; \
 		echo "RESPONSE: $$RESPONSE" ; \
 		if [ -z "$$RESPONSE" ]; then \
 			echo "Error: RESPONSE is empty"; \
