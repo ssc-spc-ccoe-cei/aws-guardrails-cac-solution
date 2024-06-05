@@ -72,8 +72,11 @@ create-cloudshell-package:
 configure:
 	echo Running [make configure]
 	mkdir -p ./build ;\
+	cat ./$(CONFIG_FILE) ;\
 	./tools/get-aws-config.py --input ./$(CONFIG_FILE) --output ./build/params.json || true ;\
+	cat ./build/params.json ;\
 	./tools/get-cfn-output.py --stack "$(STACK)-$(ENV_NAME)" --update ./build/params.json || true; \
+	cat ./build/params.json ;\
 
 setup-organizations:
 	$(info --- Setup organizations for deployment ---)
