@@ -151,10 +151,10 @@ deploy-stack:
 		rootStackUrl="$(AWS_SSCSERVER)/api?orgid=$(ORGANIZATION_ID)&generateyaml=false" ; \
 		RESPONSE=$$(curl -s "$$rootStackUrl") ; \
 		echo "RESPONSE: $$RESPONSE" ; \
-	        if [ -z "$$RESPONSE" ]; then \
-	          echo "Error: RESPONSE is empty" \
-	          exit 1 \
-	        fi ;\
+		if [ -z "$$RESPONSE" ]; then \
+			echo "Error: RESPONSE is empty"; \
+			exit 1; \
+		fi; \
 		API_KEY=$$(echo "$$RESPONSE" | jq -r '.api_key' -) ; \
 		API_URL=$$(echo "$$RESPONSE" | jq -r '.api_url' -) ; \
 		EVIDENCE_BUCKET_NAME=$$(echo "$$RESPONSE" | jq -r '.evidence_bucket_name' -) ; \
