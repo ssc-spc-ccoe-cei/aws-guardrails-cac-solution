@@ -6,6 +6,11 @@ on:
     branches:
       - main
 
+concurrency:
+  group: Deplopy-CAC-Test
+  cancel-in-progress: false
+
+
 jobs:
   deployToTest:
     permissions:
