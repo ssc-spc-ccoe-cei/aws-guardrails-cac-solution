@@ -1,8 +1,11 @@
-name: Deploy to Environment
+name: Deploy CAC Workflow
 
 on:
   workflow_call:
     inputs:
+      environment:
+        required: true
+        type: string
       aws-region:
         description: 'The AWS region to deploy to'
         required: true
@@ -12,43 +15,60 @@ on:
         required: true
         type: string
     secrets:
-      aws-role-arn:
-        description: 'The AWS role to assume'
+      AWS_ROLE_ARN:
         required: true
-      config-file-content:
-        description: 'The content of the config file'
+      CONFIG_FILE_CONTENT:
         required: true
-
+        
 jobs:
   deploy:
-    runs-on: ubuntu-latest
+    environment: ${{ inputs.environment }}
+    runs-on: self-hosted
 
     permissions:
       id-token: write
       contents: read
-
+      
     steps:
       - name: Checkout code
         uses: actions/checkout@v3
-
+        
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          role-to-assume: ${{ secrets.aws-role-arn }}
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
           role-session-name: GitHubActions
-          aws-region: ${{ inputs.aws-region }}
+          aws-region: ${{ inputs.aws-region }}  
 
       - name: Create config file from secret
-        run: echo "${{ secrets.config-file-content }}" > config.yaml
+        run: echo "${{ secrets.CONFIG_FILE_CONTENT }}" > config.yaml
+
+      - name: Set execution permissions for scripts
+        run: |
+          chmod +x ./tools/get-aws-config.py
+          chmod +x ./tools/get-cfn-output.py
+          chmod +x ./tools/buildsam.sh
+          chmod +x ./tools/samclean.sh          
+          chmod +x ./tools/package-deploy.sh
+          chmod +x ./tools/package.sh
+          chmod +x ./tools/s3cleanup.sh
+          chmod +x ./cloudshell-config.sh
 
       - name: Install dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y jq
-          pip install yq
+          wget -O jq https://github.com/jqlang/jq/releases/download/jq-1.7.1/jq-linux64
+          chmod +x jq
+          sudo mv jq /usr/local/bin
+          ./cloudshell-config.sh
+          python -m pip install --upgrade pip
+          pip install boto3 ruamel.yaml
 
+      - name: Get Deploy Version
+        run: |
+           echo "DEPLOY_VERSION=${{ inputs.deploy-version }}" >> $GITHUB_ENV
+     
       - name: Run Makefile
         env:
           CONFIG_FILE: config.yaml
-          DEPLOY_VERSION: ${{ inputs.deploy-version }}
         run: make all
