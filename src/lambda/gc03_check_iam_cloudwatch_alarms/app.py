@@ -158,9 +158,9 @@ def build_evaluation(
 
 def check_cloudwatch_alarms(
     alarm_names=[
-        "ASEA-AWS-IAM-Authentication-From-Unapproved-IP",
-        "ASEA-AWS-SSO-Authentication-From-Unapproved-IP",
-        "ASEA-AWS-Console-SignIn-Without-MFA",
+        "AWS-IAM-Authentication-From-Unapproved-IP",
+        "AWS-SSO-Authentication-From-Unapproved-IP",
+        "AWS-Console-SignIn-Without-MFA",
     ]
 ):
     """Check CloudWatch alarms for compliance.
@@ -234,14 +234,24 @@ def check_cloudwatch_alarms(
         # are we still looking for alarms that we haven't found?
         if alarms_not_found:
             # yes; is this alarm found in the list we're looking for?
-            if alarm.get("AlarmName") in alarms_not_found:
-                # yes
-                logger.info("CloudWatch Alarm %s found.", alarm.get("AlarmName"))
-                try:
-                    alarms_not_found.remove(alarm.get("AlarmName"))
-                except ValueError:
-                    # value not in the list
-                    pass
+            # if alarm.get("AlarmName") in alarms_not_found:
+            #     # yes
+            #     logger.info("CloudWatch Alarm %s found.", alarm.get("AlarmName"))
+            #     try:
+            #         alarms_not_found.remove(alarm.get("AlarmName"))
+            #     except ValueError:
+            #         # value not in the list
+            #         pass
+            for a in alarms_not_found:
+                # Check each alarm not found, is it a substring of the alarm we're looking for?
+                if a in alarm.get("AlarmName"):
+                    # yes
+                    logger.info("CloudWatch Alarm %s found.", alarm.get("AlarmName"))
+                    try:
+                        alarms_not_found.remove(a)
+                    except ValueError:
+                        # value not in the list
+                        pass
         else:
             # no, we're done
             break
@@ -253,6 +263,7 @@ def check_cloudwatch_alarms(
         result["annotation"] = annotation
     else:
         result = {"status": "COMPLIANT", "annotation": "All alarms found"}
+    logger.info(result)
     return result
 
 
@@ -304,7 +315,8 @@ def lambda_handler(event, context):
         if AWS_ACCOUNT_ID == get_organizations_mgmt_account_id():
             # yes, proceed with checking CloudWatch Alarms
             # check if alarms exist in CloudWatch Alarms
-            results = check_cloudwatch_alarms()
+            results = check_cloudwatch_alarms(alarm_names=str(
+                valid_rule_parameters["AlarmList"]).split(","))
             if results:
                 compliance_value = results.get("status")
                 custom_annotation = results.get("annotation")
