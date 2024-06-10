@@ -118,6 +118,8 @@ except:
   print("No computed parameters found")
   
 for key, value in list(config['Parameters'].items()):
+  if isinstance(value, bool):
+      value = str(value).lower()  
   json_list.append({
       "ParameterKey": f"{key}",
       "ParameterValue": f"{value}"
