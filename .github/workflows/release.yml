@@ -2,8 +2,8 @@ name: AWS CAC Release
 on:
   push:
     tags:
-      - 'v*'
-
+      - '[0-9]*.*'
+      
 env:
     REGION: ca-central-1
 
