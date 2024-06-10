@@ -66,7 +66,7 @@ test: test-stack
 
 create-cloudshell-package:
 	echo Packaging current directory for upload to Cloudshell
-	zip -r -9 cloudshell_package.zip . -x '*.git*' '*.github*'
+	zip -r -9 cloudshell.zip . -x '*.git*' '*.github*'
 
 ## Generate cloudformation parameter file from config
 configure:

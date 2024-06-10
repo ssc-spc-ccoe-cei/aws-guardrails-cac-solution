@@ -1,0 +1,52 @@
+name: AWS CAC Release
+on:
+  push:
+    tags:
+      - '[0-9]*.*'
+      
+env:
+    REGION: ca-central-1
+
+jobs:
+    create_release:
+        name: Create Release
+        runs-on: ubuntu-latest
+        permissions:
+            contents: write
+            id-token: write
+        steps:
+            - name: Checkout code
+              uses: actions/checkout@v3
+            
+            - name: Configure AWS credentials
+              uses: aws-actions/configure-aws-credentials@v4
+              with:
+                role-to-assume: ${{ secrets.TEST_SERVER_AWS_ROLE_ARN }}
+                role-session-name: GitHubActions
+                aws-region: ${{ env.REGION }}
+    
+            - id: get-release-version
+              name: Release Version
+              run: |
+                    releaseName=$(basename ${{ github.ref }})
+                    echo "releasename=$releaseName" >> $GITHUB_OUTPUT
+
+            - name: Run Makefile
+              run: make create-cloudshell-package
+
+            - name: Upload file to S3
+              run: |
+                    aws s3 cp ./cloudshell.zip s3://$S3_BUCKET_NAME/$RELEASE_NAME/
+              env:
+                RELEASE_NAME: ${{ steps.get-release-version.outputs.releasename }}
+                S3_BUCKET_NAME: ${{ secrets.TEST_AWS_CLIENT_STACK_S3_BUCKET }}
+
+            - name: Create Release
+              run: |
+                    if [ "${{ github.event_name }}" == "push" ] && [ "${{ github.ref_type }}" == "tag" ]; then
+                        gh release create ${{ github.ref }} --generate-notes --latest  "./cloudshell.zip#Azure CAC Solution (zip)" 
+                    fi
+              env:
+                GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+                RELEASE_NAME: ${{ steps.get-release-version.outputs.releasename }}
+  
