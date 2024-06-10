@@ -3,7 +3,7 @@ on:
   push:
     tags:
       - '[0-9]*.*'
-      
+
 env:
     REGION: ca-central-1
 
@@ -44,7 +44,7 @@ jobs:
             - name: Create Release
               run: |
                     if [ "${{ github.event_name }}" == "push" ] && [ "${{ github.ref_type }}" == "tag" ]; then
-                        gh release create ${{ github.ref }} --generate-notes --latest  "./cloudshell.zip#Azure CAC Solution (zip)" 
+                        gh release create ${{ github.ref }} --generate-notes --latest  "./cloudshell.zip#AWS CAC Solution (zip)" 
                     fi
               env:
                 GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
