@@ -280,6 +280,8 @@ def lambda_handler(event, context):
     global EXECUTION_ROLE_NAME
     global AUDIT_ACCOUNT_ID
 
+    print(json.dumps(event)) 
+    
     evaluations = []
     rule_parameters = {}
     invoking_event = json.loads(event["invokingEvent"])
