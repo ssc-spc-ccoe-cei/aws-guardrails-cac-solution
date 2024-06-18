@@ -233,16 +233,7 @@ def check_cloudwatch_alarms(
     for alarm in alarms_found:
         # are we still looking for alarms that we haven't found?
         if alarms_not_found:
-            # yes; is this alarm found in the list we're looking for?
-            # if alarm.get("AlarmName") in alarms_not_found:
-            #     # yes
-            #     logger.info("CloudWatch Alarm %s found.", alarm.get("AlarmName"))
-            #     try:
-            #         alarms_not_found.remove(alarm.get("AlarmName"))
-            #     except ValueError:
-            #         # value not in the list
-            #         pass
-            for a in alarms_not_found:
+           for a in alarms_not_found:
                 # Check each alarm not found, is it a substring of the alarm we're looking for?
                 if a in alarm.get("AlarmName"):
                     # yes
