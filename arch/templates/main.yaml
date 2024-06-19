@@ -280,8 +280,7 @@ Resources:
                     "iam:ListRoles",
                     "aws-marketplace:ListEntities",
                     "organizations:DescribeOrganization",
-                    "organizations:ListAccounts",
-                    "organizations:DescribeAccount"
+                    "organizations:ListAccounts"
                   ],
                   "Resource": [
                     "*"
