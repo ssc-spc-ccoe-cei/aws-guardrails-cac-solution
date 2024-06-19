@@ -3,6 +3,7 @@
 # This AWS Content is provided subject to the terms of the AWS Customer Agreement available at  
 # http://aws.amazon.com/agreement or other written agreement between Customer and either
 # Amazon Web Services, Inc. or Amazon Web Services EMEA SARL or both.
+
 import boto3
 #import ruamel.yaml as yaml
 from ruamel.yaml import YAML
