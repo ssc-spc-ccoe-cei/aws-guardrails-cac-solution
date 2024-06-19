@@ -5,7 +5,6 @@ on:
   push:
     branches:
       - main
-      - idutta/generalize_env_gc03_cloudwatch_alarm
 
 concurrency:
   group: Deploy-CAC-Test
