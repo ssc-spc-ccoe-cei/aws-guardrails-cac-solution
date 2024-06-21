@@ -1381,6 +1381,8 @@ Resources:
           ParameterValue: !Ref BGA2
         - ParameterName: OrganizationName
           ParameterValue: !Ref OrganizationName
+        - ParameterName: GC03AlarmList
+          ParameterValue: "AWS-IAM-Authentication-From-Unapproved-IP,AWS-SSO-Authentication-From-Unapproved-IP,AWS-Console-SignIn-Without-MFA"
         - ParameterName: EnterpriseMonitoringIAMRoleName
           ParameterValue: !Ref GC04EnterpriseMonitoringIAMRoleName
         - ParameterName: EnterpriseMonitoringIAMTrustedPrincipal

@@ -52,6 +52,9 @@ Parameters:
   # GC02
   S3AccountManagementPlanPath:
     Type: String
+  GC03AlarmList:
+    Default: "AWS-IAM-Authentication-From-Unapproved-IP,AWS-SSO-Authentication-From-Unapproved-IP,AWS-Console-SignIn-Without-MFA"
+    Type: String
   # GC04
   EnterpriseMonitoringIAMRoleName:
     Default: "GC-CloudBrokering"
@@ -296,7 +299,7 @@ Resources:
           - EventSource: "aws.config"
             MessageType: "ScheduledNotification"
   # GC03 - uses the same MFA IAM Users check from GC02
-  # GC03
+  # GC03 - "Check a list of strings for substrings of alarms"
   GC03CheckIAMCloudWatchAlarmsConfigRule:
     Type: "AWS::Config::ConfigRule"
     Properties:
@@ -313,6 +316,7 @@ Resources:
             - auditAccountID
             - Ref: AuditAccountID
             - Ref: AWS::NoValue
+        AlarmList: !Ref GC03AlarmList
       Scope:
         ComplianceResourceTypes:
           - AWS::Account

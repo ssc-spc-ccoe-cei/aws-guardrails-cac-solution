@@ -158,9 +158,9 @@ def build_evaluation(
 
 def check_cloudwatch_alarms(
     alarm_names=[
-        "ASEA-AWS-IAM-Authentication-From-Unapproved-IP",
-        "ASEA-AWS-SSO-Authentication-From-Unapproved-IP",
-        "ASEA-AWS-Console-SignIn-Without-MFA",
+        "AWS-IAM-Authentication-From-Unapproved-IP",
+        "AWS-SSO-Authentication-From-Unapproved-IP",
+        "AWS-Console-SignIn-Without-MFA",
     ]
 ):
     """Check CloudWatch alarms for compliance.
@@ -229,30 +229,33 @@ def check_cloudwatch_alarms(
         logger.error("Error while trying to describe_alarms - boto3 Client error - %s", error)
         result["annotation"] = "Error while trying to describe_alarms."
         return result
-    # let's look at the alarms we found
+    
+    # checking the alarms we found
+    alarms_not_found_set = set(alarms_not_found)
     for alarm in alarms_found:
-        # are we still looking for alarms that we haven't found?
-        if alarms_not_found:
-            # yes; is this alarm found in the list we're looking for?
-            if alarm.get("AlarmName") in alarms_not_found:
-                # yes
-                logger.info("CloudWatch Alarm %s found.", alarm.get("AlarmName"))
-                try:
-                    alarms_not_found.remove(alarm.get("AlarmName"))
-                except ValueError:
-                    # value not in the list
-                    pass
-        else:
-            # no, we're done
+        if not alarms_not_found_set:
+            # All alarms have been found, exit the loop
             break
+        alarm_name =  alarm.get("AlarmName")
+        if alarm_name:
+            for not_found_alarm in alarms_not_found_set:
+                if not_found_alarm in alarm_name:
+                    logger.info("CloudWatch Alarm %s found.", alarm_name)
+                    alarms_not_found_set.remove(not_found_alarm)
+
+                    # Stop the inner loop as we found a match
+                    break
+
     # prepare the annotation (if needed)
-    if len(alarms_not_found) > 0:
+    if len(alarms_not_found_set) > 0:
         annotation = "Alarms not found: "
-        for alarm in alarms_not_found:
+        for alarm in alarms_not_found_set:
             annotation += f"{alarm}; "
         result["annotation"] = annotation
     else:
         result = {"status": "COMPLIANT", "annotation": "All alarms found"}
+        
+    logger.info(result)
     return result
 
 
@@ -269,62 +272,75 @@ def lambda_handler(event, context):
     global EXECUTION_ROLE_NAME
     global AUDIT_ACCOUNT_ID
 
+    print(json.dumps(event)) 
+    
     evaluations = []
     rule_parameters = {}
     invoking_event = json.loads(event["invokingEvent"])
 
     # parse parameters
     AWS_ACCOUNT_ID = event["accountId"]
+    # Error handling block to run only for active accounts
+    try:
+        client = boto3.client('organizations')
+        response = client.describe_account(AccountId=AWS_ACCOUNT_ID)        
+        account_status = response['Account']['Status']
+        
+        logger.info(f"account_status is {account_status}")
+        
+        if account_status == "ACTIVE":
+            if "ruleParameters" in event:
+                rule_parameters = json.loads(event["ruleParameters"])
 
-    if "ruleParameters" in event:
-        rule_parameters = json.loads(event["ruleParameters"])
-
-    valid_rule_parameters = evaluate_parameters(rule_parameters)
-
-    if "ExecutionRoleName" in valid_rule_parameters:
-        EXECUTION_ROLE_NAME = valid_rule_parameters["ExecutionRoleName"]
-    else:
-        EXECUTION_ROLE_NAME = "AWSA-GCLambdaExecutionRole"
-
-    if "AuditAccountID" in valid_rule_parameters:
-        AUDIT_ACCOUNT_ID = valid_rule_parameters["AuditAccountID"]
-    else:
-        AUDIT_ACCOUNT_ID = ""
-
-    compliance_value = "NOT_APPLICABLE"
-    custom_annotation = "Guardrail only applicable in the Management Account"
-
-    AWS_CONFIG_CLIENT = get_client("config", event)
-    AWS_CLOUDWATCH_CLIENT = get_client("cloudwatch", event)
-    AWS_ORGANIZATIONS_CLIENT = get_client("organizations", event)
-
-    # is this a scheduled invokation?
-    if is_scheduled_notification(invoking_event["messageType"]):
-        # yes, are we in the management account?
-        if AWS_ACCOUNT_ID == get_organizations_mgmt_account_id():
-            # yes, proceed with checking CloudWatch Alarms
-            # check if alarms exist in CloudWatch Alarms
-            results = check_cloudwatch_alarms()
-            if results:
-                compliance_value = results.get("status")
-                custom_annotation = results.get("annotation")
+            valid_rule_parameters = evaluate_parameters(rule_parameters)
+        
+            if "ExecutionRoleName" in valid_rule_parameters:
+                EXECUTION_ROLE_NAME = valid_rule_parameters["ExecutionRoleName"]
             else:
-                compliance_value = "NON_COMPLIANT"
-                custom_annotation = "Unable to assess CloudWatch Alarms"
-            # Update AWS Config with the evaluation result
-            evaluations.append(
-                build_evaluation(
-                    event["accountId"],
-                    compliance_value,
-                    event,
-                    resource_type=DEFAULT_RESOURCE_TYPE,
-                    annotation=custom_annotation,
-                )
-            )
-            AWS_CONFIG_CLIENT.put_evaluations(
-                Evaluations=evaluations,
-                ResultToken=event["resultToken"]
-            )
-        else:
-            # We're not in the Management Account
-            logger.info("CloudWatch Alarms not checked in account %s as this is not the Management Account", AWS_ACCOUNT_ID)
+                EXECUTION_ROLE_NAME = "AWSA-GCLambdaExecutionRole"
+        
+            if "AuditAccountID" in valid_rule_parameters:
+                AUDIT_ACCOUNT_ID = valid_rule_parameters["AuditAccountID"]
+            else:
+                AUDIT_ACCOUNT_ID = ""
+        
+            compliance_value = "NOT_APPLICABLE"
+            custom_annotation = "Guardrail only applicable in the Management Account"
+        
+            AWS_CONFIG_CLIENT = get_client("config", event)
+            AWS_CLOUDWATCH_CLIENT = get_client("cloudwatch", event)
+            AWS_ORGANIZATIONS_CLIENT = get_client("organizations", event)
+        
+            # is this a scheduled invokation?
+            if is_scheduled_notification(invoking_event["messageType"]):
+                # yes, are we in the management account?
+                if AWS_ACCOUNT_ID == get_organizations_mgmt_account_id():
+                    # yes, proceed with checking CloudWatch Alarms
+                    # check if alarms exist in CloudWatch Alarms
+                    results = check_cloudwatch_alarms(alarm_names=str(
+                        valid_rule_parameters["AlarmList"]).split(","))
+                    if results:
+                        compliance_value = results.get("status")
+                        custom_annotation = results.get("annotation")
+                    else:
+                        compliance_value = "NON_COMPLIANT"
+                        custom_annotation = "Unable to assess CloudWatch Alarms"
+                    # Update AWS Config with the evaluation result
+                    evaluations.append(
+                        build_evaluation(
+                            event["accountId"],
+                            compliance_value,
+                            event,
+                            resource_type=DEFAULT_RESOURCE_TYPE,
+                            annotation=custom_annotation,
+                        )
+                    )
+                    AWS_CONFIG_CLIENT.put_evaluations(
+                        Evaluations=evaluations,
+                        ResultToken=event["resultToken"]
+                    )
+                else:
+                    # We're not in the Management Account
+                    logger.info("CloudWatch Alarms not checked in account %s as this is not the Management Account", AWS_ACCOUNT_ID)
+    except:
+        logger.info("This account Id is not active. Compliance evaluation not available for suspended accounts")

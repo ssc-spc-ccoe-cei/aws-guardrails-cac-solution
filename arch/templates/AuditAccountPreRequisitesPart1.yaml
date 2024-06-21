@@ -286,6 +286,7 @@ Resources:
           - Sid: AllowOrganizationsChecks
             Action:
               - "organizations:DescribeOrganization"
+              - "organizations:DescribeAccount"
             Resource:
               - "*"
             Effect: Allow
