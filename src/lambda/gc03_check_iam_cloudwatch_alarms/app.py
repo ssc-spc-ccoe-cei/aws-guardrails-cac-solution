@@ -229,31 +229,32 @@ def check_cloudwatch_alarms(
         logger.error("Error while trying to describe_alarms - boto3 Client error - %s", error)
         result["annotation"] = "Error while trying to describe_alarms."
         return result
-    # let's look at the alarms we found
+    
+    # checking the alarms we found
+    alarms_not_found_set = set(alarms_not_found)
     for alarm in alarms_found:
-        # are we still looking for alarms that we haven't found?
-        if alarms_not_found:
-           for a in alarms_not_found:
-                # Check each alarm not found, is it a substring of the alarm we're looking for?
-                if a in alarm.get("AlarmName"):
-                    # yes
-                    logger.info("CloudWatch Alarm %s found.", alarm.get("AlarmName"))
-                    try:
-                        alarms_not_found.remove(a)
-                    except ValueError:
-                        # value not in the list
-                        pass
-        else:
-            # no, we're done
+        if not alarms_not_found_set:
+            # All alarms have been found, exit the loop
             break
+        alarm_name =  alarm.get("AlarmName")
+        if alarm_name:
+            for not_found_alarm in alarms_not_found_set:
+                if not_found_alarm in alarm_name:
+                    logger.info("CloudWatch Alarm %s found.", alarm_name)
+                    alarms_not_found_set.remove(not_found_alarm)
+
+                    # Stop the inner loop as we found a match
+                    break
+
     # prepare the annotation (if needed)
-    if len(alarms_not_found) > 0:
+    if len(alarms_not_found_set) > 0:
         annotation = "Alarms not found: "
-        for alarm in alarms_not_found:
+        for alarm in alarms_not_found_set:
             annotation += f"{alarm}; "
         result["annotation"] = annotation
     else:
         result = {"status": "COMPLIANT", "annotation": "All alarms found"}
+        
     logger.info(result)
     return result
 
