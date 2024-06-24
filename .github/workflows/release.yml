@@ -31,7 +31,10 @@ jobs:
                     releaseName=$(basename ${{ github.ref }})
                     echo "releasename=$releaseName" >> $GITHUB_OUTPUT
 
-            - name: Run Makefile
+            - name: Build
+              run: make build-code                    
+
+            - name: Create Ckoudshell Package
               run: make create-cloudshell-package
 
             - name: Upload file to S3
