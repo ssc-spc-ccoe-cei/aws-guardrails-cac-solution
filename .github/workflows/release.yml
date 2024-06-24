@@ -32,7 +32,10 @@ jobs:
                     echo "releasename=$releaseName" >> $GITHUB_OUTPUT
 
             - name: Build
-              run: make build-code                    
+              run: |
+                 chmod +x ./tools/samclean.sh
+                 chmod +x ./tools/buildsam.sh
+                 make build-code                    
 
             - name: Create Ckoudshell Package
               run: make create-cloudshell-package
