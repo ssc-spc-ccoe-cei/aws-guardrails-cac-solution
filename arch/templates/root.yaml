@@ -248,6 +248,7 @@ Resources:
         PipelineBucket: !Ref PipelineBucket
         DestBucketName: !Ref DestBucketName
         DeployRoles: !Ref DeployRoles
+        DeployVersion: !Ref DeployVersion
         BGA1: !Ref BGA1
         BGA2: !Ref BGA2
       Tags:
