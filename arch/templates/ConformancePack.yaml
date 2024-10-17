@@ -62,11 +62,16 @@ Parameters:
   EnterpriseMonitoringIAMTrustedPrincipal:
     Default: "arn:aws:iam::939755092653:root"
     Type: String
+  #GC05
+  S3ProtectedBServiceLocationDocumentPath:
+    Type: String
   # GC07
   S3SecureNetworkTransmissionPolicyPath:
     Type: String
   # GC08
   S3TargetNetworkArchitecturePath:
+    Type: String
+  S3TargetCloudDeploymentGuideDocumentPath:
     Type: String
   # GC09
   S3NetworkArchitectureDocumentPath:
@@ -381,6 +386,11 @@ Resources:
       ConfigRuleName: gc05_check_data_location
       Description: Confirms if the account has deployed resources to unauthorized regions.
       InputParameters:
+        s3ObjectPath:
+          Fn::If:
+            - s3ProtectedBServiceLocationDocumentPath
+            - Ref: S3ProtectedBServiceLocationDocumentPath
+            - Ref: AWS::NoValue
         ExecutionRoleName:
           Fn::If:
             - GCLambdaExecutionRoleName
@@ -887,6 +897,12 @@ Conditions:
       - Fn::Equals:
           - ""
           - Ref: EnterpriseMonitoringIAMTrustedPrincipal
+  # GC05
+  s3ProtectedBServiceLocationDocumentPath:
+  Fn::Not:
+    - Fn::Equals:
+        - ""
+        - Ref: S3ProtectedBServiceLocationDocumentPath
   # GC07
   s3SecureNetworkTransmissionPolicyPath:
     Fn::Not:
@@ -899,6 +915,11 @@ Conditions:
       - Fn::Equals:
           - ""
           - Ref: S3TargetNetworkArchitecturePath
+  s3TargetCloudDeploymentGuideDocumentPath:
+    Fn::Not:
+      - Fn::Equals:
+          - ""
+          - Ref: S3TargetCloudDeploymentGuideDocumentPath
   # GC09
   s3NetworkArchitectureDocumentPath:
     Fn::Not:
