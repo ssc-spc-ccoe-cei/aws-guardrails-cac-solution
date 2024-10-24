@@ -49,6 +49,10 @@ Parameters:
   PasswordPolicyHardExpiry:
     Default: "False"
     Type: String
+  # GC01
+  TestInput:
+    Type: String
+    Default: "MyTestString"
   # GC02
   S3AccountManagementPlanPath:
     Type: String
@@ -87,6 +91,8 @@ Resources:
       ConfigRuleName: gc01_check_attestation_letter
       Description: Checks S3 bucket for the attestation letter
       InputParameters:
+        testString:
+          - Ref: TestInput
         s3ObjectPath:
           Fn::If:
             - s3AttestationLetterPath
@@ -585,6 +591,11 @@ Resources:
             - s3TargetNetworkArchitecturePath
             - Ref: S3TargetNetworkArchitecturePath
             - Ref: AWS::NoValue
+        s3ObjectPathTwo: #CHANGE THIS
+          Fn::If:
+            - s3TargetCloudDeploymentGuideDocumentPath
+            - Ref: S3TargetCloudDeploymentGuideDocumentPath
+            - Ref: AWS::NoValue
         ExecutionRoleName:
           Fn::If:
             - GCLambdaExecutionRoleName
@@ -899,10 +910,10 @@ Conditions:
           - Ref: EnterpriseMonitoringIAMTrustedPrincipal
   # GC05
   s3ProtectedBServiceLocationDocumentPath:
-  Fn::Not:
-    - Fn::Equals:
-        - ""
-        - Ref: S3ProtectedBServiceLocationDocumentPath
+    Fn::Not:
+      - Fn::Equals:
+          - ""
+          - Ref: S3ProtectedBServiceLocationDocumentPath
   # GC07
   s3SecureNetworkTransmissionPolicyPath:
     Fn::Not:
