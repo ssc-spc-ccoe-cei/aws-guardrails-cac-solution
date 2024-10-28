@@ -49,10 +49,6 @@ Parameters:
   PasswordPolicyHardExpiry:
     Default: "False"
     Type: String
-  # GC01
-  TestInput:
-    Type: String
-    Default: "MyTestString"
   # GC02
   S3AccountManagementPlanPath:
     Type: String
