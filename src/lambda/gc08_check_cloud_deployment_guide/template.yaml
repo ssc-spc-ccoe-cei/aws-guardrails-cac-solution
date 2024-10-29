@@ -1,7 +1,7 @@
 AWSTemplateFormatVersion: '2010-09-09'
 Transform: AWS::Serverless-2016-10-31
 Description: >
-  gc08_check_target_network_architecture
+  gc08_check_cloud_deployment_guide
 
 Globals:
   Function:
@@ -9,7 +9,7 @@ Globals:
     MemorySize: 128
 
 Resources:
-  GC08CheckTargetNetworkArchitectureLambda:
+  GC08CheckCloudDeploymentGuideLambda:
     Type: AWS::Serverless::Function
     Properties:
       CodeUri: .
