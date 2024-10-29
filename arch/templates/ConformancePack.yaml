@@ -87,8 +87,6 @@ Resources:
       ConfigRuleName: gc01_check_attestation_letter
       Description: Checks S3 bucket for the attestation letter
       InputParameters:
-        testString:
-          - Ref: TestInput
         s3ObjectPath:
           Fn::If:
             - s3AttestationLetterPath
@@ -587,7 +585,38 @@ Resources:
             - s3TargetNetworkArchitecturePath
             - Ref: S3TargetNetworkArchitecturePath
             - Ref: AWS::NoValue
-        s3ObjectPathTwo: #CHANGE THIS
+        ExecutionRoleName:
+          Fn::If:
+            - GCLambdaExecutionRoleName
+            - Ref: GCLambdaExecutionRoleName
+            - Ref: AWS::NoValue
+        AuditAccountID:
+          Fn::If:
+            - auditAccountID
+            - Ref: AuditAccountID
+            - Ref: AWS::NoValue
+      Scope:
+        ComplianceResourceTypes:
+          - AWS::Account
+      MaximumExecutionFrequency: TwentyFour_Hours
+      Source:
+        Owner: CUSTOM_LAMBDA
+        SourceIdentifier:
+          Fn::Join:
+            - ""
+            - - "arn:aws:lambda:ca-central-1:"
+              - Ref: AuditAccountID
+              - !Sub ":function:${OrganizationName}gc08_check_target_network_architecture"
+        SourceDetails:
+          - EventSource: "aws.config"
+            MessageType: "ScheduledNotification"
+  GC08CheckCloudDeploymentGuideDocumentConfigRule:
+    Type: "AWS::Config::ConfigRule"
+    Properties:
+      ConfigRuleName: gc08_check_cloud_deployment_guide
+      Description: Checks S3 bucket for the cloud deployment guide document
+      InputParameters:
+        s3ObjectPath:
           Fn::If:
             - s3TargetCloudDeploymentGuideDocumentPath
             - Ref: S3TargetCloudDeploymentGuideDocumentPath
@@ -613,7 +642,7 @@ Resources:
             - ""
             - - "arn:aws:lambda:ca-central-1:"
               - Ref: AuditAccountID
-              - !Sub ":function:${OrganizationName}gc08_check_target_network_architecture"
+              - !Sub ":function:${OrganizationName}gc08_check_cloud_deployment_guide"
         SourceDetails:
           - EventSource: "aws.config"
             MessageType: "ScheduledNotification"
