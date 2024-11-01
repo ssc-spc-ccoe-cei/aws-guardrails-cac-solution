@@ -83,6 +83,7 @@ def apply_lambda_permissions():
         f"{organization_name}gc07_check_secure_network_transmission_policy": ["GC07CheckSecureNetworkTransmissionPolicyLambda"],
         f"{organization_name}gc07_check_encryption_in_transit": ["GC07CheckEncryptionInTransitLambda"],
         f"{organization_name}gc08_check_target_network_architecture": ["GC08CheckTargetNetworkArchitectureLambda"],
+        f"{organization_name}gc08_check_cloud_deployment_guide": ["GC08CheckCloudDeploymentGuideLambda"],
         f"{organization_name}gc09_check_netsec_architecture": ["GC09CheckNetworkSecurityArchitectureDocumentLambda"],
         f"{organization_name}gc10_confirmation_of_mou": ["GC10CheckSignedMOULambda"],
         f"{organization_name}gc11_check_security_contact": ["GC11CheckSecurityContactLambda"],

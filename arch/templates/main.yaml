@@ -1395,6 +1395,10 @@ Resources:
           ParameterValue: !Sub
             - "s3://${ClientEvidenceBucket}/gc-02/account_management_plan.pdf"
             - ClientEvidenceBucket: !If [ GenerateEvidenceBucketName, !GetAtt GenerateEvidenceBucketName.EvidenceBucketName, !Ref EvidenceBucketName ]
+        - ParameterName: S3ProtectedBServiceLocationDocumentPath
+          ParameterValue: !Sub
+            - "s3://${ClientEvidenceBucket}/gc-05/service_location_protectedb.pdf"
+            - ClientEvidenceBucket: !If [ GenerateEvidenceBucketName, !GetAtt GenerateEvidenceBucketName.EvidenceBucketName, !Ref EvidenceBucketName ]
         - ParameterName: S3SecureNetworkTransmissionPolicyPath
           ParameterValue: !Sub
             - "s3://${ClientEvidenceBucket}/gc-07/secure_network_transmission.pdf"
@@ -1402,6 +1406,10 @@ Resources:
         - ParameterName: S3TargetNetworkArchitecturePath
           ParameterValue: !Sub
             - "s3://${ClientEvidenceBucket}/gc-08/target_network_architecture.pdf"
+            - ClientEvidenceBucket: !If [ GenerateEvidenceBucketName, !GetAtt GenerateEvidenceBucketName.EvidenceBucketName, !Ref EvidenceBucketName ]
+        - ParameterName: S3TargetCloudDeploymentGuideDocumentPath
+          ParameterValue: !Sub
+            - "s3://${ClientEvidenceBucket}/gc-08/cloud_deployment_guide.pdf"
             - ClientEvidenceBucket: !If [ GenerateEvidenceBucketName, !GetAtt GenerateEvidenceBucketName.EvidenceBucketName, !Ref EvidenceBucketName ]
         - ParameterName: S3NetworkArchitectureDocumentPath
           ParameterValue: !Sub
