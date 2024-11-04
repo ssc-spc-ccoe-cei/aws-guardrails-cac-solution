@@ -1,7 +1,7 @@
 AWSTemplateFormatVersion: '2010-09-09'
 Transform: AWS::Serverless-2016-10-31
 Description: >
-  gc01_check_root_mfa
+  gc01_check_alerts_flag_misuse
 
 Globals:
   Function:
@@ -9,7 +9,7 @@ Globals:
     MemorySize: 128
 
 Resources:
-  GC01CheckRootAccountMFAEnabledLambda:
+  GC01CheckAlertsFlagMisuseLambda:
     Type: AWS::Serverless::Function
     Properties:
       CodeUri: .

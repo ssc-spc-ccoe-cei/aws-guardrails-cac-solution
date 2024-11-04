@@ -7,6 +7,7 @@ import time
 
 import boto3
 import botocore
+import botocore.exceptions
 
 # Logging setup
 logger = logging.getLogger()
@@ -75,56 +76,6 @@ def evaluate_parameters(rule_parameters):
     return rule_parameters
 
 
-def get_organizations_mgmt_account_id():
-    """Calls the AWS Organizations API to obtain the Management Account ID"""
-    management_account_id = ""
-    i_retry_limit = 10
-    i_retries = 0
-    b_completed = False
-    b_retry = True
-    while (b_retry and (not b_completed)) and (i_retries < i_retry_limit):
-        try:
-            response = AWS_ORGANIZATIONS_CLIENT.describe_organization()
-            if response:
-                organization = response.get("Organization", None)
-                if organization:
-                    management_account_id = organization.get("MasterAccountId", "")
-                else:
-                    logger.error("Unable to read the Organization from the dict")
-            else:
-                logger.error("Invalid response.")
-            b_completed = True
-        except botocore.exceptions.ClientError as ex:
-            if "AccessDenied" in ex.response["Error"]["Code"]:
-                logger.error("ACCESS DENIED when trying to describe_organization")
-                management_account_id = "ERROR"
-                b_retry = False
-            elif "AWSOrganizationsNotInUse" in ex.response["Error"]["Code"]:
-                logger.error("AWS Organizations not in use")
-                management_account_id = "ERROR"
-                b_retry = False
-            elif "ServiceException" in ex.response["Error"]["Code"]:
-                logger.error("AWS Organizations Service Exception")
-                management_account_id = "ERROR"
-                b_retry = False
-            elif ("ConcurrentModification" in ex.response["Error"]["Code"]) or (
-                "TooManyRequests" in ex.response["Error"]["Code"]
-            ):
-                # throttling
-                logger.info("AWS Organizations API is throttling requests or going through a modification. Will retry.")
-                time.sleep(2)
-                if i_retries >= i_retry_limit:
-                    logger.error("Retry limit reached. Returning an error")
-                    management_account_id = "ERROR"
-                    b_retry = False
-                else:
-                    i_retries += 1
-        except ValueError:
-            logger.error("Unknown exception - get_organizations_mgmt_account_id.")
-            management_account_id = "ERROR"
-    return management_account_id
-
-
 # This generate an evaluation for config
 def build_evaluation(
     resource_id,
@@ -153,99 +104,63 @@ def build_evaluation(
     )
     return eval_cc
 
-
-def get_root_mfa_enabled():
-    """Generates an IAM Credential report and confirms if MFA is enabled for the root user"""
-    b_root_account_mfa = False
-    b_root_account_found = False
-    b_retry = True
-    i_retry_limit = 10
-    i_retries = 0
-    report_content = ""
-    logger.info("Generating IAM Credential report...")
-    while b_retry and i_retries < i_retry_limit:
-        try:
-            response = AWS_IAM_CLIENT.get_credential_report()
-            if response:
-                report_content = response.get("Content").decode("utf-8")
-                b_retry = False
-            else:
-                logger.error("Invalid response from the get_credential_report call.")
-                time.sleep(1)
-        except botocore.exceptions.ClientError as error:
-            print(error)
-            if ("ReportNotPresent" in error.response["Error"]["Code"]) or (
-                "ReportExpired" in error.response["Error"]["Code"]
-            ):
-                # we need to request report generation
-                try:
-                    response = AWS_IAM_CLIENT.generate_credential_report()
-                    logger.info("Generating credential report...sleeping for 5 seconds")
-                    time.sleep(5)
-                except botocore.exceptions.ClientError as err:
-                    if "LimitExceeded" in err.response["Error"]["Code"]:
-                        # exceeding an internal AWS limit
-                        logger.info("LimitExceededException...sleeping for 2 seconds")
-                        time.sleep(2)
-                    else:
-                        # something else
-                        logger.error("Error while trying to generate_credential_report - boto3 Client error - %s", error)
-                        b_retry = False
-            elif ("ReportNotReady" in error.response["Error"]["Code"]) or (
-                "ReportInProgress" in error.response["Error"]["Code"]
-            ):
-                # we need to wait a bit more for it to be ready
-                logger.info("Credential report not ready...sleeping for 2 seconds")
-                time.sleep(2)
-            else:
-                # something else
-                logger.error("Error while trying to get_credential_report - boto3 Client error - %s", error)
-                b_retry = False
-        i_retries += 1
-    lines = report_content.split("\n")
-    # do we have lines in the report?
-    if len(lines) > 1:
-        # yes, let's get the header
-        header = lines[0]
-        column_names = header.split(",")
-        # were we able to get the column names?
-        if column_names:
-            # yes, so let's find the indices we're looking for
-            try:
-                user_column_index = column_names.index("user")
-                mfa_column_index = column_names.index("mfa_active")
-            except ValueError:
-                # column not found
-                logger.error("Invalid header line.")
-                return False
-            # now iterate over the remaining lines to find the root account
-            for line in lines[1:]:
-                line = line.strip()
-                # is the line empty?
-                if line:
-                    # no, great! Process it.
-                    try:
-                        if line.split(",")[user_column_index] == "<root_account>":
-                            # root account found
-                            b_root_account_found = True
-                            if line.split(",")[mfa_column_index].lower() == "true":
-                                # MFA is enabled
-                                logger.info("Root account MFA confirmed to be enabled.")
-                                b_root_account_mfa = True
-                            break
-                    except ValueError:
-                        logger.error("Error parsing line %s", line)
-                else:
-                    logger.info("Skipping empty line")
+def get_guard_duty_enabled():
+    try:
+        response = AWS_GUARD_DUTY_CLIENT.list_detectors()
+        detectorIds = response.get("DetectorIds", [])
+        return len(detectorIds) > 0
+    except botocore.exceptions.ClientError as ex:
+        if "BadRequest" in ex.response['Error']['Code']:
+            ex.response['Error']['Message'] = "Failed to fetch detector ids for GuardDuty. Bad Request."
         else:
-            logger.error("Unable to split header line")
-    else:
-        logger.error("Empty credential report")
-    if not b_root_account_found:
-        logger.error("Root account was NOT found in the credential report")
-    return b_root_account_mfa
+            ex.response["Error"]["Message"] = "InternalError"
+            ex.response["Error"]["Code"] = "InternalError"
+            
+        raise ex
+    
+def get_event_bridge_rules(naming_convention):
+    rules = []
+    try:
+        # Assuming we only need to check the default event bus
+        response = AWS_EVENT_BRIDGE_CLIENT.list_rules(naming_convention)
+        rules = rules + response.get("Rules")
+        next_token = response.get("NextToken")
+        
+        while next_token != None:
+            response = AWS_EVENT_BRIDGE_CLIENT.list_rules(naming_convention, next_token)
+            rules = rules + response.get("Rules")
+            next_token = response.get("NextToken")
+            
+        return rules
+    except botocore.exceptions.ClientError as ex:
+        if "ResourceNotFound" in ex.response['Error']['Code']:
+            ex.response['Error']['Message'] = "Failed to list rules for EventBridge. Resource not found."
+        else:
+            ex.response["Error"]["Message"] = "InternalError"
+            ex.response["Error"]["Code"] = "InternalError"
+        raise ex
 
+def check_rules_sns_target_is_setup(rule_name):
+    try:
+        response = AWS_EVENT_BRIDGE_CLIENT.list_targets_by_rule(rule_name)
+        targets = response.get("Targets", [])
+        next_token = response.get("NextToken")
+        
+        while next_token != None:
+            response = AWS_EVENT_BRIDGE_CLIENT.list_targets_by_rule(rule_name, NextToken=next_token)
+            targets = targets + response.get("Targets", [])
+            next_token = response.get("NextToken")
 
+        for target in targets:
+            if target.get("InputTransformer") != None:
+                # get sns topic via target ARN
+                # then list subscriptions for topic
+                # then search topic for a subscription with "email" protocol and is confirmed
+                logger.info("not done yet")
+                
+    except botocore.exceptions.ClientError as ex:
+        raise ex
+        
 def lambda_handler(event, context):
     """This function is the main entry point for Lambda.
     Keyword arguments:
@@ -255,8 +170,9 @@ def lambda_handler(event, context):
     logger.debug("Received event: %s", event)
 
     global AWS_CONFIG_CLIENT
-    global AWS_IAM_CLIENT
-    global AWS_ORGANIZATIONS_CLIENT
+    global AWS_GUARD_DUTY_CLIENT
+    global AWS_EVENT_BRIDGE_CLIENT
+    global AWS_SNS_CLIENT
     global AWS_ACCOUNT_ID
     global EXECUTION_ROLE_NAME
     global AUDIT_ACCOUNT_ID
@@ -284,41 +200,50 @@ def lambda_handler(event, context):
     else:
         AUDIT_ACCOUNT_ID = ""
 
-    compliance_value = "NOT_APPLICABLE"
-    custom_annotation = "Guardrail only applicable in the Management Account"
-
     AWS_CONFIG_CLIENT = get_client("config", event)
-    AWS_IAM_CLIENT = get_client("iam", event)
-    AWS_ORGANIZATIONS_CLIENT = get_client("organizations", event)
-
+    AWS_GUARD_DUTY_CLIENT = get_client("guardduty", event)
+    AWS_EVENT_BRIDGE_CLIENT = get_client("events", event)
+    AWS_SNS_CLIENT = get_client("sns", event)
+    
     # is this a scheduled invokation?
     if is_scheduled_notification(invoking_event["messageType"]):
-        # yes, are we in the management account?
-        if AWS_ACCOUNT_ID == get_organizations_mgmt_account_id():
-            # yes, proceed with checking IAM
-            # check if Root Account has MFA enabled
-            logger.info("Root Account MFA check in account %s", AWS_ACCOUNT_ID)
-            if get_root_mfa_enabled():
-                compliance_value = "COMPLIANT"
-                custom_annotation = "Root Account MFA enabled"
-            else:
-                compliance_value = "NON_COMPLIANT"
-                custom_annotation = "Root Account MFA NOT enabled."
-            # Update AWS Config with the evaluation result
-            logger.info("Updating AWS Config with Evaluation Result: %s", compliance_value)
-            evaluations.append(
-                build_evaluation(
-                    event["accountId"],
-                    compliance_value,
-                    event,
-                    resource_type=DEFAULT_RESOURCE_TYPE,
-                    annotation=custom_annotation,
-                )
-            )
-            AWS_CONFIG_CLIENT.put_evaluations(
-                Evaluations=evaluations,
-                ResultToken=event["resultToken"]
-            )
+        # yes, proceed with checking GuardDuty
+        # check if GuardDuty is enabled
+        logger.info("Root Account MFA check in account %s", AWS_ACCOUNT_ID)
+        if get_guard_duty_enabled():
+            # yes, check that an EventBridge rule is setup to alert authorized user
+            logger.info("not done yet")
         else:
-            # We're not in the Management Account
-            logger.info("Root Account MFA not checked in account %s as this is not the Management Account", AWS_ACCOUNT_ID)
+            # no, check for EventBridge rules with naming convention
+            # Assuming RuleNamingConvention is always going to be a prefix convention
+            rule_naming_convention = valid_rule_parameters.get("RuleNamingConvention")
+            rules = get_event_bridge_rules(rule_naming_convention)
+            
+            if len(rules) > 0:
+                evaluations.append(
+                    build_evaluation(
+                        event["accountId"],
+                        "NON_COMPLIANT",
+                        event,
+                        resource_type=DEFAULT_RESOURCE_TYPE,
+                        annotation="GuardDuty is not enabled and there are no EventBridge rules. ",
+                    )
+                )
+            else:
+                evaluations.append(
+                    build_evaluation(
+                        event["accountId"],
+                        "NON_COMPLIANT",
+                        event,
+                        resource_type=DEFAULT_RESOURCE_TYPE,
+                        annotation="GuardDuty is not enabled and there are no EventBridge rules. ",
+                    )
+                )
+            
+            
+            
+        # Update AWS Config with the evaluation result
+        AWS_CONFIG_CLIENT.put_evaluations(
+            Evaluations=evaluations,
+            ResultToken=event["resultToken"]
+        )
