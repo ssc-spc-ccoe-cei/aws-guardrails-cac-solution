@@ -62,11 +62,16 @@ Parameters:
   EnterpriseMonitoringIAMTrustedPrincipal:
     Default: "arn:aws:iam::939755092653:root"
     Type: String
+  #GC05
+  S3ProtectedBServiceLocationDocumentPath:
+    Type: String
   # GC07
   S3SecureNetworkTransmissionPolicyPath:
     Type: String
   # GC08
   S3TargetNetworkArchitecturePath:
+    Type: String
+  S3TargetCloudDeploymentGuideDocumentPath:
     Type: String
   # GC09
   S3NetworkArchitectureDocumentPath:
@@ -381,6 +386,11 @@ Resources:
       ConfigRuleName: gc05_check_data_location
       Description: Confirms if the account has deployed resources to unauthorized regions.
       InputParameters:
+        s3ObjectPath:
+          Fn::If:
+            - s3ProtectedBServiceLocationDocumentPath
+            - Ref: S3ProtectedBServiceLocationDocumentPath
+            - Ref: AWS::NoValue
         ExecutionRoleName:
           Fn::If:
             - GCLambdaExecutionRoleName
@@ -597,6 +607,42 @@ Resources:
             - - "arn:aws:lambda:ca-central-1:"
               - Ref: AuditAccountID
               - !Sub ":function:${OrganizationName}gc08_check_target_network_architecture"
+        SourceDetails:
+          - EventSource: "aws.config"
+            MessageType: "ScheduledNotification"
+  GC08CheckCloudDeploymentGuideDocumentConfigRule:
+    Type: "AWS::Config::ConfigRule"
+    Properties:
+      ConfigRuleName: gc08_check_cloud_deployment_guide
+      Description: Checks S3 bucket for the cloud deployment guide document
+      InputParameters:
+        s3ObjectPath:
+          Fn::If:
+            - s3TargetCloudDeploymentGuideDocumentPath
+            - Ref: S3TargetCloudDeploymentGuideDocumentPath
+            - Ref: AWS::NoValue
+        ExecutionRoleName:
+          Fn::If:
+            - GCLambdaExecutionRoleName
+            - Ref: GCLambdaExecutionRoleName
+            - Ref: AWS::NoValue
+        AuditAccountID:
+          Fn::If:
+            - auditAccountID
+            - Ref: AuditAccountID
+            - Ref: AWS::NoValue
+      Scope:
+        ComplianceResourceTypes:
+          - AWS::Account
+      MaximumExecutionFrequency: TwentyFour_Hours
+      Source:
+        Owner: CUSTOM_LAMBDA
+        SourceIdentifier:
+          Fn::Join:
+            - ""
+            - - "arn:aws:lambda:ca-central-1:"
+              - Ref: AuditAccountID
+              - !Sub ":function:${OrganizationName}gc08_check_cloud_deployment_guide"
         SourceDetails:
           - EventSource: "aws.config"
             MessageType: "ScheduledNotification"
@@ -887,6 +933,12 @@ Conditions:
       - Fn::Equals:
           - ""
           - Ref: EnterpriseMonitoringIAMTrustedPrincipal
+  # GC05
+  s3ProtectedBServiceLocationDocumentPath:
+    Fn::Not:
+      - Fn::Equals:
+          - ""
+          - Ref: S3ProtectedBServiceLocationDocumentPath
   # GC07
   s3SecureNetworkTransmissionPolicyPath:
     Fn::Not:
@@ -899,6 +951,11 @@ Conditions:
       - Fn::Equals:
           - ""
           - Ref: S3TargetNetworkArchitecturePath
+  s3TargetCloudDeploymentGuideDocumentPath:
+    Fn::Not:
+      - Fn::Equals:
+          - ""
+          - Ref: S3TargetCloudDeploymentGuideDocumentPath
   # GC09
   s3NetworkArchitectureDocumentPath:
     Fn::Not:

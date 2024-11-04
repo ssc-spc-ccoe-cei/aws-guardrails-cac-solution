@@ -61,6 +61,20 @@ Resources:
         LogGroup: !Sub "${OrganizationName}gc_guardrails"
         LogFormat: "JSON"
 
+  GC08CheckCloudDeploymentGuideLambda:
+    Condition: IsAuditAccount
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub "${OrganizationName}gc08_check_cloud_deployment_guide"
+      Code: "../../src/lambda/gc08_check_cloud_deployment_guide/build/GC08CheckCloudDeploymentGuideLambda/"
+      Handler: app.lambda_handler
+      Role: !Sub "arn:aws:iam::${AuditAccountID}:role/${RolePrefix}default_assessment_role"
+      Runtime: !Ref PythonRuntime
+      Timeout: 90
+      LoggingConfig:
+        LogGroup: !Sub "${OrganizationName}gc_guardrails"
+        LogFormat: "JSON"
+
   ## GC09
   GC09CheckNetworkSecurityArchitectureDocumentLambda:
     Condition: IsAuditAccount
