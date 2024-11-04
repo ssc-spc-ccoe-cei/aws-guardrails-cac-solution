@@ -80,7 +80,7 @@ def list_cloudtrails():
         response = AWS_CLOUDTRAIL_CLIENT.list_trails()
         trails = response.get("Trails")
         next_token = response.get("NextToken")
-        while next_token == None:
+        while next_token != None:
             response = AWS_CLOUDTRAIL_CLIENT.list_trails()
             trails = trails + response.get("Trails")
             next_token = response.get("NextToken")
