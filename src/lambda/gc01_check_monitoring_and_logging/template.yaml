@@ -9,7 +9,7 @@ Globals:
     MemorySize: 128
 
 Resources:
-  GC01CheckRootAccountMFAEnabledLambda:
+  GC01CheckMonitoringAndLoggingLambda:
     Type: AWS::Serverless::Function
     Properties:
       CodeUri: .

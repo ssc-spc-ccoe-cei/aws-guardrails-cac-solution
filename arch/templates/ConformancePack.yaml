@@ -148,6 +148,38 @@ Resources:
         SourceDetails:
           - EventSource: "aws.config"
             MessageType: "ScheduledNotification"
+  GC01CheckMonitoringAndLogging:
+    Type: "AWS::Config::ConfigRule"
+    Properties:
+      ConfigRuleName: gc01_check_monitoring_and_logging
+      Description: Checks that monitoring and auditing is implemented for all user accounts.
+      InputParameters:
+        ExecutionRoleName:
+          Fn::If:
+            - GCLambdaExecutionRoleName
+            - Ref: GCLambdaExecutionRoleName
+            - Ref: AWS::NoValue
+        AuditAccountID:
+          Fn::If:
+            - auditAccountID
+            - Ref: AuditAccountID
+            - Ref: AWS::NoValue
+      Scope:
+        ComplianceResourceTypes:
+          - AWS::Account
+          - AWS::CloudTrail::Trail
+      MaximumExecutionFrequency: TwentyFour_Hours
+      Source:
+        Owner: CUSTOM_LAMBDA
+        SourceIdentifier:
+          Fn::Join:
+            - ""
+            - - "arn:aws:lambda:ca-central-1:"
+              - Ref: AuditAccountID
+              - !Sub ":function:${OrganizationName}gc01_check_monitoring_and_logging"
+        SourceDetails:
+          - EventSource: "aws.config"
+            MessageType: "ScheduledNotification"
   # GC02
   GC02CheckAccountManagementPlanConfigRule:
     Type: "AWS::Config::ConfigRule"
