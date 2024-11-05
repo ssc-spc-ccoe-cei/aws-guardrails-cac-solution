@@ -72,6 +72,8 @@ def apply_lambda_permissions():
     lambda_functions = {
         f"{organization_name}gc01_check_attestation_letter": ["GC01CheckAttestationLetterLambda"],
         f"{organization_name}gc01_check_root_mfa": ["GC01CheckRootAccountMFAEnabledLambda"],
+        f"{organization_name}gc01_check_monitoring_and_logging": ["GC01CheckMonitoringAndLoggingLambda"],
+        f"{organization_name}gc01_check_alerts_flag_misuse": ["GC01CheckAlertsFlagMisuseLambda"],
         f"{organization_name}gc02_check_account_mgmt_plan": ["GC02CheckAccountManagementPlanLambda"],
         f"{organization_name}gc02_check_iam_users_mfa": ["GC02CheckIAMUsersMFALambda"],
         f"{organization_name}gc02_check_iam_password_policy": ["GC02CheckIAMPasswordPolicyLambda"],

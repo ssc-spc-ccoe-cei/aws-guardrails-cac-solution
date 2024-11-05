@@ -86,6 +86,20 @@ Resources:
         LogGroup: !Sub "${OrganizationName}gc_guardrails"
         LogFormat: "JSON"
 
+  GC01CheckAlertsFlagMisuseLambda:
+    Condition: IsAuditAccount
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub "${OrganizationName}gc01_check_alerts_flag_misuse"
+      Code: "../../src/lambda/gc01_check_alerts_flag_misuse/build/GC01CheckAlertsFlagMisuseLambda/"
+      Handler: app.lambda_handler
+      Role: !Sub "arn:aws:iam::${AuditAccountID}:role/${RolePrefix}default_assessment_role"
+      Runtime: !Ref PythonRuntime
+      Timeout: 90
+      LoggingConfig:
+        LogGroup: !Sub "${OrganizationName}gc_guardrails"
+        LogFormat: "JSON"
+        
   ## GC03
   GC03CheckIAMCloudWatchAlarmsLambda:
     Condition: IsAuditAccount

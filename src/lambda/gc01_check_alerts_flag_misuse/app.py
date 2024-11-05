@@ -314,7 +314,7 @@ def lambda_handler(event, context):
         if guard_duty_evaluation == None or guard_duty_evaluation.get("ComplianceType") == "NON_COMPLIANT":
             # yes, check for EventBridge rules with naming convention
             rule_naming_convention = valid_rule_parameters.get("RuleNamingConvention")
-            reg = re.compile('{}'.format(rule_naming_convention))
+            reg = re.compile(rule_naming_convention)
             filtered_rules = filter(lambda r: reg.search(r.get("Name")), rules)
             
             # are there any rules matching the naming convention?

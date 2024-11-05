@@ -124,6 +124,11 @@ Parameters:
     Type: String
     Description: >-
       The deployment pipeline bucket holding child templates and packaged lambda code.
+  RuleNamingConvention:
+    Type: String
+    Default: "^misuse-alerts-.+"
+    Description: >-
+      Naming convention for Event rules monitoring misuse
   EvidenceBucketName:
     Type: String
     Default: ""
@@ -1391,6 +1396,8 @@ Resources:
           ParameterValue: !Sub
             - "s3://${ClientEvidenceBucket}/gc-01/attestation_letter.pdf"
             - ClientEvidenceBucket: !If [ GenerateEvidenceBucketName, !GetAtt GenerateEvidenceBucketName.EvidenceBucketName, !Ref EvidenceBucketName ]
+        - ParameterName: RuleNamingConvention
+          ParameterValue: !Ref RuleNamingConvention
         - ParameterName: S3AccountManagementPlanPath
           ParameterValue: !Sub
             - "s3://${ClientEvidenceBucket}/gc-02/account_management_plan.pdf"

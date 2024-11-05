@@ -22,6 +22,8 @@ Parameters:
   # GC01
   S3AttestationLetterPath:
     Type: String
+  RuleNamingConvention:
+    Type: String
   PasswordPolicyMinimumPasswordLength:
     Default: "14"
     Type: String
@@ -177,6 +179,42 @@ Resources:
             - - "arn:aws:lambda:ca-central-1:"
               - Ref: AuditAccountID
               - !Sub ":function:${OrganizationName}gc01_check_monitoring_and_logging"
+        SourceDetails:
+          - EventSource: "aws.config"
+            MessageType: "ScheduledNotification"
+  GC01CheckAlertsFlagMisuseConfigRule:
+    Type: "AWS::Config::ConfigRule"
+    Properties:
+      ConfigRuleName: gc01_check_alerts_flag_misuse
+      Description: Checks that alerts are setup to notify authorized personnel of suspicous activities.
+      InputParameters:
+        RuleNamingConvention:
+          Fn::If:
+            - ruleNamingConvention
+            - Ref: RuleNamingConvention
+            - Ref: AWS::NoValue
+        ExecutionRoleName:
+          Fn::If:
+            - GCLambdaExecutionRoleName
+            - Ref: GCLambdaExecutionRoleName
+            - Ref: AWS::NoValue
+        AuditAccountID:
+          Fn::If:
+            - auditAccountID
+            - Ref: AuditAccountID
+            - Ref: AWS::NoValue
+      Scope:
+        ComplianceResourceTypes:
+          - AWS::Account
+      MaximumExecutionFrequency: TwentyFour_Hours
+      Source:
+        Owner: CUSTOM_LAMBDA
+        SourceIdentifier:
+          Fn::Join:
+            - ""
+            - - "arn:aws:lambda:ca-central-1:"
+              - Ref: AuditAccountID
+              - !Sub ":function:${OrganizationName}gc01_check_alerts_flag_misuse"
         SourceDetails:
           - EventSource: "aws.config"
             MessageType: "ScheduledNotification"
@@ -939,6 +977,11 @@ Conditions:
       - Fn::Equals:
           - ""
           - Ref: S3AttestationLetterPath
+  ruleNamingConvention:
+    Fn::Not:
+      - Fn::Equals:
+          - ""
+          - Ref: RuleNamingConvention
   passwordPolicyMinimumPasswordLength:
     Fn::Not:
       - Fn::Equals:
