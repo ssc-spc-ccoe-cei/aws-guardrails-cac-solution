@@ -206,7 +206,7 @@ Resources:
       Scope:
         ComplianceResourceTypes:
           - AWS::Account
-          - AWS::Events::Rule	
+          - AWS::Events::Rule
       MaximumExecutionFrequency: TwentyFour_Hours
       Source:
         Owner: CUSTOM_LAMBDA
