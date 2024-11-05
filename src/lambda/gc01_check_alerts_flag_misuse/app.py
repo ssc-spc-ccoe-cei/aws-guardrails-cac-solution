@@ -4,6 +4,7 @@
 import json
 import logging
 import time
+import re
 
 import boto3
 import botocore
@@ -118,7 +119,7 @@ def get_guard_duty_enabled():
             
         raise ex
     
-def get_event_bridge_rules(naming_convention):
+def get_event_bridge_rules(naming_convention:str):
     rules = []
     try:
         # Assuming we only need to check the default event bus
@@ -140,26 +141,114 @@ def get_event_bridge_rules(naming_convention):
             ex.response["Error"]["Code"] = "InternalError"
         raise ex
 
-def check_rules_sns_target_is_setup(rule_name):
+def get_topic_subscriptions(topic_arn):
+    try:
+        response = AWS_SNS_CLIENT.list_subscriptions_by_topic(topic_arn)
+        subscriptions = response.get("Subscriptions", [])
+        next_token = response.get("NextToken")
+
+        while next_token != None:
+            response = AWS_SNS_CLIENT.list_subscriptions_by_topic(topic_arn, next_token)
+            subscriptions = subscriptions + response.get("Subscriptions", [])
+            next_token = response.get("NextToken")
+        
+        return subscriptions
+    except botocore.exceptions.ClientError as ex:
+        if "NotFound" in ex.response['Error']['Code']:
+            ex.response['Error']['Message'] = "Failed to get topic subscriptions. Resource not found."
+        elif "InvalidParameter" in ex.response['Error']['Code']:
+            ex.response['Error']['Message'] = "Failed to get topic subscriptions. Invalid parameter."
+        elif "AuthorizationError" in ex.response['Error']['Code']:
+            ex.response['Error']['Message'] = "Faled to get topic subscriptions. User is unauthorized."
+        else:
+            ex.response["Error"]["Message"] = "InternalError"
+            ex.response["Error"]["Code"] = "InternalError"
+        raise ex
+    
+def subscription_is_confirmed(subscription_arn):
+    try:
+        response = AWS_SNS_CLIENT.get_subscription_attributes(subscription_arn)
+        attributes = response.get("Attributes")
+        
+        if attributes == None:
+            return False
+        
+        return attributes.get("ConfirmationWasAuthenticated") == "true"
+    except botocore.exceptions.ClientError as ex:
+        if "NotFound" in ex.response['Error']['Code']:
+            ex.response['Error']['Message'] = "Failed to get subscription attributes. Resource not found."
+        elif "InvalidParameter" in ex.response['Error']['Code']:
+            ex.response['Error']['Message'] = "Failed to get subscription attributes. Invalid parameter."
+        elif "AuthorizationError" in ex.response['Error']['Code']:
+            ex.response['Error']['Message'] = "Faled to get subscription attributes. User is unauthorized."
+        else:
+            ex.response["Error"]["Message"] = "InternalError"
+            ex.response["Error"]["Code"] = "InternalError"
+        raise ex
+
+def fetch_rule_targets(rule_name):
     try:
         response = AWS_EVENT_BRIDGE_CLIENT.list_targets_by_rule(rule_name)
         targets = response.get("Targets", [])
         next_token = response.get("NextToken")
-        
+            
         while next_token != None:
             response = AWS_EVENT_BRIDGE_CLIENT.list_targets_by_rule(rule_name, NextToken=next_token)
             targets = targets + response.get("Targets", [])
             next_token = response.get("NextToken")
+        return targets   
+    except botocore.exceptions.ClientError as ex:
+        if "NotFound" in ex.response['Error']['Code']:
+            ex.response['Error']['Message'] = "Failed to fetch all targets for a rule. Resource not found."
+        else:
+            ex.response["Error"]["Message"] = "InternalError"
+            ex.response["Error"]["Code"] = "InternalError"
+        raise ex
+
+def rule_event_pattern_matches_guard_duty_findings(rule_event_pattern:str):
+    event_pattern_dict = json.loads(rule_event_pattern)
+    return event_pattern_dict.get("Source") == "aws.guardduty" and event_pattern_dict.get("detail-type") == "GuardDuty Finding"
+
+def check_rules_sns_target_is_setup(rules, event):
+    for rule in rules:
+        if rule.get("State") == "DISABLED":
+            return build_evaluation(
+                event["accountId"],
+                "NON_COMPLIANT",
+                event,
+                resource_type="AWS::Events::Rule",
+                annotation="Rule is disabled.",
+            )   
+        
+        rule_name = rule.get("Name")          
+        targets = fetch_rule_targets(rule_name)
 
         for target in targets:
-            if target.get("InputTransformer") != None:
-                # get sns topic via target ARN
-                # then list subscriptions for topic
+            # is target an SNS input transformer?
+            target_arn: str = target.get("Arn")
+            if target_arn.startswith("arn:aws:sns:") :
+                # yes, get a list of topic subscriptions
+                subscriptions =  get_topic_subscriptions(target_arn)
                 # then search topic for a subscription with "email" protocol and is confirmed
-                logger.info("not done yet")
-                
-    except botocore.exceptions.ClientError as ex:
-        raise ex
+                for subscription in subscriptions:
+                    if subscription.get("Protocol") == "email":
+                        subscription_arn = subscription.get("SubscriptionArn")
+                        if subscription_is_confirmed(subscription_arn):
+                            return build_evaluation(
+                                event["accountId"],
+                                "COMPLIANT",
+                                event,
+                                resource_type=DEFAULT_RESOURCE_TYPE,
+                                annotation="An Event rule that has a SNS topic and subscription to send notification emails setup and confirmed.",
+                            )
+    
+    return build_evaluation(
+        event["accountId"],
+        "NON_COMPLIANT",
+        event,
+        resource_type=DEFAULT_RESOURCE_TYPE,
+        annotation="An Event rule that has a SNS topic and subscription to send notification emails is not setup or confirmed.",
+    )         
         
 def lambda_handler(event, context):
     """This function is the main entry point for Lambda.
@@ -208,39 +297,48 @@ def lambda_handler(event, context):
     # is this a scheduled invokation?
     if is_scheduled_notification(invoking_event["messageType"]):
         # yes, proceed with checking GuardDuty
-        # check if GuardDuty is enabled
-        logger.info("Root Account MFA check in account %s", AWS_ACCOUNT_ID)
+        rules = get_event_bridge_rules(None)
+        
+        guard_duty_evaluation = None
+        # is Guardduty enabled?
         if get_guard_duty_enabled():
-            # yes, check that an EventBridge rule is setup to alert authorized user
-            logger.info("not done yet")
-        else:
-            # no, check for EventBridge rules with naming convention
-            # Assuming RuleNamingConvention is always going to be a prefix convention
+            # yes, filter for rules that target GuardDuty findings
+            guardduty_rules = filter(lambda r: rule_event_pattern_matches_guard_duty_findings(r.get("EventPattern", "")), rules)
+            # are there any rules that target GuardDuty findings
+            if len(guardduty_rules) > 0:
+                # yes, check that an SNS target is setup that sends an email notification to authorized personnel
+                guard_duty_evaluation = check_rules_sns_target_is_setup(guardduty_rules)
+                evaluations.append(guard_duty_evaluation)
+        
+        # are the GuardDuty rules found to be NON_COMPLIANT?
+        if guard_duty_evaluation == None or guard_duty_evaluation.get("ComplianceType") == "NON_COMPLIANT":
+            # yes, check for EventBridge rules with naming convention
             rule_naming_convention = valid_rule_parameters.get("RuleNamingConvention")
-            rules = get_event_bridge_rules(rule_naming_convention)
+            reg = re.compile('{}'.format(rule_naming_convention))
+            filtered_rules = filter(lambda r: reg.search(r.get("Name")), rules)
             
-            if len(rules) > 0:
-                evaluations.append(
-                    build_evaluation(
-                        event["accountId"],
-                        "NON_COMPLIANT",
-                        event,
-                        resource_type=DEFAULT_RESOURCE_TYPE,
-                        annotation="GuardDuty is not enabled and there are no EventBridge rules. ",
-                    )
-                )
+            # are there any rules matching the naming convention?
+            if len(filtered_rules) > 0:
+                # yes, check that an SNS target is setup that sends an email notification to authorized personnel 
+                rule_evaluation = check_rules_sns_target_is_setup(rules)
+                # are the filtered event rules found to be COMPLIANT
+                if rule_evaluation.get("ComplianceType") == "COMPLIANT":
+                    # yes, set evaluation results to rule_evaluation because the validation should be found compliant
+                    evaluations = [rule_evaluation]
+                else:
+                    # no, append to evaluation results
+                    evaluations.append(rule_evaluation)
             else:
+                # no, append to evaluation results
                 evaluations.append(
                     build_evaluation(
                         event["accountId"],
                         "NON_COMPLIANT",
                         event,
                         resource_type=DEFAULT_RESOURCE_TYPE,
-                        annotation="GuardDuty is not enabled and there are no EventBridge rules. ",
+                        annotation="GuardDuty is not enabled and there are no EventBridge rules.",
                     )
-                )
-            
-            
+                ) 
             
         # Update AWS Config with the evaluation result
         AWS_CONFIG_CLIENT.put_evaluations(
