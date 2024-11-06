@@ -328,7 +328,6 @@ Resources:
             Action:
               - "events:ListTargetsByRule"
               - "events:ListRules"
-              - "events:"
             Resource:
               - "arn:aws:account::*:account"
               - "arn:aws:account::*:account/o-*/*"

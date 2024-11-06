@@ -24,6 +24,7 @@ Parameters:
     Type: String
   RuleNamingConvention:
     Type: String
+    Default: "misuse-rule-"
   PasswordPolicyMinimumPasswordLength:
     Default: "14"
     Type: String
