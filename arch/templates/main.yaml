@@ -24,7 +24,6 @@ Metadata:
         Parameters:
           - EvidenceBucketName
           - AWSConfigConformsBucketName
-          - RuleNamingConvention
           - AdditionalAssessmentAdminRoleARN
           - DestBucketName
           - DeployRoles
@@ -60,8 +59,6 @@ Metadata:
         default: Name for the S3 AWS Config Conformance Pack assets bucket
       AdditionalAssessmentAdminRoleARN:
         default: Additional Audit Manager Assessment Admin Role ARN
-      RuleNamingConvention:
-        default: The naming convention for AWS Event Rules that report misuse to authorized personnel
       DestBucketName:
         default: Name of the S3 bucket (leave as is unless instructed otherwise)
       DeployRoles:
@@ -127,11 +124,6 @@ Parameters:
     Type: String
     Description: >-
       The deployment pipeline bucket holding child templates and packaged lambda code.
-  RuleNamingConvention:
-    Type: String
-    Default: "misuse-alerts" #TODO this should probably be a file reference so we can actualy use regex. If the file is not found then we throw NON_COMPIANT?
-    Description: >-
-      Naming convention for Event rules monitoring misuse
   EvidenceBucketName:
     Type: String
     Default: ""
@@ -1404,8 +1396,10 @@ Resources:
           ParameterValue: !Sub
             - "s3://${ClientEvidenceBucket}/gc-01/attestation_letter.pdf"
             - ClientEvidenceBucket: !If [ GenerateEvidenceBucketName, !GetAtt GenerateEvidenceBucketName.EvidenceBucketName, !Ref EvidenceBucketName ]
-        - ParameterName: RuleNamingConvention
-          ParameterValue: !Ref RuleNamingConvention
+        - ParameterName: RuleNamingConventionFilePath
+          ParameterValue: !Sub
+            - "s3://${ClientEvidenceBucket}/gc-01/rule_naming_convention.txt"
+            - ClientEvidenceBucket: !If [ GenerateEvidenceBucketName, !GetAtt GenerateEvidenceBucketName.EvidenceBucketName, !Ref EvidenceBucketName ]
         - ParameterName: S3AccountManagementPlanPath
           ParameterValue: !Sub
             - "s3://${ClientEvidenceBucket}/gc-02/account_management_plan.pdf"

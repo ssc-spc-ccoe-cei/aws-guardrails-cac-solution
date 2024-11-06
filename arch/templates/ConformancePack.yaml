@@ -22,9 +22,8 @@ Parameters:
   # GC01
   S3AttestationLetterPath:
     Type: String
-  RuleNamingConvention:
+  RuleNamingConventionFilePath:
     Type: String
-    Default: "misuse-rule-"
   PasswordPolicyMinimumPasswordLength:
     Default: "14"
     Type: String
@@ -189,10 +188,10 @@ Resources:
       ConfigRuleName: gc01_check_alerts_flag_misuse
       Description: Checks that alerts are setup to notify authorized personnel of suspicous activities.
       InputParameters:
-        RuleNamingConvention:
+        RuleNamingConventionFilePath:
           Fn::If:
-            - ruleNamingConvention
-            - Ref: RuleNamingConvention
+            - ruleNamingConventionFilePath
+            - Ref: RuleNamingConventionFilePath
             - Ref: AWS::NoValue
         ExecutionRoleName:
           Fn::If:
@@ -979,11 +978,11 @@ Conditions:
       - Fn::Equals:
           - ""
           - Ref: S3AttestationLetterPath
-  ruleNamingConvention:
+  ruleNamingConventionFilePath:
     Fn::Not:
       - Fn::Equals:
           - ""
-          - Ref: RuleNamingConvention
+          - Ref: RuleNamingConventionFilePath
   passwordPolicyMinimumPasswordLength:
     Fn::Not:
       - Fn::Equals:
