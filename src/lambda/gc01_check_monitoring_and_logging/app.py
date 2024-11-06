@@ -101,12 +101,12 @@ def check_trail_status(trails, event):
     evaluations = []
     for t in trails:
         try:
-            trail_name = t.get("Name", "")
-            status = AWS_CLOUDTRAIL_CLIENT.get_trail_status(trail_name)
+            trail_arn = t.get("TrailARN")
+            status = AWS_CLOUDTRAIL_CLIENT.get_trail_status(Name=trail_arn)
             if status.get("IsLogging", False):
                 evaluations.append(
                     build_evaluation(
-                        t.get("TrailARN", trail_name),
+                        trail_arn,
                         "COMPLIANT",
                         event,
                         resource_type=DEFAULT_RESOURCE_TYPE,
@@ -116,7 +116,7 @@ def check_trail_status(trails, event):
             else:
                 evaluations.append(
                     build_evaluation(
-                        t.get("TrailARN", trail_name),
+                        trail_arn,
                         "NON_COMPLIANT",
                         event,
                         resource_type=DEFAULT_RESOURCE_TYPE,

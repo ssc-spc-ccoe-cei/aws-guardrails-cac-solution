@@ -119,16 +119,16 @@ def get_guard_duty_enabled():
             
         raise ex
     
-def get_event_bridge_rules(naming_convention:str):
+def get_event_bridge_rules():
     rules = []
     try:
         # Assuming we only need to check the default event bus
-        response = AWS_EVENT_BRIDGE_CLIENT.list_rules(naming_convention)
+        response = AWS_EVENT_BRIDGE_CLIENT.list_rules()
         rules = rules + response.get("Rules")
         next_token = response.get("NextToken")
         
         while next_token != None:
-            response = AWS_EVENT_BRIDGE_CLIENT.list_rules(naming_convention, next_token)
+            response = AWS_EVENT_BRIDGE_CLIENT.list_rules(NextToken=next_token)
             rules = rules + response.get("Rules")
             next_token = response.get("NextToken")
             
@@ -143,12 +143,12 @@ def get_event_bridge_rules(naming_convention:str):
 
 def get_topic_subscriptions(topic_arn):
     try:
-        response = AWS_SNS_CLIENT.list_subscriptions_by_topic(topic_arn)
+        response = AWS_SNS_CLIENT.list_subscriptions_by_topic(TopicArn=topic_arn)
         subscriptions = response.get("Subscriptions", [])
         next_token = response.get("NextToken")
 
         while next_token != None:
-            response = AWS_SNS_CLIENT.list_subscriptions_by_topic(topic_arn, next_token)
+            response = AWS_SNS_CLIENT.list_subscriptions_by_topic(TopicArn=topic_arn, NextToken=next_token)
             subscriptions = subscriptions + response.get("Subscriptions", [])
             next_token = response.get("NextToken")
         
@@ -167,7 +167,7 @@ def get_topic_subscriptions(topic_arn):
     
 def subscription_is_confirmed(subscription_arn):
     try:
-        response = AWS_SNS_CLIENT.get_subscription_attributes(subscription_arn)
+        response = AWS_SNS_CLIENT.get_subscription_attributes(SubscriptionArn=subscription_arn)
         attributes = response.get("Attributes")
         
         if attributes == None:
@@ -188,12 +188,12 @@ def subscription_is_confirmed(subscription_arn):
 
 def fetch_rule_targets(rule_name):
     try:
-        response = AWS_EVENT_BRIDGE_CLIENT.list_targets_by_rule(rule_name)
+        response = AWS_EVENT_BRIDGE_CLIENT.list_targets_by_rule(Rule=rule_name)
         targets = response.get("Targets", [])
         next_token = response.get("NextToken")
             
         while next_token != None:
-            response = AWS_EVENT_BRIDGE_CLIENT.list_targets_by_rule(rule_name, NextToken=next_token)
+            response = AWS_EVENT_BRIDGE_CLIENT.list_targets_by_rule(Rule=rule_name, NextToken=next_token)
             targets = targets + response.get("Targets", [])
             next_token = response.get("NextToken")
         return targets   
@@ -297,7 +297,7 @@ def lambda_handler(event, context):
     # is this a scheduled invokation?
     if is_scheduled_notification(invoking_event["messageType"]):
         # yes, proceed with checking GuardDuty
-        rules = get_event_bridge_rules(None)
+        rules = get_event_bridge_rules()
         
         guard_duty_evaluation = None
         # is Guardduty enabled?

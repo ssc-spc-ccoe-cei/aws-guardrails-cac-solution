@@ -316,6 +316,64 @@ Resources:
       Roles:
         - !Ref GCLambdaExecutionRole
 
+# TODO Copy the permissions from the Events, SNS, CloudTrail and GuardDuty access to workflow.
+  # Events Access
+  GCLambdaExecutionRoleEventsPolicy:
+    Type: AWS::IAM::Policy
+    Properties:
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: AllowEventChecks
+            Action:
+              - "events:ListTargetsByRule"
+              - "events:ListRules"
+              - "events:"
+            Resource:
+              - "arn:aws:account::*:account"
+              - "arn:aws:account::*:account/o-*/*"
+            Effect: Allow
+      PolicyName: GCLambdaExecutionRoleEventsPolicy
+      Roles:
+        - !Ref GCLambdaExecutionRole
+
+  # SNS Access
+  GCLambdaExecutionRoleSNSPolicy:
+    Type: AWS::IAM::Policy
+    Properties:
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: AllowSNSChecks
+            Action:
+              - "sns:ListSubscriptionsByTopic"
+              - "sns:GetSubscriptionAttributes"
+            Resource:
+              - "arn:aws:account::*:account"
+              - "arn:aws:account::*:account/o-*/*"
+            Effect: Allow
+      PolicyName: GCLambdaExecutionRoleSNSPolicy
+      Roles:
+        - !Ref GCLambdaExecutionRole
+
+  # GuardDuty Access
+  GCLambdaExecutionRoleGuardDutyPolicy:
+    Type: AWS::IAM::Policy
+    Properties:
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: AllowGuardDutyChecks
+            Action:
+              - "guardduty:ListDetectors"
+            Resource:
+              - "arn:aws:account::*:account"
+              - "arn:aws:account::*:account/o-*/*"
+            Effect: Allow
+      PolicyName: GCLambdaExecutionRoleGuardDutyPolicy
+      Roles:
+        - !Ref GCLambdaExecutionRole
+
   # CloudTrail Access
   GCLambdaExecutionRoleCloudTrailPolicy:
     Type: AWS::IAM::Policy

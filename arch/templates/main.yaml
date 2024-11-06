@@ -24,6 +24,7 @@ Metadata:
         Parameters:
           - EvidenceBucketName
           - AWSConfigConformsBucketName
+          - RuleNamingConvention
           - AdditionalAssessmentAdminRoleARN
           - DestBucketName
           - DeployRoles
@@ -59,6 +60,8 @@ Metadata:
         default: Name for the S3 AWS Config Conformance Pack assets bucket
       AdditionalAssessmentAdminRoleARN:
         default: Additional Audit Manager Assessment Admin Role ARN
+      RuleNamingConvention:
+        default: The naming convention for AWS Event Rules that report misuse to authorized personnel
       DestBucketName:
         default: Name of the S3 bucket (leave as is unless instructed otherwise)
       DeployRoles:
@@ -126,7 +129,7 @@ Parameters:
       The deployment pipeline bucket holding child templates and packaged lambda code.
   RuleNamingConvention:
     Type: String
-    Default: "^misuse-alerts-.+"
+    Default: "misuse-alerts" #TODO this should probably be a file reference so we can actualy use regex. If the file is not found then we throw NON_COMPIANT?
     Description: >-
       Naming convention for Event rules monitoring misuse
   EvidenceBucketName:
