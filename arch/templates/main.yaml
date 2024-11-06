@@ -1423,6 +1423,10 @@ Resources:
           ParameterValue: !Subs
             - "s3://${ClientEvidenceBucket}/gc-13/emergency_account_management_procedures.pdf"
             - ClientEvidenceBucket: !If [ GenerateEvidenceBucketName, !GetAtt GenerateEvidenceBucketName.EvidenceBucketName, !Ref EvidenceBucketName ]
+        - ParameterName: s3AccountMgmtApprovalsPath
+          ParameterValue: !Subs
+            - "s3://${ClientEvidenceBucket}/gc-13/emergency_account_management_approvals.pdf"
+            - ClientEvidenceBucket: !If [ GenerateEvidenceBucketName, !GetAtt GenerateEvidenceBucketName.EvidenceBucketName, !Ref EvidenceBucketName ]
       OrganizationConformancePackName: !Sub "${OrganizationName}-GC-CP-Guardrails"
       TemplateS3Uri: !Sub s3://${PipelineBucket}/${DeployVersion}/ConformancePack.yaml
 

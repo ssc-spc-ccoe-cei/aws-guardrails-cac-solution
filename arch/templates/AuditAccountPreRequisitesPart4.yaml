@@ -100,3 +100,17 @@ Resources:
       LoggingConfig:
         LogGroup: !Sub "${OrganizationName}gc_guardrails"
         LogFormat: "JSON"
+
+  GC13EmergencyAccountMgmtApprovalsLambda:
+    Condition: IsAuditAccount
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub "${OrganizationName}gc13_emergency_account_mgmt_approvals"
+      Code: "../../src/lambda/gc13_emergency_account_mgmt_approvals/build/GC13EmergencyAccountMgmtApprovalsLambda/"
+      Handler: app.lambda_handler
+      Role: !GetAtt GCDefaultLambdaExecutionRole.Arn
+      Runtime: !Ref PythonRuntime
+      Timeout: 90
+      LoggingConfig:
+        LogGroup: !Sub "${OrganizationName}gc_guardrails"
+        LogFormat: "JSON"
