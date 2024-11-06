@@ -1,4 +1,4 @@
-""" GC01 - Check Attestation Letter Lambda Function
+""" GC13 - Check Emergency Account Management Procedure Lambda Function
     Providing documents as evidence to support the Guardrails
 """
 import json
@@ -175,7 +175,7 @@ def lambda_handler(event, context):
     compliance_value = "NOT_APPLICABLE"
     custom_annotation = "Guardrail only applicable in the Audit Account"
 
-    # is this a scheduled invokation?
+    # is this a scheduled invocation?
     if is_scheduled_notification(invoking_event["messageType"]):
         # yes, proceed
         # is this being executed against the Audit Account -
@@ -187,12 +187,12 @@ def lambda_handler(event, context):
             # check if object exists in S3
             if check_s3_object_exists(valid_rule_parameters["s3ObjectPath"]):
                 compliance_value = "COMPLIANT"
-                custom_annotation = "Attestation letter found"
-                logger.info('COMPLIANT - Attestation letter found in S3 at "%s"', valid_rule_parameters["s3ObjectPath"])
+                custom_annotation = "Emergency Account Management Procedure found"
+                logger.info('COMPLIANT - Emergency Account Management Procedure found in S3 at "%s"', valid_rule_parameters["s3ObjectPath"])
             else:
                 compliance_value = "NON_COMPLIANT"
-                custom_annotation = "Attestation letter NOT found"
-                logger.info("NON_COMPLIANT - Attestation letter not found in S3")
+                custom_annotation = "Emergency Account Management Procedure NOT found"
+                logger.info("NON_COMPLIANT - Emergency Account Management Procedure not found in S3")
             # Update AWS Config with the evaluation result
             evaluations.append(
                 build_evaluation(
@@ -208,4 +208,5 @@ def lambda_handler(event, context):
                 ResultToken=event["resultToken"]
             )
         else:
-            logger.info("Attestation letter not checked in account %s - not the Audit account", AWS_ACCOUNT_ID)
+            logger.info("Emergency Account Management Procedure not checked in account %s - not the Audit account", AWS_ACCOUNT_ID)
+

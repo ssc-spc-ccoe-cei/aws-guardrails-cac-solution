@@ -89,6 +89,7 @@ def apply_lambda_permissions():
         f"{organization_name}gc11_check_security_contact": ["GC11CheckSecurityContactLambda"],
         f"{organization_name}gc11_check_trail_logging": ["GC11CheckTrailLoggingLambda"],
         f"{organization_name}gc12_check_marketplace": ["GC12CheckMarketplacesLambda"],
+        f"{organization_name}gc13_emergency_account_management": ["GC13EmergencyAccountManagementLambda"],
     }
     accounts = get_accounts()
     client = boto3.client("lambda")
