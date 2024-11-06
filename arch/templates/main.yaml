@@ -288,7 +288,12 @@ Resources:
                     "iam:ListRoles",
                     "aws-marketplace:ListEntities",
                     "organizations:DescribeOrganization",
-                    "organizations:ListAccounts"
+                    "organizations:ListAccounts",
+                    "events:ListTargetsByRule",
+                    "events:ListRules",
+                    "sns:ListSubscriptionsByTopic",
+                    "sns:GetSubscriptionAttributes",
+                    "guardduty:ListDetectors"
                   ],
                   "Resource": [
                     "*"
