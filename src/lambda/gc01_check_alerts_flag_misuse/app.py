@@ -205,7 +205,10 @@ def fetch_rule_targets(rule_name):
             ex.response["Error"]["Code"] = "InternalError"
         raise ex
 
-def rule_event_pattern_matches_guard_duty_findings(rule_event_pattern:str):
+def rule_event_pattern_matches_guard_duty_findings(rule_event_pattern:str | None):
+    if rule_event_pattern == None:
+        return False
+    
     event_pattern_dict = json.loads(rule_event_pattern)
     return event_pattern_dict.get("Source") == "aws.guardduty" and event_pattern_dict.get("detail-type") == "GuardDuty Finding"
 
@@ -303,7 +306,7 @@ def lambda_handler(event, context):
         # is Guardduty enabled?
         if get_guard_duty_enabled():
             # yes, filter for rules that target GuardDuty findings
-            guardduty_rules = filter(lambda r: rule_event_pattern_matches_guard_duty_findings(r.get("EventPattern", "")), rules)
+            guardduty_rules = [ r for r in rules if rule_event_pattern_matches_guard_duty_findings(r.get("EventPattern")) ]
             # are there any rules that target GuardDuty findings
             if len(guardduty_rules) > 0:
                 # yes, check that an SNS target is setup that sends an email notification to authorized personnel
@@ -315,7 +318,7 @@ def lambda_handler(event, context):
             # yes, check for EventBridge rules with naming convention
             rule_naming_convention = valid_rule_parameters.get("RuleNamingConvention")
             reg = re.compile(rule_naming_convention)
-            filtered_rules = filter(lambda r: reg.search(r.get("Name")), rules)
+            filtered_rules = [ r for r in rules if reg.match(r.get("Name", "")) ]
             
             # are there any rules matching the naming convention?
             if len(filtered_rules) > 0:
