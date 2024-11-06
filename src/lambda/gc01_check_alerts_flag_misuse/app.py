@@ -105,6 +105,43 @@ def build_evaluation(
     )
     return eval_cc
 
+def check_s3_object_exists(object_path):
+    """Check if the S3 object exists
+    Keyword arguments:
+    object_path -- the S3 object path
+    """
+    # parse the S3 path
+    bucket_name, key_name = extract_bucket_name_and_key(object_path)
+    try:
+        AWS_S3_CLIENT.head_object(Bucket=bucket_name, Key=key_name)
+    except botocore.exceptions.ClientError as err:
+        if err.response["Error"]["Code"] == "404":
+            # The object does not exist.
+            logger.info("Object %s not found in bucket %s", key_name, bucket_name)
+            return False
+        elif err.response["Error"]["Code"] == "403":
+            # AccessDenied
+            logger.info("Access denied to bucket %s", bucket_name)
+            return False
+        else:
+            # Something else has gone wrong.
+            logger.error("Error trying to find object %s in bucket %s", key_name, bucket_name)
+            raise ValueError(f"Error trying to find object {key_name} in bucket {bucket_name}") from err
+    else:
+        # The object does exist.
+        return True
+
+def extract_bucket_name_and_key(object_path):
+    match = re.match(r"s3:\/\/([^/]+)\/((?:[^/]*/)*.*)", object_path)
+    if match:
+        bucket_name = match.group(1)
+        key_name = match.group(2)
+    else:
+        logger.error("Unable to parse S3 object path %s", object_path)
+        raise ValueError(f"Unable to parse S3 object path {object_path}")
+    return bucket_name,key_name
+
+
 def get_guard_duty_enabled():
     try:
         response = AWS_GUARD_DUTY_CLIENT.list_detectors()
@@ -169,11 +206,12 @@ def subscription_is_confirmed(subscription_arn):
     try:
         response = AWS_SNS_CLIENT.get_subscription_attributes(SubscriptionArn=subscription_arn)
         attributes = response.get("Attributes")
+        logger.info("Subscription attributes: %s", attributes)
         
         if attributes == None:
             return False
         
-        return attributes.get("ConfirmationWasAuthenticated") == "true"
+        return attributes.get("PendingConfirmation") == "false"
     except botocore.exceptions.ClientError as ex:
         if "NotFound" in ex.response['Error']['Code']:
             ex.response['Error']['Message'] = "Failed to get subscription attributes. Resource not found."
@@ -208,12 +246,15 @@ def fetch_rule_targets(rule_name):
 def rule_event_pattern_matches_guard_duty_findings(rule_event_pattern:str | None):
     if rule_event_pattern == None:
         return False
+    logger.info("rule_event_pattern: %s", rule_event_pattern)
     
     event_pattern_dict = json.loads(rule_event_pattern)
-    return event_pattern_dict.get("Source") == "aws.guardduty" and event_pattern_dict.get("detail-type") == "GuardDuty Finding"
+    logger.info("event_pattern_dict: %s", event_pattern_dict)
+    return "aws.guardduty" in event_pattern_dict.get("source", []) and "GuardDuty Finding" in event_pattern_dict.get("detail-type", [])
 
 def check_rules_sns_target_is_setup(rules, event):
     for rule in rules:
+        logger.info("Checking rule: %s", rule)
         if rule.get("State") == "DISABLED":
             return build_evaluation(
                 event["accountId"],
@@ -227,6 +268,7 @@ def check_rules_sns_target_is_setup(rules, event):
         targets = fetch_rule_targets(rule_name)
 
         for target in targets:
+            logger.info("Checking rule target: %s", target)
             # is target an SNS input transformer?
             target_arn: str = target.get("Arn")
             if target_arn.startswith("arn:aws:sns:") :
@@ -234,6 +276,7 @@ def check_rules_sns_target_is_setup(rules, event):
                 subscriptions =  get_topic_subscriptions(target_arn)
                 # then search topic for a subscription with "email" protocol and is confirmed
                 for subscription in subscriptions:
+                    logger.info("Checking target subscriptions: %s", subscription)
                     if subscription.get("Protocol") == "email":
                         subscription_arn = subscription.get("SubscriptionArn")
                         if subscription_is_confirmed(subscription_arn):
@@ -252,6 +295,12 @@ def check_rules_sns_target_is_setup(rules, event):
         resource_type=DEFAULT_RESOURCE_TYPE,
         annotation="An Event rule that has a SNS topic and subscription to send notification emails is not setup or confirmed.",
     )         
+
+def get_rule_naming_convention(rule_naming_convention_file_path):
+    bucket, key = extract_bucket_name_and_key(rule_naming_convention_file_path)
+    response = AWS_S3_CLIENT.get_object(Bucket=bucket, Key=key)
+    rule_naming_convention = response.get("Body").read().decode("utf-8")
+    return rule_naming_convention
         
 def lambda_handler(event, context):
     """This function is the main entry point for Lambda.
@@ -263,6 +312,7 @@ def lambda_handler(event, context):
 
     global AWS_CONFIG_CLIENT
     global AWS_GUARD_DUTY_CLIENT
+    global AWS_S3_CLIENT
     global AWS_EVENT_BRIDGE_CLIENT
     global AWS_SNS_CLIENT
     global AWS_ACCOUNT_ID
@@ -293,6 +343,7 @@ def lambda_handler(event, context):
         AUDIT_ACCOUNT_ID = ""
 
     AWS_CONFIG_CLIENT = get_client("config", event)
+    AWS_S3_CLIENT = boto3.client("s3")
     AWS_GUARD_DUTY_CLIENT = get_client("guardduty", event)
     AWS_EVENT_BRIDGE_CLIENT = get_client("events", event)
     AWS_SNS_CLIENT = get_client("sns", event)
@@ -306,44 +357,61 @@ def lambda_handler(event, context):
         # is Guardduty enabled?
         if get_guard_duty_enabled():
             # yes, filter for rules that target GuardDuty findings
+            logger.info("GuardDuty is enabled.")
             guardduty_rules = [ r for r in rules if rule_event_pattern_matches_guard_duty_findings(r.get("EventPattern")) ]
+            logger.info("GuardDuty rules count: %d", len(guardduty_rules))
             # are there any rules that target GuardDuty findings
             if len(guardduty_rules) > 0:
                 # yes, check that an SNS target is setup that sends an email notification to authorized personnel
-                guard_duty_evaluation = check_rules_sns_target_is_setup(guardduty_rules)
+                guard_duty_evaluation = check_rules_sns_target_is_setup(guardduty_rules, event)
+                logger.info("GuardDuty Evaluation: %s", guard_duty_evaluation)
                 evaluations.append(guard_duty_evaluation)
         
         # are the GuardDuty rules found to be NON_COMPLIANT?
         if guard_duty_evaluation == None or guard_duty_evaluation.get("ComplianceType") == "NON_COMPLIANT":
             # yes, check for EventBridge rules with naming convention
-            rule_naming_convention = valid_rule_parameters.get("RuleNamingConvention")
-            reg = re.compile(rule_naming_convention)
-            filtered_rules = [ r for r in rules if reg.match(r.get("Name", "")) ]
-            
-            # are there any rules matching the naming convention?
-            if len(filtered_rules) > 0:
-                # yes, check that an SNS target is setup that sends an email notification to authorized personnel 
-                rule_evaluation = check_rules_sns_target_is_setup(rules)
-                # are the filtered event rules found to be COMPLIANT
-                if rule_evaluation.get("ComplianceType") == "COMPLIANT":
-                    # yes, set evaluation results to rule_evaluation because the validation should be found compliant
-                    evaluations = [rule_evaluation]
-                else:
-                    # no, append to evaluation results
-                    evaluations.append(rule_evaluation)
-            else:
-                # no, append to evaluation results
+            rule_naming_convention_file_path = valid_rule_parameters.get("RuleNamingConventionFilePath", "")
+            if check_s3_object_exists(rule_naming_convention_file_path) == False:
                 evaluations.append(
                     build_evaluation(
                         event["accountId"],
                         "NON_COMPLIANT",
                         event,
                         resource_type=DEFAULT_RESOURCE_TYPE,
-                        annotation="GuardDuty is not enabled and there are no EventBridge rules.",
+                        annotation="No RuleNamingConventionFilePath input provided.",
                     )
                 ) 
+            else:
+                rule_naming_convention = get_rule_naming_convention(rule_naming_convention_file_path)
+                reg = re.compile(rule_naming_convention)
+                logger.info("Filtering rules by rule_naming_convention: %s", rule_naming_convention)
+                filtered_rules = [ r for r in rules if reg.match(r.get("Name", "")) ]
+                
+                # are there any rules matching the naming convention?
+                if len(filtered_rules) > 0:
+                    # yes, check that an SNS target is setup that sends an email notification to authorized personnel 
+                    rule_evaluation = check_rules_sns_target_is_setup(rules, event)
+                    # are the filtered event rules found to be COMPLIANT
+                    if rule_evaluation.get("ComplianceType") == "COMPLIANT":
+                        # yes, set evaluation results to rule_evaluation because the validation should be found compliant
+                        evaluations = [rule_evaluation]
+                    else:
+                        # no, append to evaluation results
+                        evaluations.append(rule_evaluation)
+                else:
+                    # no, append to evaluation results
+                    evaluations.append(
+                        build_evaluation(
+                            event["accountId"],
+                            "NON_COMPLIANT",
+                            event,
+                            resource_type=DEFAULT_RESOURCE_TYPE,
+                            annotation="GuardDuty is not enabled and there are no EventBridge rules.",
+                        )
+                    ) 
             
         # Update AWS Config with the evaluation result
+        logging.info("AWES Config updating evaluations: %s", evaluations)
         AWS_CONFIG_CLIENT.put_evaluations(
             Evaluations=evaluations,
             ResultToken=event["resultToken"]
