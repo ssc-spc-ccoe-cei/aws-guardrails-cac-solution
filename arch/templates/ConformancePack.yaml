@@ -119,6 +119,7 @@ Resources:
         SourceDetails:
           - EventSource: "aws.config"
             MessageType: "ScheduledNotification"
+            
   GC01CheckRootAccountMFAEnabled:
     Type: "AWS::Config::ConfigRule"
     Properties:
@@ -150,11 +151,12 @@ Resources:
         SourceDetails:
           - EventSource: "aws.config"
             MessageType: "ScheduledNotification"
+
   GC01CheckFederatedUsersMFA:
     Type: "AWS::Config::ConfigRule"
     Properties:
       ConfigRuleName: gc01_check_federated_users_mfa
-      Description: Checks Root account to ensure MFA is enabled
+      Description: Checks federated users to ensure that MFA is setup
       InputParameters:
         ExecutionRoleName:
           Fn::If:
@@ -181,6 +183,7 @@ Resources:
         SourceDetails:
           - EventSource: "aws.config"
             MessageType: "ScheduledNotification"
+
   GC01CheckMonitoringAndLogging:
     Type: "AWS::Config::ConfigRule"
     Properties:
@@ -213,6 +216,7 @@ Resources:
         SourceDetails:
           - EventSource: "aws.config"
             MessageType: "ScheduledNotification"
+
   GC01CheckAlertsFlagMisuseConfigRule:
     Type: "AWS::Config::ConfigRule"
     Properties:
@@ -247,6 +251,38 @@ Resources:
             - - "arn:aws:lambda:ca-central-1:"
               - Ref: AuditAccountID
               - !Sub ":function:${OrganizationName}gc01_check_alerts_flag_misuse"
+        SourceDetails:
+          - EventSource: "aws.config"
+            MessageType: "ScheduledNotification"
+
+  GC01CheckMFADigitalPolicy:
+    Type: "AWS::Config::ConfigRule"
+    Properties:
+      ConfigRuleName: gc01_check_mfa_digital_policy
+      Description: Checks that an mfa digital policy is in place to ensure taht MFA configurations are enforced.
+      InputParameters:
+        ExecutionRoleName:
+          Fn::If:
+            - GCLambdaExecutionRoleName
+            - Ref: GCLambdaExecutionRoleName
+            - Ref: AWS::NoValue
+        AuditAccountID:
+          Fn::If:
+            - auditAccountID
+            - Ref: AuditAccountID
+            - Ref: AWS::NoValue
+      Scope:
+        ComplianceResourceTypes:
+          - AWS::Account
+      MaximumExecutionFrequency: TwentyFour_Hours
+      Source:
+        Owner: CUSTOM_LAMBDA
+        SourceIdentifier:
+          Fn::Join:
+            - ""
+            - - "arn:aws:lambda:ca-central-1:"
+              - Ref: AuditAccountID
+              - !Sub ":function:${OrganizationName}gc01_check_mfa_digital_policy"
         SourceDetails:
           - EventSource: "aws.config"
             MessageType: "ScheduledNotification"

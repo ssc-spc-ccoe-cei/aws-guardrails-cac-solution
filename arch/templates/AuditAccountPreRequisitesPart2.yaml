@@ -25,7 +25,7 @@ Conditions:
     - !Ref AuditAccountID
 
 Resources:
-  ## GC02
+  ## GC01
   GC01CheckIAMUsersMFALambda:
     Condition: IsAuditAccount
     Type: AWS::Lambda::Function
@@ -37,6 +37,7 @@ Resources:
       Runtime: !Ref PythonRuntime
       Timeout: 180
 
+  ## GC02
   GC02CheckIAMPasswordPolicyLambda:
     Condition: IsAuditAccount
     Type: AWS::Lambda::Function

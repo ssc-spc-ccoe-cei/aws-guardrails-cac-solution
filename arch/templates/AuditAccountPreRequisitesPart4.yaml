@@ -114,6 +114,20 @@ Resources:
         LogGroup: !Sub "${OrganizationName}gc_guardrails"
         LogFormat: "JSON"
         
+  GC01CheckFederatedUsersMFA:
+    Condition: IsAuditAccount
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub "${OrganizationName}gc01_check_mfa_digital_policy"
+      Code: "../../src/lambda/gc01_check_mfa_digital_policy/build/GC01CheckMFADigitalPolicy/"
+      Handler: app.lambda_handler
+      Role: !Sub "arn:aws:iam::${AuditAccountID}:role/${RolePrefix}default_assessment_role"
+      Runtime: !Ref PythonRuntime
+      Timeout: 90
+      LoggingConfig:
+        LogGroup: !Sub "${OrganizationName}gc_guardrails"
+        LogFormat: "JSON"
+
   ## GC03
   GC03CheckIAMCloudWatchAlarmsLambda:
     Condition: IsAuditAccount

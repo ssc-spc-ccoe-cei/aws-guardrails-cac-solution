@@ -73,6 +73,7 @@ def apply_lambda_permissions():
         f"{organization_name}gc01_check_attestation_letter": ["GC01CheckAttestationLetterLambda"],
         f"{organization_name}gc01_check_root_mfa": ["GC01CheckRootAccountMFAEnabledLambda"],
         f"{organization_name}gc01_check_federated_users_mfa": ["GC01CheckFederatedUsersMFALambda"],
+        f"{organization_name}gc01_check_mfa_digital_policy": ["GC01CheckMFADigitalPolicy"],
         f"{organization_name}gc01_check_monitoring_and_logging": ["GC01CheckMonitoringAndLoggingLambda"],
         f"{organization_name}gc01_check_alerts_flag_misuse": ["GC01CheckAlertsFlagMisuseLambda"],
         f"{organization_name}gc01_check_iam_users_mfa": ["GC01CheckIAMUsersMFALambda"],
