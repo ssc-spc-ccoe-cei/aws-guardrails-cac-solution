@@ -256,10 +256,10 @@ Resources:
         SourceDetails:
           - EventSource: "aws.config"
             MessageType: "ScheduledNotification"
-  GC02CheckMFAIAMUsersConfigRule:
+  GC01CheckMFAIAMUsersConfigRule:
     Type: "AWS::Config::ConfigRule"
     Properties:
-      ConfigRuleName: gc02_check_iam_users_mfa
+      ConfigRuleName: gc01_check_iam_users_mfa
       Description: Checks IAM users to ensure MFA is enabled
       InputParameters:
         ExecutionRoleName:
@@ -294,7 +294,7 @@ Resources:
             - ""
             - - "arn:aws:lambda:ca-central-1:"
               - Ref: AuditAccountID
-              - !Sub ":function:${OrganizationName}gc02_check_iam_users_mfa"
+              - !Sub ":function:${OrganizationName}gc01_check_iam_users_mfa"
         SourceDetails:
           - EventSource: "aws.config"
             MessageType: "ScheduledNotification"

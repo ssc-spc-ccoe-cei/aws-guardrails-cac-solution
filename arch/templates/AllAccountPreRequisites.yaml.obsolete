@@ -332,7 +332,7 @@ Resources:
               - "sts:AssumeRole"
           - Effect: "Allow"
             Principal:
-              AWS: !Sub "arn:aws:iam::${AuditAccountID}:assumed-role/${RolePrefix}default_assessment_role/${OrganizationName}gc02_check_iam_users_mfa"
+              AWS: !Sub "arn:aws:iam::${AuditAccountID}:assumed-role/${RolePrefix}default_assessment_role/${OrganizationName}gc01_check_iam_users_mfa"
             Action:
               - "sts:AssumeRole"
           - Effect: "Allow"

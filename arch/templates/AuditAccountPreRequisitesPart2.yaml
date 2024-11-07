@@ -26,12 +26,12 @@ Conditions:
 
 Resources:
   ## GC02
-  GC02CheckIAMUsersMFALambda:
+  GC01CheckIAMUsersMFALambda:
     Condition: IsAuditAccount
     Type: AWS::Lambda::Function
     Properties:
-      FunctionName: !Sub "${OrganizationName}gc02_check_iam_users_mfa"
-      Code: "../../src/lambda/gc02_check_iam_users_mfa/build/GC02CheckIAMUsersMFALambda/"
+      FunctionName: !Sub "${OrganizationName}gc01_check_iam_users_mfa"
+      Code: "../../src/lambda/gc01_check_iam_users_mfa/build/GC01CheckIAMUsersMFALambda/"
       Handler: app.lambda_handler
       Role: !Sub "arn:aws:iam::${AuditAccountID}:role/${RolePrefix}default_assessment_role"
       Runtime: !Ref PythonRuntime
