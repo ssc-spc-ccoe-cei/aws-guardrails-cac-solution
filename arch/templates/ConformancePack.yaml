@@ -80,9 +80,9 @@ Parameters:
   S3SignedMOUDocumentPath:
     Type: String
   # GC13
-  s3AccountManagementProcedurePath:
+  S3AccountManagementProcedurePath:
     Type: String
-  s3AccountMgmtApprovalsPath:
+  S3AccountMgmtApprovalsPath:
     Type: String
 Resources:
   # GC01
@@ -891,7 +891,7 @@ Resources:
         s3ObjectPath:
           Fn::If:
             - s3AccountMgmtApprovalsPath
-            - Ref: s3AccountMgmtApprovalsPath
+            - Ref: S3AccountMgmtApprovalsPath
             - Ref: AWS::NoValue
         ExecutionRoleName:
           Fn::If:
@@ -1054,9 +1054,9 @@ Conditions:
     Fn::Not:
       - Fn::Equals:
           - ""
-          - Ref: s3AccountManagementProcedurePath
+          - Ref: S3AccountManagementProcedurePath
   s3AccountMgmtApprovalsPath:
     Fn::Not:
       - Fn::Equals:
           - ""
-          - Ref: s3AccountMgmtApprovalsPath
+          - Ref: S3AccountMgmtApprovalsPath
