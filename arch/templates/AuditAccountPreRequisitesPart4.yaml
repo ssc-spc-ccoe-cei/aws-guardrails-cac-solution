@@ -94,7 +94,7 @@ Resources:
       FunctionName: !Sub "${OrganizationName}gc13_emergency_account_management"
       Code: "../../src/lambda/gc13_emergency_account_management/build/GC13EmergencyAccountManagementLambda/"
       Handler: app.lambda_handler
-      Role: !GetAtt GCDefaultLambdaExecutionRole.Arn
+      Role: !Sub "arn:aws:iam::${AuditAccountID}:role/${RolePrefix}default_assessment_role"
       Runtime: !Ref PythonRuntime
       Timeout: 90
       LoggingConfig:
@@ -108,7 +108,7 @@ Resources:
       FunctionName: !Sub "${OrganizationName}gc13_emergency_account_mgmt_approvals"
       Code: "../../src/lambda/gc13_emergency_account_mgmt_approvals/build/GC13EmergencyAccountMgmtApprovalsLambda/"
       Handler: app.lambda_handler
-      Role: !GetAtt GCDefaultLambdaExecutionRole.Arn
+      Role: !Sub "arn:aws:iam::${AuditAccountID}:role/${RolePrefix}default_assessment_role"
       Runtime: !Ref PythonRuntime
       Timeout: 90
       LoggingConfig:
