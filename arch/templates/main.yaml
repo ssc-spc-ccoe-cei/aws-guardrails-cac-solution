@@ -1420,11 +1420,11 @@ Resources:
             - "s3://${ClientEvidenceBucket}/gc-10/signed_mou.pdf"
             - ClientEvidenceBucket: !If [ GenerateEvidenceBucketName, !GetAtt GenerateEvidenceBucketName.EvidenceBucketName, !Ref EvidenceBucketName ]
         - ParameterName: s3AccountManagementProcedurePath
-          ParameterValue: !Subs
+          ParameterValue: !Sub
             - "s3://${ClientEvidenceBucket}/gc-13/emergency_account_management_procedures.pdf"
             - ClientEvidenceBucket: !If [ GenerateEvidenceBucketName, !GetAtt GenerateEvidenceBucketName.EvidenceBucketName, !Ref EvidenceBucketName ]
         - ParameterName: s3AccountMgmtApprovalsPath
-          ParameterValue: !Subs
+          ParameterValue: !Sub
             - "s3://${ClientEvidenceBucket}/gc-13/emergency_account_management_approvals.pdf"
             - ClientEvidenceBucket: !If [ GenerateEvidenceBucketName, !GetAtt GenerateEvidenceBucketName.EvidenceBucketName, !Ref EvidenceBucketName ]
       OrganizationConformancePackName: !Sub "${OrganizationName}-GC-CP-Guardrails"
