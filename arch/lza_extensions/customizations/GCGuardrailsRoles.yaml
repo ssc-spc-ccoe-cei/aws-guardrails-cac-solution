@@ -318,7 +318,6 @@ Resources:
       Roles:
         - !Ref GCLambdaExecutionRole
 
-# TODO Copy the permissions from the Events, SNS, CloudTrail and GuardDuty access to workflow.
   # Events Access
   GCLambdaExecutionRoleEventsPolicy:
     Type: AWS::IAM::Policy
