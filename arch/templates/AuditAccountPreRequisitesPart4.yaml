@@ -72,6 +72,20 @@ Resources:
         LogGroup: !Sub "${OrganizationName}gc_guardrails"
         LogFormat: "JSON"
 
+  GC01CheckFederatedUsersMFA:
+    Condition: IsAuditAccount
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub "${OrganizationName}gc01_check_federated_users_mfa"
+      Code: "../../src/lambda/gc01_check_federated_users_mfa/build/GC01CheckRootAccountMFAEnabledLambda/"
+      Handler: app.lambda_handler
+      Role: !Sub "arn:aws:iam::${AuditAccountID}:role/${RolePrefix}default_assessment_role"
+      Runtime: !Ref PythonRuntime
+      Timeout: 90
+      LoggingConfig:
+        LogGroup: !Sub "${OrganizationName}gc_guardrails"
+        LogFormat: "JSON"
+
   GC01CheckMonitoringAndLoggingLambda:
     Condition: IsAuditAccount
     Type: AWS::Lambda::Function
