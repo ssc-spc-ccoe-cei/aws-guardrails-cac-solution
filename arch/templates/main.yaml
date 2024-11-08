@@ -48,7 +48,7 @@ Metadata:
       RolePrefix:
         default: The prefix to apply to generated role names
       AccelRolePrefix:
-        default: The Accelerator role prefix for priveledged access, in ASEA or LZA deployed by ProServices this could be AWSA- etc
+        default: The Accelerator role prefix for privileged access, in ASEA or LZA deployed by ProServices this could be AWSA- etc
       AcceleratorRole:
         default: The role used to assume access to organizational accounts, in ASEA = ASEA-PipelineRole, LZA = OrganizationAccountAccessRole could also be PBMMAccel etc.
       PipelineBucket:
@@ -115,7 +115,7 @@ Parameters:
     Type: String
     Default: "AWSA-"
     Description: >-
-      The Accelerator role prefix for priveledged access, in ASEA or LZA deployed by ProServices this could be AWSA- etc
+      The Accelerator role prefix for privileged access, in ASEA or LZA deployed by ProServices this could be AWSA- etc
   AcceleratorRole:
     Type: String
     Description: >-
@@ -1435,6 +1435,10 @@ Resources:
         - ParameterName: S3AccountMgmtApprovalsPath
           ParameterValue: !Sub
             - "s3://${ClientEvidenceBucket}/gc-13/emergency_account_management_approvals.pdf"
+            - ClientEvidenceBucket: !If [ GenerateEvidenceBucketName, !GetAtt GenerateEvidenceBucketName.EvidenceBucketName, !Ref EvidenceBucketName ]
+        - ParameterName: S3EmergencyAccountAlertsRuleNamesPath
+          ParameterValue: !Sub
+            - "s3://${ClientEvidenceBucket}/gc-13/rule_names.txt"
             - ClientEvidenceBucket: !If [ GenerateEvidenceBucketName, !GetAtt GenerateEvidenceBucketName.EvidenceBucketName, !Ref EvidenceBucketName ]
       OrganizationConformancePackName: !Sub "${OrganizationName}-GC-CP-Guardrails"
       TemplateS3Uri: !Sub s3://${PipelineBucket}/${DeployVersion}/ConformancePack.yaml
