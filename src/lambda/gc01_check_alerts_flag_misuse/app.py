@@ -196,7 +196,7 @@ def get_topic_subscriptions(topic_arn):
         elif "InvalidParameter" in ex.response['Error']['Code']:
             ex.response['Error']['Message'] = "Failed to get topic subscriptions. Invalid parameter."
         elif "AuthorizationError" in ex.response['Error']['Code']:
-            ex.response['Error']['Message'] = "Faled to get topic subscriptions. User is unauthorized."
+            ex.response['Error']['Message'] = "Failed to get topic subscriptions. User is unauthorized."
         else:
             ex.response["Error"]["Message"] = "InternalError"
             ex.response["Error"]["Code"] = "InternalError"
