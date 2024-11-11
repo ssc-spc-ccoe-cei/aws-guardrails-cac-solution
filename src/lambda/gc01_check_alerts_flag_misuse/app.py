@@ -218,7 +218,7 @@ def subscription_is_confirmed(subscription_arn):
         elif "InvalidParameter" in ex.response['Error']['Code']:
             ex.response['Error']['Message'] = "Failed to get subscription attributes. Invalid parameter."
         elif "AuthorizationError" in ex.response['Error']['Code']:
-            ex.response['Error']['Message'] = "Faled to get subscription attributes. User is unauthorized."
+            ex.response['Error']['Message'] = "Failed to get subscription attributes. User is unauthorized."
         else:
             ex.response["Error"]["Message"] = "InternalError"
             ex.response["Error"]["Code"] = "InternalError"
