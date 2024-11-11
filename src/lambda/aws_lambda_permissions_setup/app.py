@@ -237,7 +237,7 @@ def lambda_handler(event, context):
     event -- the event variable given in the lambda handler
     context -- the context variable given in the lambda handler
     """
-    logger.info("got event %s", event)
+    logger.info("Received Event: %s", json.dumps(event, indent=2))
     response_data = {}
     if event["RequestType"] == "Create":
         # try to add the lambda permissions

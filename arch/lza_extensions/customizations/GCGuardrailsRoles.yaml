@@ -332,8 +332,7 @@ Resources:
               - "events:ListTargetsByRule"
               - "events:ListRules"
             Resource:
-              - "arn:aws:account::*:account"
-              - "arn:aws:account::*:account/o-*/*"
+              - "*"
             Effect: Allow
       PolicyName: GCLambdaExecutionRoleEventsPolicy
       Roles:
@@ -351,8 +350,7 @@ Resources:
               - "sns:ListSubscriptionsByTopic"
               - "sns:GetSubscriptionAttributes"
             Resource:
-              - "arn:aws:account::*:account"
-              - "arn:aws:account::*:account/o-*/*"
+              - "*"
             Effect: Allow
       PolicyName: GCLambdaExecutionRoleSNSPolicy
       Roles:
@@ -369,8 +367,7 @@ Resources:
             Action:
               - "guardduty:ListDetectors"
             Resource:
-              - "arn:aws:account::*:account"
-              - "arn:aws:account::*:account/o-*/*"
+              - "*"
             Effect: Allow
       PolicyName: GCLambdaExecutionRoleGuardDutyPolicy
       Roles:

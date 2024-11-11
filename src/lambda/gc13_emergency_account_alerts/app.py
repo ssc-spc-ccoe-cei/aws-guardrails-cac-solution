@@ -15,6 +15,7 @@ logger.setLevel(logging.INFO)
 # Set to True to get the lambda to assume the Role attached on the Config Service
 ASSUME_ROLE_MODE = True
 DEFAULT_RESOURCE_TYPE = "AWS::::Account"
+RULE_RESOURCE_TYPE = "AWS::Events::Rule"
 
 
 # This gets the client after assuming the Config service role
@@ -103,7 +104,7 @@ def build_evaluation(resource_id, compliance_type, event, resource_type=DEFAULT_
     return eval_cc
 
 
-def check_s3_object_exists(object_path):
+def check_s3_object_exists(object_path: str) -> bool:
     """Check if the S3 object exists
     Keyword arguments:
     object_path -- the S3 object path
@@ -136,7 +137,7 @@ def check_s3_object_exists(object_path):
         return True
 
 
-def extract_bucket_name_and_key(object_path):
+def extract_bucket_name_and_key(object_path: str) -> tuple[str, str]:
     match = re.match(r"s3:\/\/([^/]+)\/((?:[^/]*/)*.*)", object_path)
     if match:
         bucket_name = match.group(1)
@@ -144,10 +145,10 @@ def extract_bucket_name_and_key(object_path):
     else:
         logger.error("Unable to parse S3 object path %s", object_path)
         raise ValueError(f"Unable to parse S3 object path {object_path}")
-    return bucket_name,key_name
+    return bucket_name, key_name
 
 
-def get_event_bridge_rules():
+def get_event_bridge_rules() -> list[dict]:
     try:
         rules = []
         next_token = None
@@ -168,7 +169,7 @@ def get_event_bridge_rules():
         raise ex
 
 
-def get_topic_subscriptions(topic_arn):
+def get_topic_subscriptions(topic_arn: str) -> list[dict]:
     try:
         subscriptions = []
         next_token = None
@@ -192,12 +193,12 @@ def get_topic_subscriptions(topic_arn):
         raise ex
 
 
-def fetch_rule_targets(rule_name) -> list[dict]:
+def fetch_rule_targets(rule_name: str) -> list[dict]:
     try:
         targets = []
         next_token = None
-        while next_token != None:
-            response = AWS_EVENT_BRIDGE_CLIENT.list_targets_by_rule(Rule=rule_name) if not next_token else AWS_EVENT_BRIDGE_CLIENT.list_targets_by_rule(Rule=rule_name, NextToken=next_token, NextToken=next_token)
+        while True:
+            response = AWS_EVENT_BRIDGE_CLIENT.list_targets_by_rule(Rule=rule_name) if not next_token else AWS_EVENT_BRIDGE_CLIENT.list_targets_by_rule(Rule=rule_name, NextToken=next_token)
             targets = targets + response.get("Targets", [])
             next_token = response.get("NextToken")
             if not next_token:
@@ -231,14 +232,14 @@ def subscription_is_confirmed(subscription_arn: str) -> bool:
         raise ex
 
 
-def rule_is_configured_to_notify_authorized_personnel(rule) -> bool:
-    targets = fetch_rule_targets(rule.get("Name", ""))
+def rule_is_configured_to_notify_authorized_personnel(rule_name: str) -> bool:
+    targets = fetch_rule_targets(rule_name)
 
     for target in targets:
         logger.info("Checking rule target: %s", target)
         # is target an SNS input transformer?
         target_arn: str = target.get("Arn", "")
-        if target_arn.startswith("arn:aws:sns:") :
+        if target_arn.startswith("arn:aws:sns:"):
             # yes, get a list of topic subscriptions
             subscriptions = get_topic_subscriptions(target_arn)
             # then search topic for a subscription with "email" protocol and is confirmed
@@ -309,8 +310,6 @@ def lambda_handler(event, context):
     file_param_name = "s3ObjectPath"
     rule_names_file_path = valid_rule_parameters.get(file_param_name, "")
 
-    rule_names_file_path = "s3://gc-evidence-q4zykdd9bu/gc-13/rule_names.txt" # TODO: Remove after testing
-
     if not check_s3_object_exists(rule_names_file_path):
         logger.info(f"No {file_param_name} input provided.")
         evaluations.append(
@@ -340,11 +339,16 @@ def lambda_handler(event, context):
             )
 
         else:
-            rules = get_event_bridge_rules()
-            logger.info("get_event_bridge_rules: %s", rules)
+            event_bridge_rules = get_event_bridge_rules()
+            num_compliant_rules = 0
+
+            # TODO: Remove after testing is complete
+            # for rule in event_bridge_rules:
+            #     logger.info("rule_is_configured_to_notify_authorized_personnel: %s", rule_is_configured_to_notify_authorized_personnel(rule.get("Name", "")))
 
             for rule_name in rule_names:
-                rule = next((r for r in rules if r.get("Name", "") == rule_name), None)
+                rule = next((r for r in event_bridge_rules if r.get("Name", "") == rule_name), None)
+                logger.info("Processing EventBridge rule with name '%s': %s", rule_name, rule)
 
                 if not rule:
                     evaluations.append(
@@ -352,7 +356,7 @@ def lambda_handler(event, context):
                             event["accountId"],
                             "NON_COMPLIANT",
                             event,
-                            resource_type=DEFAULT_RESOURCE_TYPE,
+                            resource_type=RULE_RESOURCE_TYPE,
                             annotation=f"Rule with name '{rule_name}' was not found in the EventBridge rule set.",
                         )
                     )
@@ -362,22 +366,33 @@ def lambda_handler(event, context):
                             event["accountId"],
                             "NON_COMPLIANT",
                             event,
-                            resource_type=DEFAULT_RESOURCE_TYPE,
+                            resource_type=RULE_RESOURCE_TYPE,
                             annotation=f"Rule with name '{rule_name}' is 'DISABLED' in the EventBridge rule set.",
                         )
                     )
-                elif not rule_is_configured_to_notify_authorized_personnel(rule):
+                elif not rule_is_configured_to_notify_authorized_personnel(rule_name):
                     evaluations.append(
                         build_evaluation(
                             event["accountId"],
                             "NON_COMPLIANT",
                             event,
-                            resource_type=DEFAULT_RESOURCE_TYPE,
+                            resource_type=RULE_RESOURCE_TYPE,
                             annotation=f"Rule with name '{rule_name}' is NOT configured to send notifications.",
                         )
                     )
+                else:
+                    num_compliant_rules = num_compliant_rules + 1
+                    evaluations.append(
+                        build_evaluation(
+                            event["accountId"],
+                            "COMPLIANT",
+                            event,
+                            resource_type=RULE_RESOURCE_TYPE,
+                            annotation=f"Rule with name '{rule_name}' is enabled and configured to send notifications.",
+                        )
+                    )
 
-            if not evaluations:
+            if len(rule_names) == num_compliant_rules:
                 evaluations.append(
                     build_evaluation(
                         event["accountId"],
@@ -385,6 +400,16 @@ def lambda_handler(event, context):
                         event,
                         resource_type=DEFAULT_RESOURCE_TYPE,
                         annotation="All required rules are enabled and configured with an SNS topic and subscription to send notification",
+                    )
+                )
+            else:
+                evaluations.append(
+                    build_evaluation(
+                        event["accountId"],
+                        "NON_COMPLIANT",
+                        event,
+                        resource_type=DEFAULT_RESOURCE_TYPE,
+                        annotation="NOT all required rules are enabled and configured with an SNS topic and subscription to send notification",
                     )
                 )
 

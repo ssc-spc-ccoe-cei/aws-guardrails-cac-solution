@@ -27,7 +27,7 @@ Parameters:
   AccelRolePrefix:
     Type: String
     Default: "AWSA-"
-    Description: The Accelerator role prefix for priveledged access
+    Description: The Accelerator role prefix for privileged access
   PythonRuntime:
     Type: String
     Default: 'python3.12'

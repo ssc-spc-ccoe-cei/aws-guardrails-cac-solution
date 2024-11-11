@@ -174,7 +174,7 @@ Resources:
   ##################################################
   # Part 1 - Management Account Pre-requisites
   ##################################################
-  # Priveledged Role Creation
+  # Privileged Role Creation
   LambdaCreateRole:
     Type: "AWS::IAM::Role"
     Condition: DeployRoles
@@ -1271,6 +1271,11 @@ Resources:
               - "timestream:ListDatabases"
               - "timestream:ListTables"
               - "tag:GetResources"
+              - "events:ListTargetsByRule"
+              - "events:ListRules"
+              - "sns:ListSubscriptionsByTopic"
+              - "sns:GetSubscriptionAttributes"
+              - "guardduty:ListDetectors"
             Resource: "*"
             Effect: Allow
       PolicyName: !Sub "${OrganizationName}GCLambdaExecutionRoleDatastorePolicy"

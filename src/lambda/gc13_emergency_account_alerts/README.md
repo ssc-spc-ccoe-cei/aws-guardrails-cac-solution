@@ -10,25 +10,25 @@ The Lambda will:
 
 - Validate the rule parameters
 - Assume the Config service role to get credentials
-
-<!-- TODO: UPDATE THIS LIST -->
-
-- Check if the S3 object specified in the parameters exists
+- Check if the S3 object specified in the parameters exists and has a list of rules
+- Get a list of EventBridge rules
+  - Ensure that each rule provided by the input file exists in the list of EventBridge rules
+  - Ensure that each rule provided by the input file is enabled in EventBridge
+  - Ensure that each rule provided by the input file is configured to send notifications via SNS
+  - Send an evaluation result back to Config:
+    - COMPLIANT if the rule meets the above criteria
+    - NON_COMPLIANT if the rule does not meet the above criteria
 - Send an evaluation result back to Config:
-  - COMPLIANT if the object is found
-  - NON_COMPLIANT if it is not
-
-The check only occurs in the designated audit account.
+  - COMPLIANT if all the rules meet the above criteria
+  - NON_COMPLIANT if one of the rules does not meet the above criteria
 
 ## Deployment
 
-The Lambda function needs to be deployed to each account that will be monitored by Config. The execution role `AWSA-GCLambdaExecutionRole` must have permissions to assume the Config service role and access S3.
+The Lambda function needs to be deployed to each account that will be monitored by Config. The execution role `AWSA-GCLambdaExecutionRole` must have permissions to assume the Config service role, S3, EventBridge, and SNS.
 
 ## Parameters
 
-<!-- TODO: UPDATE THIS LIST -->
-
-- `RuleNames` - The list of EventBridge rule names that need to be in-place (required)
+- `s3ObjectPath` - The path to a file containing the list of EventBridge rule names that need to be in-place (required). The file is a text file where each rule name is separated by a new line.
 - `ExecutionRoleName` - The role name that the function will assume (default: `AWSA-GCLambdaExecutionRole`)
 - `AuditAccountID` - The AWS account ID for the audit account (default: current account)
 

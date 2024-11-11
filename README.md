@@ -20,10 +20,10 @@
     - `RolePrefix` needs to match the value configured in config.yaml
     - `EvidenceBucketName` needs to match the value configured in config.yaml
     - `organizationalUnits` need to match what is deployed in the environment and must include any nested OU's
-- After inserting the customizations-config, running the LZA pipeline will result in roles being created in any account they do not exist in, ioncluding new accounts
-- Templates deployed through customizations-config are deployed as cloudformation stacks and not stacksets, allowing for the creation of priveledged roles.
+- After inserting the customizations-config, running the LZA pipeline will result in roles being created in any account they do not exist in, including new accounts
+- Templates deployed through customizations-config are deployed as cloudformation stacks and not stacksets, allowing for the creation of privileged roles.
 
-### Pre-Requitites
+### Pre-Requisites
 
 - Enable StackSets trusted access (Visit the Cloudformation/Stacksets console).
 - Organizations must be enabled and LZA deployed.
@@ -35,7 +35,7 @@
 ### Edit the config file
 
 The config file contains the variables required for the installation of the gc-guardrails dashboard components. Certain variables need to be configured based on information obtained from the organization console of your AWS management account.
-The config file is documented below with inline commments:
+The config file is documented below with inline comments:
 
 ```yaml
 # The prefix to use in naming the cloudformation stacks
@@ -46,10 +46,10 @@ GitSourceVersion: "1.00"
 AWS_REGION: "ca-central-1"
 # This can be left blank
 PipelineBucket: ""
-# This sould be a short descriptive name for the environment
+# This should be a short descriptive name for the environment
 EnvironmentName: "esdc-lza-demo"
 Parameters:
-# This should be a short name describing the ogranization, used in the future for aggragating 
+# This should be a short name describing the organization, used in the future for aggregating 
   OrganizationName: "ESDC-LZA-Demo"
 # This is obtained from the the Organization console
   OrganizationId: "o-71q12of6wn"
