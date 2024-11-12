@@ -1,7 +1,7 @@
 AWSTemplateFormatVersion: '2010-09-09'
 Transform: AWS::Serverless-2016-10-31
 Description: >
-  gc02_check_iam_users_mfa
+  gc01_check_mfa_digital_policy
 
 Globals:
   Function:
@@ -9,7 +9,7 @@ Globals:
     MemorySize: 128
 
 Resources:
-  GC02CheckIAMUsersMFALambda:
+  GC01CheckMFADigitalPolicy:
     Type: AWS::Serverless::Function
     Properties:
       CodeUri: .

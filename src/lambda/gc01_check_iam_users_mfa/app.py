@@ -1,4 +1,4 @@
-""" GC02 - Check IAM Users MFA
+""" GC01 - Check IAM Users MFA
     https://canada-ca.github.io/cloud-guardrails/EN/02_Management-Admin-Privileges.html
 """
 import json

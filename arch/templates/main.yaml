@@ -280,7 +280,12 @@ Resources:
                     "iam:ListRoles",
                     "aws-marketplace:ListEntities",
                     "organizations:DescribeOrganization",
-                    "organizations:ListAccounts"
+                    "organizations:ListAccounts",
+                    "events:ListTargetsByRule",
+                    "events:ListRules",
+                    "sns:ListSubscriptionsByTopic",
+                    "sns:GetSubscriptionAttributes",
+                    "guardduty:ListDetectors"
                   ],
                   "Resource": [
                     "*"
@@ -1390,6 +1395,10 @@ Resources:
         - ParameterName: S3AttestationLetterPath
           ParameterValue: !Sub
             - "s3://${ClientEvidenceBucket}/gc-01/attestation_letter.pdf"
+            - ClientEvidenceBucket: !If [ GenerateEvidenceBucketName, !GetAtt GenerateEvidenceBucketName.EvidenceBucketName, !Ref EvidenceBucketName ]
+        - ParameterName: RuleNamingConventionFilePath
+          ParameterValue: !Sub
+            - "s3://${ClientEvidenceBucket}/gc-01/rule_naming_convention.txt"
             - ClientEvidenceBucket: !If [ GenerateEvidenceBucketName, !GetAtt GenerateEvidenceBucketName.EvidenceBucketName, !Ref EvidenceBucketName ]
         - ParameterName: S3AccountManagementPlanPath
           ParameterValue: !Sub
