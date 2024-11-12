@@ -161,7 +161,7 @@ Resources:
     Type: "AWS::Config::ConfigRule"
     Properties:
       ConfigRuleName: gc01_check_federated_users_mfa
-      Description: Checks federated users to ensure that MFA is setup
+      Description: Checks federated users to ensure that MFA is setup.
       InputParameters:
         ExecutionRoleName:
           Fn::If:
