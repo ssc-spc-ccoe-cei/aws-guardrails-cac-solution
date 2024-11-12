@@ -81,6 +81,11 @@ Parameters:
   # GC10
   S3SignedMOUDocumentPath:
     Type: String
+  # GC13
+  S3AccountManagementProcedurePath:
+    Type: String
+  S3AccountMgmtApprovalsPath:
+    Type: String
 Resources:
   # GC01
   GC01CheckAttestationLetterConfigRule:
@@ -1012,6 +1017,82 @@ Resources:
         SourceDetails:
           - EventSource: "aws.config"
             MessageType: "ScheduledNotification"
+
+  # GC13
+  GC13EmergencyAccountManagementConfigRule:
+    Type: "AWS::Config::ConfigRule"
+    Properties:
+      ConfigRuleName: gc13_emergency_account_management
+      Description: Checks S3 bucket for the account management procedure
+      InputParameters:
+        s3ObjectPath:
+          Fn::If:
+            - s3AccountManagementProcedurePath
+            - Ref: S3AccountManagementProcedurePath
+            - Ref: AWS::NoValue
+        ExecutionRoleName:
+          Fn::If:
+            - GCLambdaExecutionRoleName
+            - Ref: GCLambdaExecutionRoleName
+            - Ref: AWS::NoValue
+        AuditAccountID:
+          Fn::If:
+            - auditAccountID
+            - Ref: AuditAccountID
+            - Ref: AWS::NoValue
+      Scope:
+        ComplianceResourceTypes:
+          - AWS::Account
+      MaximumExecutionFrequency: TwentyFour_Hours
+      Source:
+        Owner: CUSTOM_LAMBDA
+        SourceIdentifier:
+          Fn::Join:
+            - ""
+            - - "arn:aws:lambda:ca-central-1:"
+              - Ref: AuditAccountID
+              - !Sub ":function:${OrganizationName}gc13_emergency_account_management"
+        SourceDetails:
+          - EventSource: "aws.config"
+            MessageType: "ScheduledNotification"
+
+  GC13EmergencyAccountMgmtApprovalsConfigRule:
+    Type: "AWS::Config::ConfigRule"
+    Properties:
+      ConfigRuleName: gc13_emergency_account_mgmt_approvals
+      Description: Checks S3 bucket for the account management procedure approvals
+      InputParameters:
+        s3ObjectPath:
+          Fn::If:
+            - s3AccountMgmtApprovalsPath
+            - Ref: S3AccountMgmtApprovalsPath
+            - Ref: AWS::NoValue
+        ExecutionRoleName:
+          Fn::If:
+            - GCLambdaExecutionRoleName
+            - Ref: GCLambdaExecutionRoleName
+            - Ref: AWS::NoValue
+        AuditAccountID:
+          Fn::If:
+            - auditAccountID
+            - Ref: AuditAccountID
+            - Ref: AWS::NoValue
+      Scope:
+        ComplianceResourceTypes:
+          - AWS::Account
+      MaximumExecutionFrequency: TwentyFour_Hours
+      Source:
+        Owner: CUSTOM_LAMBDA
+        SourceIdentifier:
+          Fn::Join:
+            - ""
+            - - "arn:aws:lambda:ca-central-1:"
+              - Ref: AuditAccountID
+              - !Sub ":function:${OrganizationName}gc13_emergency_account_mgmt_approvals"
+        SourceDetails:
+          - EventSource: "aws.config"
+            MessageType: "ScheduledNotification"
+
 Conditions:
   # Common
   GCLambdaExecutionRoleName:
@@ -1147,3 +1228,14 @@ Conditions:
       - Fn::Equals:
           - ""
           - Ref: S3SignedMOUDocumentPath
+  # GC13
+  s3AccountManagementProcedurePath:
+    Fn::Not:
+      - Fn::Equals:
+          - ""
+          - Ref: S3AccountManagementProcedurePath
+  s3AccountMgmtApprovalsPath:
+    Fn::Not:
+      - Fn::Equals:
+          - ""
+          - Ref: S3AccountMgmtApprovalsPath

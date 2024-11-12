@@ -19,12 +19,12 @@ Parameters:
     Type: String
     Default: "AWSA-"
     Description: >-
-      The Accelerator role prefix for priveledged access, in ASEA or LZA deployed by ProServices this could be AWSA- etc
+      The Accelerator role prefix for privileged access, in ASEA or LZA deployed by ProServices this could be AWSA- etc
   EvidenceBucketName:
     Type: String
     Default: ""
     Description: >-
-      Bucket will store evidence documents. 
+      Bucket will store evidence documents.
 
 Resources:
   GCLambdaExecutionRole:
@@ -58,7 +58,9 @@ Resources:
                               "arn:aws:sts::${AuditAccountID}:assumed-role/${RolePrefix}default_assessment_role/${OrganizationName}gc01_check_mfa_digital_policy",
                               "arn:aws:sts::${AuditAccountID}:assumed-role/${RolePrefix}default_assessment_role/${OrganizationName}gc01_check_monitoring_and_logging"
                               "arn:aws:sts::${AuditAccountID}:assumed-role/${RolePrefix}default_assessment_role/${OrganizationName}gc01_check_alerts_flag_misuse"
-                              "arn:aws:sts::${AuditAccountID}:assumed-role/${RolePrefix}default_assessment_role/${OrganizationName}gc12_check_marketplace"
+                              "arn:aws:sts::${AuditAccountID}:assumed-role/${RolePrefix}default_assessment_role/${OrganizationName}gc12_check_marketplace",
+                              "arn:aws:sts::${AuditAccountID}:assumed-role/${RolePrefix}default_assessment_role/${OrganizationName}gc13_emergency_account_management",
+                              "arn:aws:sts::${AuditAccountID}:assumed-role/${RolePrefix}default_assessment_role/${OrganizationName}gc13_emergency_account_mgmt_approvals"
                           ]
                       },
                       "Action": "sts:AssumeRole"
@@ -73,29 +75,28 @@ Resources:
       Tags:
         - Key: "Source"
           Value: "ProServe Delivery Kit"
-  
+
   GCLambdaExecutionRole2:
     Type: AWS::IAM::Role
     Properties:
-      AssumeRolePolicyDocument:
-        !Sub | 
-          {
-              "Version": "2012-10-17",
-              "Statement": [
-                  {
-                      "Effect": "Allow",
-                      "Principal": {
-                          "AWS": [
-                              "arn:aws:sts::${AuditAccountID}:assumed-role/${RolePrefix}default_assessment_role/configLambdaExecution",
-                              "arn:aws:sts::${AuditAccountID}:assumed-role/${RolePrefix}default_assessment_role/${OrganizationName}gc06_check_encryption_at_rest_part1",
-                              "arn:aws:sts::${AuditAccountID}:assumed-role/${RolePrefix}default_assessment_role/${OrganizationName}gc06_check_encryption_at_rest_part2",
-                              "arn:aws:sts::${AuditAccountID}:assumed-role/${RolePrefix}default_assessment_role/${OrganizationName}gc07_check_encryption_in_transit"
-                          ]
-                      },
-                      "Action": "sts:AssumeRole"
-                  }
-              ]
-          }
+      AssumeRolePolicyDocument: !Sub |
+        {
+            "Version": "2012-10-17",
+            "Statement": [
+                {
+                    "Effect": "Allow",
+                    "Principal": {
+                        "AWS": [
+                            "arn:aws:sts::${AuditAccountID}:assumed-role/${RolePrefix}default_assessment_role/configLambdaExecution",
+                            "arn:aws:sts::${AuditAccountID}:assumed-role/${RolePrefix}default_assessment_role/${OrganizationName}gc06_check_encryption_at_rest_part1",
+                            "arn:aws:sts::${AuditAccountID}:assumed-role/${RolePrefix}default_assessment_role/${OrganizationName}gc06_check_encryption_at_rest_part2",
+                            "arn:aws:sts::${AuditAccountID}:assumed-role/${RolePrefix}default_assessment_role/${OrganizationName}gc07_check_encryption_in_transit"
+                        ]
+                    },
+                    "Action": "sts:AssumeRole"
+                }
+            ]
+        }
       Description: "GC Guardrails - Assessment Role 2"
       ManagedPolicyArns:
         - arn:aws:iam::aws:policy/service-role/AWSConfigRulesExecutionRole
