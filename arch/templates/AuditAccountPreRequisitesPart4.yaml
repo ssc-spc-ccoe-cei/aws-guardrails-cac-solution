@@ -76,7 +76,7 @@ Resources:
     Type: AWS::Lambda::Function
     Properties:
       FunctionName: !Sub "${OrganizationName}gc01_check_federated_users_mfa"
-      Code: "../../src/lambda/gc01_check_federated_users_mfa/build/GC01CheckRootAccountMFAEnabledLambda/"
+      Code: "../../src/lambda/gc01_check_federated_users_mfa/build/GC01CheckFederatedUsersMFA/"
       Handler: app.lambda_handler
       Role: !Sub "arn:aws:iam::${AuditAccountID}:role/${RolePrefix}default_assessment_role"
       Runtime: !Ref PythonRuntime
@@ -113,7 +113,7 @@ Resources:
         LogGroup: !Sub "${OrganizationName}gc_guardrails"
         LogFormat: "JSON"
         
-  GC01CheckFederatedUsersMFA:
+  GC01CheckMFADigitalPolicy:
     Condition: IsAuditAccount
     Type: AWS::Lambda::Function
     Properties:
