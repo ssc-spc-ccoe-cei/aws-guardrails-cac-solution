@@ -342,10 +342,6 @@ def lambda_handler(event, context):
             event_bridge_rules = get_event_bridge_rules()
             num_compliant_rules = 0
 
-            # TODO: Remove after testing is complete
-            # for rule in event_bridge_rules:
-            #     logger.info("rule_is_configured_to_notify_authorized_personnel: %s", rule_is_configured_to_notify_authorized_personnel(rule.get("Name", "")))
-
             for rule_name in rule_names:
                 rule = next((r for r in event_bridge_rules if r.get("Name", "") == rule_name), None)
                 logger.info("Processing EventBridge rule with name '%s': %s", rule_name, rule)
