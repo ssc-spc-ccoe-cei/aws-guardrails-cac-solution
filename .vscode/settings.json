@@ -1,0 +1,8 @@
+{
+    "python.autoComplete.extraPaths": [
+        "./src/layer/cloud_guardrails/python/lib/python3.12/site-packages"
+    ],
+    "python.analysis.extraPaths": [
+        "./src/layer/cloud_guardrails/python/lib/python3.12/site-packages"
+    ]
+}
