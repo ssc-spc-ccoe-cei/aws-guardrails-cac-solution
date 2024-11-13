@@ -113,8 +113,9 @@ update-params:
 build-code:
 	$(info --- Starting Buid Stage ---)
 	$(info --- Cleaning & Rebuild Project Lambdas ---)
-	if $(CLOUD_SHELL); then echo "Build skipped in CloudShell"; else $(CODEBUILD_SRC_DIR)/tools/samclean.sh -p $(CODEBUILD_SRC_DIR)/src/lambda/; fi ;
-	if $(CLOUD_SHELL); then echo "Build skipped in CloudShell"; else $(CODEBUILD_SRC_DIR)/tools/buildsam.sh -p $(CODEBUILD_SRC_DIR)/src/lambda/; fi ;
+	if $(CLOUD_SHELL); then echo "Build skipped in CloudShell"; else $(CODEBUILD_SRC_DIR)/tools/samclean.sh -p $(CODEBUILD_SRC_DIR)/src/; fi ;
+	if $(CLOUD_SHELL); then echo "Build skipped in CloudShell"; else $(CODEBUILD_SRC_DIR)/tools/buildsam.sh -p $(CODEBUILD_SRC_DIR)/src/; fi ;
+	
 
 package-code:
 	$(info --- Packaging Lambdas Code & CFN Templates ---)
