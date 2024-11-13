@@ -1,26 +1,24 @@
 _This readme file was created by AWS Bedrock: anthropic.claude-v2_
 
-# GC13 - Emergency Account Alerts
+# GC13 - Emergency Account Testing
 
 ## Overview
 
-This is a Lambda function that checks for the existence of alerts that are in place to report any use of emergency accounts. It is designed to be used by AWS Config to evaluate compliance against a custom Config rule.
+This is a Lambda function that verifies that testing of emergency accounts took place and that periodic testing is included. It is designed to be used by AWS Config to evaluate compliance against a custom Config rule.
 
 The Lambda will:
 
 - Validate the rule parameters
 - Assume the Config service role to get credentials
-- Check if the S3 object specified in the parameters exists and has a list of rules
-- Get a list of EventBridge rules
-  - Ensure that each rule provided by the input file exists in the list of EventBridge rules
-  - Ensure that each rule provided by the input file is enabled in EventBridge
-  - Ensure that each rule provided by the input file is configured to send notifications via SNS
+- Get a list of break-glass users
+  - Ensure that each user exists in the management account
+  - Ensure that each user has logged in within 1 year's time
   - Send an evaluation result back to Config:
-    - COMPLIANT if the rule meets the above criteria
-    - NON_COMPLIANT if the rule does not meet the above criteria
+    - COMPLIANT if the user meets the above criteria
+    - NON_COMPLIANT if the user does not meet the above criteria
 - Send an evaluation result back to Config:
-  - COMPLIANT if all the rules meet the above criteria
-  - NON_COMPLIANT if one of the rules does not meet the above criteria
+  - COMPLIANT if all the users meet the above criteria
+  - NON_COMPLIANT if one of the users do not meet the above criteria
 
 ## Deployment
 
@@ -28,9 +26,10 @@ The Lambda function needs to be deployed to each account that will be monitored 
 
 ## Parameters
 
-- `s3ObjectPath` - The path to a file containing the list of EventBridge rule names that need to be in-place (required). The file is a text file where each rule name is separated by a new line.
 - `ExecutionRoleName` - The role name that the function will assume (default: `AWSA-GCLambdaExecutionRole`)
 - `AuditAccountID` - The AWS account ID for the audit account (default: current account)
+- `BgUser1` - The IAM user name of the break-glass user number 1
+- `BgUser2` - The IAM user name of the break-glass user number 2
 
 ## Function entry point
 

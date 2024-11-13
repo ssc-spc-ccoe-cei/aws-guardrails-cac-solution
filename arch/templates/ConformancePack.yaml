@@ -88,8 +88,6 @@ Parameters:
     Type: String
   S3EmergencyAccountAlertsRuleNamesPath:
     Type: String
-  S3BreakGlassAccountNamesPath:
-    Type: String
 Resources:
   # GC01
   GC01CheckAttestationLetterConfigRule:
@@ -1140,11 +1138,6 @@ Resources:
       ConfigRuleName: gc13_emergency_account_testing
       Description: Verifies that testing of emergency accounts took place and that periodic testing is included
       InputParameters:
-        s3ObjectPath:
-          Fn::If:
-            - s3BreakGlassAccountNamesPath
-            - Ref: S3BreakGlassAccountNamesPath
-            - Ref: AWS::NoValue
         ExecutionRoleName:
           Fn::If:
             - GCLambdaExecutionRoleName
@@ -1154,6 +1147,16 @@ Resources:
           Fn::If:
             - auditAccountID
             - Ref: AuditAccountID
+            - Ref: AWS::NoValue
+        BgUser1:
+          Fn::If:
+            - bgUser1
+            - Ref: BGA1
+            - Ref: AWS::NoValue
+        BgUser2:
+          Fn::If:
+            - bgUser2
+            - Ref: BGA2
             - Ref: AWS::NoValue
       Scope:
         ComplianceResourceTypes:
@@ -1322,8 +1325,3 @@ Conditions:
       - Fn::Equals:
           - ""
           - Ref: S3EmergencyAccountAlertsRuleNamesPath
-  s3BreakGlassAccountNamesPath:
-    Fn::Not:
-      - Fn::Equals:
-          - ""
-          - Ref: S3BreakGlassAccountNamesPath

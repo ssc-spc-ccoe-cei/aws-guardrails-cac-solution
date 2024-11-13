@@ -277,6 +277,7 @@ Resources:
                     "iam:ListAttachedRolePolicies",
                     "iam:ListMFADevices",
                     "iam:ListUsers",
+                    "iam:GetUser",
                     "iam:ListRoles",
                     "aws-marketplace:ListEntities",
                     "organizations:DescribeOrganization",
@@ -1208,6 +1209,7 @@ Resources:
               - "iam:ListAttachedRolePolicies"
               - "iam:ListMFADevices"
               - "iam:ListUsers"
+              - "iam:GetUser"
             Resource: "*"
             Effect: Allow
           - Sid: AllowCloudWatchAlarmQueries
@@ -1444,10 +1446,6 @@ Resources:
         - ParameterName: S3EmergencyAccountAlertsRuleNamesPath
           ParameterValue: !Sub
             - "s3://${ClientEvidenceBucket}/gc-13/rule_names.txt"
-            - ClientEvidenceBucket: !If [ GenerateEvidenceBucketName, !GetAtt GenerateEvidenceBucketName.EvidenceBucketName, !Ref EvidenceBucketName ]
-        - ParameterName: S3BreakGlassAccountNamesPath
-          ParameterValue: !Sub
-            - "s3://${ClientEvidenceBucket}/gc-13/break_glass_account_names.txt"
             - ClientEvidenceBucket: !If [ GenerateEvidenceBucketName, !GetAtt GenerateEvidenceBucketName.EvidenceBucketName, !Ref EvidenceBucketName ]
       OrganizationConformancePackName: !Sub "${OrganizationName}-GC-CP-Guardrails"
       TemplateS3Uri: !Sub s3://${PipelineBucket}/${DeployVersion}/ConformancePack.yaml

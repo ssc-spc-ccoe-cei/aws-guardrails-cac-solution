@@ -3,8 +3,8 @@
 """
 import json
 import logging
-import re
-from datetime import datetime, timedelta
+import time
+from datetime import datetime, timedelta, timezone
 
 import boto3
 import botocore
@@ -75,13 +75,57 @@ def evaluate_parameters(rule_parameters):
     Keyword arguments:
     rule_parameters -- the Key/Value dictionary of the Config Rule parameters
     """
-    if "s3ObjectPath" not in rule_parameters:
-        logger.error('The parameter with "s3ObjectPath" as key must be defined.')
-        raise ValueError('The parameter with "s3ObjectPath" as key must be defined.')
-    if not rule_parameters["s3ObjectPath"]:
-        logger.error('The parameter "s3ObjectPath" must have a defined value.')
-        raise ValueError('The parameter "s3ObjectPath" must have a defined value.')
     return rule_parameters
+
+
+def get_organizations_mgmt_account_id():
+    """Calls the AWS Organizations API to obtain the Management Account ID"""
+    management_account_id = ""
+    i_retry_limit = 10
+    i_retries = 0
+    b_completed = False
+    b_retry = True
+    while (b_retry and (not b_completed)) and (i_retries < i_retry_limit):
+        try:
+            response = AWS_ORGANIZATIONS_CLIENT.describe_organization()
+            if response:
+                organization = response.get("Organization", None)
+                if organization:
+                    management_account_id = organization.get("MasterAccountId", "")
+                else:
+                    logger.error("Unable to read the Organization from the dict")
+            else:
+                logger.error("Invalid response.")
+            b_completed = True
+        except botocore.exceptions.ClientError as ex:
+            if "AccessDenied" in ex.response["Error"]["Code"]:
+                logger.error("ACCESS DENIED when trying to describe_organization")
+                management_account_id = "ERROR"
+                b_retry = False
+            elif "AWSOrganizationsNotInUse" in ex.response["Error"]["Code"]:
+                logger.error("AWS Organizations not in use")
+                management_account_id = "ERROR"
+                b_retry = False
+            elif "ServiceException" in ex.response["Error"]["Code"]:
+                logger.error("AWS Organizations Service Exception")
+                management_account_id = "ERROR"
+                b_retry = False
+            elif ("ConcurrentModification" in ex.response["Error"]["Code"]) or (
+                "TooManyRequests" in ex.response["Error"]["Code"]
+            ):
+                # throttling
+                logger.info("AWS Organizations API is throttling requests or going through a modification. Will retry.")
+                time.sleep(2)
+                if i_retries >= i_retry_limit:
+                    logger.error("Retry limit reached. Returning an error")
+                    management_account_id = "ERROR"
+                    b_retry = False
+                else:
+                    i_retries += 1
+        except ValueError:
+            logger.error("Unknown exception - get_organizations_mgmt_account_id.")
+            management_account_id = "ERROR"
+    return management_account_id
 
 
 # This generate an evaluation for config
@@ -105,99 +149,36 @@ def build_evaluation(resource_id, compliance_type, event, resource_type=DEFAULT_
     return eval_cc
 
 
-def check_s3_object_exists(object_path: str) -> bool:
-    """Check if the S3 object exists
-    Keyword arguments:
-    object_path -- the S3 object path
-    """
-    # parse the S3 path
-    match = re.match(r"s3:\/\/([^/]+)\/((?:[^/]*/)*.*)", object_path)
-    if match:
-        bucket_name = match.group(1)
-        key_name = match.group(2)
-    else:
-        logger.error("Unable to parse S3 object path %s", object_path)
-        raise ValueError(f"Unable to parse S3 object path {object_path}")
+def get_iam_user(user_name: str) -> dict | None:
     try:
-        AWS_S3_CLIENT.head_object(Bucket=bucket_name, Key=key_name)
-    except botocore.exceptions.ClientError as err:
-        if err.response["Error"]["Code"] == "404":
-            # The object does not exist.
-            logger.info("Object %s not found in bucket %s", key_name, bucket_name)
-            return False
-        elif err.response["Error"]["Code"] == "403":
-            # AccessDenied
-            logger.info("Access denied to bucket %s", bucket_name)
-            return False
-        else:
-            # Something else has gone wrong.
-            logger.error("Error trying to find object %s in bucket %s", key_name, bucket_name)
-            raise ValueError(f"Error trying to find object {key_name} in bucket {bucket_name}") from err
-    else:
-        # The object does exist.
-        return True
-
-
-def extract_bucket_name_and_key(object_path: str) -> tuple[str, str]:
-    match = re.match(r"s3:\/\/([^/]+)\/((?:[^/]*/)*.*)", object_path)
-    if match:
-        bucket_name = match.group(1)
-        key_name = match.group(2)
-    else:
-        logger.error("Unable to parse S3 object path %s", object_path)
-        raise ValueError(f"Unable to parse S3 object path {object_path}")
-    return bucket_name, key_name
-
-
-def get_iam_users_in_bg_list(bg_accounts: list[str]) -> list[dict]:
-    """Get a list of IAM users in the account."""
-    result_iam_users = []
-    try:
-        response = AWS_IAM_CLIENT.list_users()
-        b_more_data = True
-        while b_more_data:
-            if response:
-                logger.info("Found %s IAM users in account %s", len(response.get("Users")), AWS_ACCOUNT_ID)
-                users = response.get("Users")
-                if users:
-                    for user in users:
-                        if user.get("UserName") in bg_accounts:
-                            result_iam_users.append({
-                                "UserName": user.get("UserName"),
-                                "UserId": user.get("UserId"),
-                                "Arn": user.get("Arn"),
-                                "PasswordLastUsed": user.get("PasswordLastUsed", None),
-                            })
-                    if response.get("IsTruncated"):
-                        marker = response.get("Marker")
-                        response = AWS_IAM_CLIENT.list_users(Marker=marker)
-                    else:
-                        b_more_data = False
-                else:
-                    logger.info("No IAM users found in account %s", AWS_ACCOUNT_ID)
-                    b_more_data = False
-            else:
-                logger.error("Empty response while trying to list_users in account %s", AWS_ACCOUNT_ID)
-                b_more_data = False
+        response = AWS_IAM_CLIENT.get_user(UserName=user_name)
+        user = response.get("User")
+        return {
+            "UserName": user.get("UserName"),
+            "UserId": user.get("UserId"),
+            "Arn": user.get("Arn"),
+            "PasswordLastUsed": user.get("PasswordLastUsed", None),
+        }
     except botocore.exceptions.ClientError as ex:
-        logger.error("Error while trying to list_users. %s", ex)
+        # Scrub error message for any internal account info leaks
+        if "NoSuchEntityException" in ex.response["Error"]["Code"]:
+            return None
+        elif "AccessDenied" in ex.response["Error"]["Code"]:
+            ex.response["Error"]["Message"] = "AWS Config does not have permission to assume the IAM role."
+        elif "ServiceFailureException" in ex.response["Error"]["Code"]:
+            ex.response["Error"]["Message"] = "AWS IAM service failure."
+        else:
+            ex.response["Error"]["Message"] = "InternalError"
+            ex.response["Error"]["Code"] = "InternalError"
+        logger.error("ERROR getting iam user. %s", ex.response["Error"])
         raise ex
-    return result_iam_users
 
 
-def get_lines_in_s3_file(s3_file_path: str) -> list[str]:
-    bucket, key = extract_bucket_name_and_key(s3_file_path)
-    response = AWS_S3_CLIENT.get_object(Bucket=bucket, Key=key)
-    lines = response.get("Body").read().decode("utf-8").splitlines()
-    return lines
-
-
-def last_use_of_password_is_within_one_year(password_last_used_date: str | None) -> bool:
+def last_use_of_password_is_within_one_year(password_last_used_date: datetime | None) -> bool:
     if not password_last_used_date:
         return False
-    last_used_date = datetime.fromisoformat(password_last_used_date)
-    one_year_ago = datetime.now() - timedelta(days=365)
-    return last_used_date > one_year_ago
+    one_year_ago = datetime.now().astimezone() - timedelta(days=365)
+    return password_last_used_date > one_year_ago
 
 
 def lambda_handler(event, context):
@@ -209,8 +190,8 @@ def lambda_handler(event, context):
     """
 
     global AWS_CONFIG_CLIENT
-    global AWS_S3_CLIENT
     global AWS_IAM_CLIENT
+    global AWS_ORGANIZATIONS_CLIENT
     global AWS_ACCOUNT_ID
     global EXECUTION_ROLE_NAME
     global AUDIT_ACCOUNT_ID
@@ -227,6 +208,7 @@ def lambda_handler(event, context):
 
     # parse parameters
     AWS_ACCOUNT_ID = event["accountId"]
+    
     if "ruleParameters" in event:
         rule_parameters = json.loads(event["ruleParameters"])
 
@@ -242,102 +224,85 @@ def lambda_handler(event, context):
     else:
         AUDIT_ACCOUNT_ID = ""
 
-
     AWS_CONFIG_CLIENT = get_client("config", event)
-    AWS_S3_CLIENT = boto3.client("s3")
     AWS_IAM_CLIENT = get_client("iam", event)
+    AWS_ORGANIZATIONS_CLIENT = get_client("organizations", event)
 
-    file_param_name = "s3ObjectPath"
-    account_names_file_path = valid_rule_parameters.get(file_param_name, "")
+    if AWS_ACCOUNT_ID != get_organizations_mgmt_account_id():
+        # We're not in the Management Account
+        logger.info("Emergency Account Verification not checked in account %s as this is not the Management Account", AWS_ACCOUNT_ID)
+        return
 
-    if not check_s3_object_exists(account_names_file_path):
-        logger.info(f"No {file_param_name} input provided.")
+    bg_account_names = [valid_rule_parameters["BgUser1"], valid_rule_parameters["BgUser2"]]
+    num_compliant = 0
+
+    for account_name in bg_account_names:
+        iam_account = get_iam_user(account_name)
+        user_id = iam_account.get("UserId")
+        logger.info("Processing account with name '%s': %s", account_name, iam_account)
+
+        if not iam_account:
+            annotation = f"Account with name '{account_name}' was NOT found in IAM."
+            logger.info(annotation)
+            evaluations.append(
+                build_evaluation(
+                    user_id,
+                    "NON_COMPLIANT",
+                    event,
+                    resource_type=IAM_USER_RESOURCE_TYPE,
+                    annotation=annotation,
+                )
+            )
+        elif not last_use_of_password_is_within_one_year(iam_account.get("PasswordLastUsed")):
+            annotation = f"Account with name '{account_name}' has NOT used it's password within 1 year."
+            logger.info(annotation)
+            evaluations.append(
+                build_evaluation(
+                    user_id,
+                    "NON_COMPLIANT",
+                    event,
+                    resource_type=IAM_USER_RESOURCE_TYPE,
+                    annotation=annotation,
+                )
+            )
+        else:
+            num_compliant = num_compliant + 1
+            annotation = f"Account with name '{account_name}' exists and has used it's password within 1 year."
+            logger.info(annotation)
+            evaluations.append(
+                build_evaluation(
+                    user_id,
+                    "COMPLIANT",
+                    event,
+                    resource_type=IAM_USER_RESOURCE_TYPE,
+                    annotation=annotation,
+                )
+            )
+
+    if len(bg_account_names) == num_compliant:
+        annotation = "All break-glass accounts exist and have used their password within 1 year."
+        logger.info(annotation)
+        evaluations.append(
+            build_evaluation(
+                event["accountId"],
+                "COMPLIANT",
+                event,
+                resource_type=DEFAULT_RESOURCE_TYPE,
+                annotation=annotation,
+            )
+        )
+    else:
+        annotation = "NOT all break-glass accounts exist and have used their password within 1 year."
+        logger.info(annotation)
         evaluations.append(
             build_evaluation(
                 event["accountId"],
                 "NON_COMPLIANT",
                 event,
                 resource_type=DEFAULT_RESOURCE_TYPE,
-                annotation=f"No {file_param_name} input provided.",
+                annotation=annotation,
             )
         )
-
-    else:
-        bg_account_names = get_lines_in_s3_file(account_names_file_path)
-        logger.info("bg_account_names from the file in s3: %s", bg_account_names)
-
-        if not bg_account_names:
-            logger.info("No account names found in input file.")
-            evaluations.append(
-                build_evaluation(
-                    event["accountId"],
-                    "NON_COMPLIANT",
-                    event,
-                    resource_type=DEFAULT_RESOURCE_TYPE,
-                    annotation=f"No account names provided. The input file for {file_param_name} is empty.",
-                )
-            )
-
-        else:
-            iam_users = get_iam_users_in_bg_list(bg_account_names)
-            num_compliant = 0
-
-            for account_name in bg_account_names:
-                iam_account = next((r for r in iam_users if r.get("Name", "") == account_name), None)
-                logger.info("Processing account with name '%s': %s", account_name, iam_account)
-
-                if not iam_account:
-                    evaluations.append(
-                        build_evaluation(
-                            event["accountId"],
-                            "NON_COMPLIANT",
-                            event,
-                            resource_type=IAM_USER_RESOURCE_TYPE,
-                            annotation=f"Account with name '{account_name}' was NOT found in the IAM account set.",
-                        )
-                    )
-                elif not last_use_of_password_is_within_one_year(iam_account.get("PasswordLastUsed")):
-                    evaluations.append(
-                        build_evaluation(
-                            event["accountId"],
-                            "NON_COMPLIANT",
-                            event,
-                            resource_type=IAM_USER_RESOURCE_TYPE,
-                            annotation=f"Account with name '{account_name}' has NOT used it's password within 1 year.",
-                        )
-                    )
-                else:
-                    num_compliant = num_compliant + 1
-                    evaluations.append(
-                        build_evaluation(
-                            event["accountId"],
-                            "COMPLIANT",
-                            event,
-                            resource_type=IAM_USER_RESOURCE_TYPE,
-                            annotation=f"Account with name '{account_name}' exists and has used it's password within 1 year.",
-                        )
-                    )
-
-            if len(bg_account_names) == num_compliant:
-                evaluations.append(
-                    build_evaluation(
-                        event["accountId"],
-                        "COMPLIANT",
-                        event,
-                        resource_type=DEFAULT_RESOURCE_TYPE,
-                        annotation="All break-glass accounts exist and have used their password within 1 year.",
-                    )
-                )
-            else:
-                evaluations.append(
-                    build_evaluation(
-                        event["accountId"],
-                        "NON_COMPLIANT",
-                        event,
-                        resource_type=DEFAULT_RESOURCE_TYPE,
-                        annotation="NOT all break-glass accounts exist and have used their password within 1 year.",
-                    )
-                )
 
     AWS_CONFIG_CLIENT.put_evaluations(
         Evaluations=evaluations,
