@@ -3,11 +3,8 @@
 """
 import json
 import logging
-import re
 
-import botocore
-
-from boto_util.client import get_client, get_assume_role_credentials
+from boto_util.client import get_client
 from boto_util.config import is_scheduled_notification, build_evaluation
 from boto_util.s3 import check_s3_object_exists
 
@@ -77,8 +74,8 @@ def lambda_handler(event, context):
         # (this check only applies to the audit account)
         if AWS_ACCOUNT_ID == AUDIT_ACCOUNT_ID:
             # yes, we're in the Audit account
-            AWS_CONFIG_CLIENT = get_client("config", event)
-            AWS_S3_CLIENT = get_client("s3", event)
+            AWS_CONFIG_CLIENT = get_client("config", event, ASSUME_ROLE_MODE, AWS_ACCOUNT_ID)
+            AWS_S3_CLIENT = get_client("s3", event, ASSUME_ROLE_MODE, AWS_ACCOUNT_ID)
             # check if object exists in S3
             if check_s3_object_exists(AWS_S3_CLIENT, valid_rule_parameters["s3ObjectPath"]):
                 compliance_value = "COMPLIANT"
