@@ -367,7 +367,7 @@ def lambda_handler(event, context):
                 annotation = f"No missing rule(s) in the EventBridge rule"
                 evaluations.append(build_evaluation(event["accountId"], "COMPLIANT", event, RULE_RESOURCE_TYPE, annotation))
             else:
-                annotation = f"Missing rule(s) in the EventBridge rule set with name: '{ ",".join(missing_rules) }'"
+                annotation = f"Missing rule(s) in the EventBridge rule set with name: '{ "', '".join(missing_rules) }'"
                 evaluations.append(build_evaluation(event["accountId"], "NON_COMPLIANT", event, RULE_RESOURCE_TYPE, annotation))
             logger.info(annotation)
             
