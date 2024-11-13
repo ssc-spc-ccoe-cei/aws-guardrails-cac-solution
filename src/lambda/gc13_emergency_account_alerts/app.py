@@ -341,25 +341,18 @@ def lambda_handler(event, context):
         else:
             event_bridge_rules = get_event_bridge_rules()
             num_compliant_rules = 0
+            missing_rules = []
 
             for rule_name in rule_names:
                 rule = next((r for r in event_bridge_rules if r.get("Name", "") == rule_name), None)
                 logger.info("Processing EventBridge rule with name '%s': %s", rule_name, rule)
 
                 if not rule:
-                    evaluations.append(
-                        build_evaluation(
-                            event["accountId"],
-                            "NON_COMPLIANT",
-                            event,
-                            resource_type=RULE_RESOURCE_TYPE,
-                            annotation=f"Rule with name '{rule_name}' was not found in the EventBridge rule set.",
-                        )
-                    )
+                    missing_rules.append(rule_name)
                 elif rule.get("State") == "DISABLED":
                     evaluations.append(
                         build_evaluation(
-                            event["accountId"],
+                            rule.get("RuleId"),
                             "NON_COMPLIANT",
                             event,
                             resource_type=RULE_RESOURCE_TYPE,
@@ -369,7 +362,7 @@ def lambda_handler(event, context):
                 elif not rule_is_configured_to_notify_authorized_personnel(rule_name):
                     evaluations.append(
                         build_evaluation(
-                            event["accountId"],
+                            rule.get("RuleId"),
                             "NON_COMPLIANT",
                             event,
                             resource_type=RULE_RESOURCE_TYPE,
@@ -380,7 +373,7 @@ def lambda_handler(event, context):
                     num_compliant_rules = num_compliant_rules + 1
                     evaluations.append(
                         build_evaluation(
-                            event["accountId"],
+                            rule.get("RuleId"),
                             "COMPLIANT",
                             event,
                             resource_type=RULE_RESOURCE_TYPE,
@@ -388,6 +381,18 @@ def lambda_handler(event, context):
                         )
                     )
 
+            # Report any missing rules
+            if len(missing_rules > 0):
+                evaluations.append(
+                    build_evaluation(
+                        event["accountId"],
+                        "NON_COMPLIANT",
+                        event,
+                        resource_type=RULE_RESOURCE_TYPE,
+                        annotation=f"Missing rule(s) in the EventBridge rule set with name: '{ ",".join(rule_name) }'",
+                    )
+                )
+            
             if len(rule_names) == num_compliant_rules:
                 evaluations.append(
                     build_evaluation(
@@ -408,7 +413,7 @@ def lambda_handler(event, context):
                         annotation="NOT all required rules are enabled and configured with an SNS topic and subscription to send notification",
                     )
                 )
-
+                
     AWS_CONFIG_CLIENT.put_evaluations(
         Evaluations=evaluations,
         ResultToken=event["resultToken"]
