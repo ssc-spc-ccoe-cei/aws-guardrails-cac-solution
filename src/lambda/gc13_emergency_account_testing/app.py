@@ -161,11 +161,11 @@ def get_iam_user(user_name: str) -> dict | None:
         }
     except botocore.exceptions.ClientError as ex:
         # Scrub error message for any internal account info leaks
-        if "NoSuchEntityException" in ex.response["Error"]["Code"]:
+        if "NoSuchEntity" in ex.response["Error"]["Code"]:
             return None
         elif "AccessDenied" in ex.response["Error"]["Code"]:
             ex.response["Error"]["Message"] = "AWS Config does not have permission to assume the IAM role."
-        elif "ServiceFailureException" in ex.response["Error"]["Code"]:
+        elif "ServiceFailure" in ex.response["Error"]["Code"]:
             ex.response["Error"]["Message"] = "AWS IAM service failure."
         else:
             ex.response["Error"]["Message"] = "InternalError"
@@ -235,74 +235,41 @@ def lambda_handler(event, context):
 
     bg_account_names = [valid_rule_parameters["BgUser1"], valid_rule_parameters["BgUser2"]]
     num_compliant = 0
+    missing_users = []
 
     for account_name in bg_account_names:
         iam_account = get_iam_user(account_name)
-        user_id = iam_account.get("UserId")
+        user_id = iam_account.get("UserId") if iam_account else None
         logger.info("Processing account with name '%s': %s", account_name, iam_account)
 
         if not iam_account:
             annotation = f"Account with name '{account_name}' was NOT found in IAM."
-            logger.info(annotation)
-            evaluations.append(
-                build_evaluation(
-                    user_id,
-                    "NON_COMPLIANT",
-                    event,
-                    resource_type=IAM_USER_RESOURCE_TYPE,
-                    annotation=annotation,
-                )
-            )
+            missing_users.append(account_name)
         elif not last_use_of_password_is_within_one_year(iam_account.get("PasswordLastUsed")):
             annotation = f"Account with name '{account_name}' has NOT used it's password within 1 year."
-            logger.info(annotation)
-            evaluations.append(
-                build_evaluation(
-                    user_id,
-                    "NON_COMPLIANT",
-                    event,
-                    resource_type=IAM_USER_RESOURCE_TYPE,
-                    annotation=annotation,
-                )
-            )
+            evaluations.append(build_evaluation(user_id, "NON_COMPLIANT", event, IAM_USER_RESOURCE_TYPE, annotation))
         else:
             num_compliant = num_compliant + 1
             annotation = f"Account with name '{account_name}' exists and has used it's password within 1 year."
-            logger.info(annotation)
-            evaluations.append(
-                build_evaluation(
-                    user_id,
-                    "COMPLIANT",
-                    event,
-                    resource_type=IAM_USER_RESOURCE_TYPE,
-                    annotation=annotation,
-                )
-            )
+            evaluations.append(build_evaluation(user_id, "COMPLIANT", event, IAM_USER_RESOURCE_TYPE, annotation))
+        logger.info(annotation)
+
+    # Report any missing users
+    if not missing_users:
+        annotation = f"No missing break-glass user(s) in IAM"
+        evaluations.append(build_evaluation(event["accountId"], "COMPLIANT", event, IAM_USER_RESOURCE_TYPE, annotation))
+    else:
+        annotation = f"Missing break-glass user(s) in IAM with name(s): '{ "', '".join(missing_users) }'"
+        evaluations.append(build_evaluation(event["accountId"], "NON_COMPLIANT", event, IAM_USER_RESOURCE_TYPE, annotation))
+    logger.info(annotation)
 
     if len(bg_account_names) == num_compliant:
         annotation = "All break-glass accounts exist and have used their password within 1 year."
-        logger.info(annotation)
-        evaluations.append(
-            build_evaluation(
-                event["accountId"],
-                "COMPLIANT",
-                event,
-                resource_type=DEFAULT_RESOURCE_TYPE,
-                annotation=annotation,
-            )
-        )
+        evaluations.append(build_evaluation(event["accountId"], "COMPLIANT", event, DEFAULT_RESOURCE_TYPE, annotation))
     else:
         annotation = "NOT all break-glass accounts exist and have used their password within 1 year."
-        logger.info(annotation)
-        evaluations.append(
-            build_evaluation(
-                event["accountId"],
-                "NON_COMPLIANT",
-                event,
-                resource_type=DEFAULT_RESOURCE_TYPE,
-                annotation=annotation,
-            )
-        )
+        evaluations.append(build_evaluation(event["accountId"], "NON_COMPLIANT", event, DEFAULT_RESOURCE_TYPE, annotation))
+    logger.info(annotation)
 
     AWS_CONFIG_CLIENT.put_evaluations(
         Evaluations=evaluations,
