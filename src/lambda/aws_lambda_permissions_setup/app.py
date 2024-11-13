@@ -95,6 +95,7 @@ def apply_lambda_permissions():
         f"{organization_name}gc12_check_marketplace": ["GC12CheckMarketplacesLambda"],
         f"{organization_name}gc13_emergency_account_management": ["GC13EmergencyAccountManagementLambda"],
         f"{organization_name}gc13_emergency_account_mgmt_approvals": ["GC13EmergencyAccountMgmtApprovalsLambda"],
+        f"{organization_name}gc13_emergency_account_alerts": ["GC13EmergencyAccountAlertsLambda"],
     }
     accounts = get_accounts()
     client = boto3.client("lambda")
@@ -236,7 +237,7 @@ def lambda_handler(event, context):
     event -- the event variable given in the lambda handler
     context -- the context variable given in the lambda handler
     """
-    logger.info("got event %s", event)
+    logger.info("Received Event: %s", json.dumps(event, indent=2))
     response_data = {}
     if event["RequestType"] == "Create":
         # try to add the lambda permissions

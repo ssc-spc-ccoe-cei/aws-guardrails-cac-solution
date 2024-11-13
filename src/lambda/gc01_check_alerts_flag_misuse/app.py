@@ -257,7 +257,7 @@ def check_rules_sns_target_is_setup(rules, event):
         logger.info("Checking rule: %s", rule)
         if rule.get("State") == "DISABLED":
             return build_evaluation(
-                event["accountId"],
+                rule.get("RuleId"),
                 "NON_COMPLIANT",
                 event,
                 resource_type="AWS::Events::Rule",
@@ -281,18 +281,18 @@ def check_rules_sns_target_is_setup(rules, event):
                         subscription_arn = subscription.get("SubscriptionArn")
                         if subscription_is_confirmed(subscription_arn):
                             return build_evaluation(
-                                event["accountId"],
+                                rule.get("RuleId"),
                                 "COMPLIANT",
                                 event,
-                                resource_type=DEFAULT_RESOURCE_TYPE,
-                                annotation="An Event rule that has a SNS topic and subscription to send notification emails setup and confirmed.",
+                                resource_type="AWS::Events::Rule",
+                                annotation="An Event rule that has a SNS topic and subscription to send notification emails is setup and confirmed.",
                             )
     
     return build_evaluation(
-        event["accountId"],
+        rule.get("RuleId"),
         "NON_COMPLIANT",
         event,
-        resource_type=DEFAULT_RESOURCE_TYPE,
+        resource_type="AWS::Events::Rule",
         annotation="An Event rule that has a SNS topic and subscription to send notification emails is not setup or confirmed.",
     )         
 
@@ -367,9 +367,20 @@ def lambda_handler(event, context):
                 logger.info("GuardDuty Evaluation: %s", guard_duty_evaluation)
                 evaluations.append(guard_duty_evaluation)
         
-        # are the GuardDuty rules found to be NON_COMPLIANT?
-        if guard_duty_evaluation == None or guard_duty_evaluation.get("ComplianceType") == "NON_COMPLIANT":
-            # yes, check for EventBridge rules with naming convention
+        # are the GuardDuty rules found to be COMPLIANT?
+        if guard_duty_evaluation != None and guard_duty_evaluation.get("ComplianceType") == "COMPLIANT":
+            # yes, add compliance evaluation for account
+            evaluations.append(
+                build_evaluation(
+                    event["accountId"],
+                    "COMPLIANT",
+                    event,
+                    resource_type=DEFAULT_RESOURCE_TYPE,
+                    annotation="GuardDuty is enabled, and a rule is setup to notify authorized personnel of GuardDuty findings.",
+                )
+            )
+        else:
+            # no, check for EventBridge rules with naming convention
             rule_naming_convention_file_path = valid_rule_parameters.get("RuleNamingConventionFilePath", "")
             if check_s3_object_exists(rule_naming_convention_file_path) == False:
                 evaluations.append(
@@ -382,6 +393,7 @@ def lambda_handler(event, context):
                     )
                 ) 
             else:
+                is_compliant = False
                 rule_naming_convention = get_rule_naming_convention(rule_naming_convention_file_path)
                 reg = re.compile(rule_naming_convention)
                 logger.info("Filtering rules by rule_naming_convention: %s", rule_naming_convention)
@@ -395,10 +407,22 @@ def lambda_handler(event, context):
                     if rule_evaluation.get("ComplianceType") == "COMPLIANT":
                         # yes, set evaluation results to rule_evaluation because the validation should be found compliant
                         evaluations = [rule_evaluation]
+                        # append evaluation for the account
+                        evaluations.append(
+                            build_evaluation(
+                                event["accountId"],
+                                "COMPLIANT",
+                                event,
+                                resource_type=DEFAULT_RESOURCE_TYPE,
+                                annotation="EventBridge rules have been setup to notify authorized personnel of misuse or suspicious activity.",
+                            )
+                        )
+                        is_compliant = True
                     else:
                         # no, append to evaluation results
                         evaluations.append(rule_evaluation)
-                else:
+                
+                if not is_compliant:
                     # no, append to evaluation results
                     evaluations.append(
                         build_evaluation(
@@ -406,7 +430,7 @@ def lambda_handler(event, context):
                             "NON_COMPLIANT",
                             event,
                             resource_type=DEFAULT_RESOURCE_TYPE,
-                            annotation="GuardDuty is not enabled and there are no EventBridge rules.",
+                            annotation="GuardDuty is not enabled and there are no EventBridge rules setup to notify authorized personnel of misuse or suspicious activity.",
                         )
                     ) 
             
