@@ -397,7 +397,7 @@ def lambda_handler(event, context):
                 rule_naming_convention = get_rule_naming_convention(rule_naming_convention_file_path)
                 reg = re.compile(rule_naming_convention)
                 logger.info("Filtering rules by rule_naming_convention: %s", rule_naming_convention)
-                filtered_rules = [ r for r in rules if reg.match(r.get("Name", "")) ]
+                filtered_rules = [ r for r in rules if reg.search(r.get("Name", "")) ]
                 
                 # are there any rules matching the naming convention?
                 if len(filtered_rules) > 0:
