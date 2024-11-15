@@ -57,6 +57,9 @@ Parameters:
   GC03AlarmList:
     Default: "AWS-IAM-Authentication-From-Unapproved-IP,AWS-SSO-Authentication-From-Unapproved-IP,AWS-Console-SignIn-Without-MFA"
     Type: String
+  # GC03
+  S3VpnIpRangesPath:
+    Type: String
   # GC04
   EnterpriseMonitoringIAMRoleName:
     Default: "GC-CloudBrokering"
@@ -479,6 +482,52 @@ Resources:
             - - "arn:aws:lambda:ca-central-1:"
               - Ref: AuditAccountID
               - !Sub ":function:${OrganizationName}gc03_check_iam_cloudwatch_alarms"
+        SourceDetails:
+          - EventSource: "aws.config"
+            MessageType: "ScheduledNotification"
+  GC03TrustedDevicesAdminAccessCheckConfigRule:
+    Type: "AWS::Config::ConfigRule"
+    Properties:
+      ConfigRuleName: gc03_trusted_devices_admin_access_check
+      Description: Confirm that administrative access to cloud environments is from approved and trusted locations and devices
+      InputParameters:
+        ExecutionRoleName:
+          Fn::If:
+            - GCLambdaExecutionRoleName
+            - Ref: GCLambdaExecutionRoleName
+            - Ref: AWS::NoValue
+        AuditAccountID:
+          Fn::If:
+            - auditAccountID
+            - Ref: AuditAccountID
+            - Ref: AWS::NoValue
+        s3ObjectPath:
+          Fn::If:
+            - s3VpnIpRangesPath
+            - Ref: S3VpnIpRangesPath
+            - Ref: AWS::NoValue
+        BgUser1:
+          Fn::If:
+            - bgUser1
+            - Ref: BGA1
+            - Ref: AWS::NoValue
+        BgUser2:
+          Fn::If:
+            - bgUser2
+            - Ref: BGA2
+            - Ref: AWS::NoValue
+      Scope:
+        ComplianceResourceTypes:
+          - AWS::Account
+      MaximumExecutionFrequency: TwentyFour_Hours
+      Source:
+        Owner: CUSTOM_LAMBDA
+        SourceIdentifier:
+          Fn::Join:
+            - ""
+            - - "arn:aws:lambda:ca-central-1:"
+              - Ref: AuditAccountID
+              - !Sub ":function:${OrganizationName}gc03_trusted_devices_admin_access_check"
         SourceDetails:
           - EventSource: "aws.config"
             MessageType: "ScheduledNotification"
@@ -1227,6 +1276,12 @@ Conditions:
       - Fn::Equals:
           - ""
           - Ref: S3AccountManagementPlanPath
+  # GC03
+  s3VpnIpRangesPath:
+    Fn::Not:
+      - Fn::Equals:
+          - ""
+          - Ref: S3VpnIpRangesPath
   # GC04
   enterpriseMonitoringIAMRoleName:
     Fn::Not:

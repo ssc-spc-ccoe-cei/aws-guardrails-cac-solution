@@ -211,7 +211,7 @@ Resources:
     Type: Custom::InvokeCustomLambda
     Condition: DeployRoles
     Properties:
-      Version: 16
+      Version: 18
       ServiceToken: !GetAtt CreateRoleLambda.Arn
       TrustPrincipal: !Sub arn:${AWS::Partition}:iam::${AuditAccountID}:root
       SwitchRole: !Ref AcceleratorRole
@@ -229,8 +229,11 @@ Resources:
                     "backup:ListRecoveryPointsByBackupVault",
                     "cassandra:Select",
                     "cloudtrail:DescribeTrails",
+                    "cloudtrail:GetEventSelectors",
+                    "cloudtrail:GetTrail",
                     "cloudtrail:GetTrailStatus",
                     "cloudtrail:ListTrails",
+                    "cloudtrail:LookupEvents",
                     "codebuild:BatchGetProjects",
                     "codebuild:ListProjects",
                     "config:PutEvaluations",
@@ -359,7 +362,7 @@ Resources:
     Type: Custom::InvokeCustomLambda
     Condition: DeployRoles
     Properties:
-      Version: 16
+      Version: 18
       ServiceToken: !GetAtt CreateRoleLambda.Arn
       TrustPrincipal: !Sub arn:${AWS::Partition}:iam::${AuditAccountID}:root
       SwitchRole: !Ref AcceleratorRole
@@ -376,8 +379,11 @@ Resources:
                 "backup:ListRecoveryPointsByBackupVault",
                 "cassandra:Select",
                 "cloudtrail:DescribeTrails",
+                "cloudtrail:GetEventSelectors",
+                "cloudtrail:GetTrail",
                 "cloudtrail:GetTrailStatus",
                 "cloudtrail:ListTrails",
+                "cloudtrail:LookupEvents",
                 "codebuild:BatchGetProjects",
                 "codebuild:ListProjects",
                 "config:PutEvaluations",
@@ -1315,8 +1321,11 @@ Resources:
           - Sid: AllowCloudTrailChecks
             Action:
               - "cloudtrail:DescribeTrails"
+              - "cloudtrail:GetEventSelectors"
+              - "cloudtrail:GetTrail"
               - "cloudtrail:GetTrailStatus"
               - "cloudtrail:ListTrails"
+              - "cloudtrail:LookupEvents"
             Resource:
               - "*"
             Effect: Allow
@@ -1446,6 +1455,10 @@ Resources:
         - ParameterName: S3EmergencyAccountAlertsRuleNamesPath
           ParameterValue: !Sub
             - "s3://${ClientEvidenceBucket}/gc-13/rule_names.txt"
+            - ClientEvidenceBucket: !If [ GenerateEvidenceBucketName, !GetAtt GenerateEvidenceBucketName.EvidenceBucketName, !Ref EvidenceBucketName ]
+        - ParameterName: S3VpnIpRangesPath
+          ParameterValue: !Sub
+            - "s3://${ClientEvidenceBucket}/gc-03/vpn_ip_ranges.txt"
             - ClientEvidenceBucket: !If [ GenerateEvidenceBucketName, !GetAtt GenerateEvidenceBucketName.EvidenceBucketName, !Ref EvidenceBucketName ]
       OrganizationConformancePackName: !Sub "${OrganizationName}-GC-CP-Guardrails"
       TemplateS3Uri: !Sub s3://${PipelineBucket}/${DeployVersion}/ConformancePack.yaml

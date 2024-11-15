@@ -142,6 +142,20 @@ Resources:
         LogGroup: !Sub "${OrganizationName}gc_guardrails"
         LogFormat: "JSON"
 
+  GC03TrustedDevicesAdminAccessCheckLambda:
+    Condition: IsAuditAccount
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub "${OrganizationName}gc03_trusted_devices_admin_access_check"
+      Code: "../../src/lambda/gc03_trusted_devices_admin_access_check/build/GC03TrustedDevicesAdminAccessCheckLambda/"
+      Handler: app.lambda_handler
+      Role: !Sub "arn:aws:iam::${AuditAccountID}:role/${RolePrefix}default_assessment_role"
+      Runtime: !Ref PythonRuntime
+      Timeout: 180
+      LoggingConfig:
+        LogGroup: !Sub "${OrganizationName}gc_guardrails"
+        LogFormat: "JSON"
+
   ## GC13
   GC13EmergencyAccountManagementLambda:
     Condition: IsAuditAccount

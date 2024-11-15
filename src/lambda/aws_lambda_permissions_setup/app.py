@@ -80,6 +80,7 @@ def apply_lambda_permissions():
         f"{organization_name}gc02_check_account_mgmt_plan": ["GC02CheckAccountManagementPlanLambda"],
         f"{organization_name}gc02_check_iam_password_policy": ["GC02CheckIAMPasswordPolicyLambda"],
         f"{organization_name}gc03_check_iam_cloudwatch_alarms": ["GC03CheckIAMCloudWatchAlarmsLambda"],
+        f"{organization_name}gc03_trusted_devices_admin_access_check": ["GC03TrustedDevicesAdminAccessCheckLambda"],
         f"{organization_name}gc04_check_enterprise_monitoring": ["GC04CheckEnterpriseMonitoringLambda"],
         f"{organization_name}gc05_check_data_location": ["GC05CheckDataLocationLambda"],
         f"{organization_name}gc06_check_encryption_at_rest_part1": ["GC06CheckEncryptionAtRestPart1Lambda"],

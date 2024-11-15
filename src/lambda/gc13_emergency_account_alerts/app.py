@@ -311,16 +311,9 @@ def lambda_handler(event, context):
     rule_names_file_path = valid_rule_parameters.get(file_param_name, "")
 
     if not check_s3_object_exists(rule_names_file_path):
-        logger.info(f"No {file_param_name} input provided.")
-        evaluations.append(
-            build_evaluation(
-                event["accountId"],
-                "NON_COMPLIANT",
-                event,
-                resource_type=DEFAULT_RESOURCE_TYPE,
-                annotation=f"No {file_param_name} input provided.",
-            )
-        )
+        annotation = f"No file found for s3 path '{rule_names_file_path}' via '{file_param_name}' input parameter."
+        logger.info(annotation)
+        evaluations.append(build_evaluation(event["accountId"], "NON_COMPLIANT", event, DEFAULT_RESOURCE_TYPE, annotation))
 
     else:
         rule_names = get_rule_names(rule_names_file_path)
