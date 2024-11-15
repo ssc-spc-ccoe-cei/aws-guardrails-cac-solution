@@ -74,26 +74,26 @@ def evaluate_parameters(rule_parameters):
     """
     return rule_parameters
 
-def list_cloudtrails():
+def list_cloud_trails() -> list[dict]:
     """Fetches a list of all trails in the account"""
     try:
-        response = AWS_CLOUDTRAIL_CLIENT.list_trails()
-        trails = response.get("Trails")
-        next_token = response.get("NextToken")
-        while next_token != None:
-            response = AWS_CLOUDTRAIL_CLIENT.list_trails()
-            trails = trails + response.get("Trails")
+        trails = []
+        next_token = None
+        while True:
+            response = AWS_CLOUDTRAIL_CLIENT.list_trails() if not next_token else AWS_CLOUDTRAIL_CLIENT.list_trails(NextToken=next_token)
+            trails = trails + response.get("Trails", [])
             next_token = response.get("NextToken")
+            if not next_token:
+                break
         return trails
     except botocore.exceptions.ClientError as ex:
-        if "UnsupportedOperationException" in ex.response['Error']['Code']:
+        if "UnsupportedOperation" in ex.response['Error']['Code']:
             ex.response["Error"]["Message"] = "list_trails operation not supported by CloudTrails."
-        elif "OperationNotPermittedException" in ex.response['Error']['Code']:
+        elif "OperationNotPermitted" in ex.response['Error']['Code']:
             ex.response["Error"]["Message"] = "list_trails operation not permitted."
         else:
             ex.response["Error"]["Message"] = "InternalError"
             ex.response["Error"]["Code"] = "InternalError"
-            
         raise ex
 
 def check_trail_status(trails, event):
@@ -197,14 +197,14 @@ def lambda_handler(event, context):
     AWS_CONFIG_CLIENT = get_client("config", event)
     AWS_CLOUDTRAIL_CLIENT = get_client("cloudtrail", event)
 
-    # is this a scheduled invokation?
+    # is this a scheduled invocation?
     if is_scheduled_notification(invoking_event["messageType"]):
         # yes, proceed with checking CloudTrails
         # fetch all CloudTrails
         logger.info("Monitoring and logging check in account %s", AWS_ACCOUNT_ID)
-        trails = list_cloudtrails()
+        trails = list_cloud_trails()
         
-        # doesl the account have any CloudTrails?
+        # does the account have any CloudTrails?
         if len(trails) < 0:
             # no, add NON_COMPLIANT results to evaluations
             evaluations.append(
