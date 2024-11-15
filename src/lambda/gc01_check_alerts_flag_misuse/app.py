@@ -252,44 +252,44 @@ def rule_event_pattern_matches_guard_duty_findings(rule_event_pattern:str | None
     logger.info("event_pattern_dict: %s", event_pattern_dict)
     return "aws.guardduty" in event_pattern_dict.get("source", []) and "GuardDuty Finding" in event_pattern_dict.get("detail-type", [])
 
-def check_rules_sns_target_is_setup(rules, event):
-    for rule in rules:
-        logger.info("Checking rule: %s", rule)
-        if rule.get("State") == "DISABLED":
-            return build_evaluation(
-                rule.get("RuleId"),
-                "NON_COMPLIANT",
-                event,
-                resource_type="AWS::Events::Rule",
-                annotation="Rule is disabled.",
-            )   
-        
-        rule_name = rule.get("Name")          
-        targets = fetch_rule_targets(rule_name)
+def check_rule_sns_target_is_setup(rule, event):
+    
+    logger.info("Checking rule: %s", rule)
+    if rule.get("State") == "DISABLED":
+        return build_evaluation(
+            rule.get("Name"),
+            "NON_COMPLIANT",
+            event,
+            resource_type="AWS::Events::Rule",
+            annotation="Rule is disabled.",
+        )   
+    
+    rule_name = rule.get("Name")          
+    targets = fetch_rule_targets(rule_name)
 
-        for target in targets:
-            logger.info("Checking rule target: %s", target)
-            # is target an SNS input transformer?
-            target_arn: str = target.get("Arn")
-            if target_arn.startswith("arn:aws:sns:") :
-                # yes, get a list of topic subscriptions
-                subscriptions =  get_topic_subscriptions(target_arn)
-                # then search topic for a subscription with "email" protocol and is confirmed
-                for subscription in subscriptions:
-                    logger.info("Checking target subscriptions: %s", subscription)
-                    if subscription.get("Protocol") == "email":
-                        subscription_arn = subscription.get("SubscriptionArn")
-                        if subscription_is_confirmed(subscription_arn):
-                            return build_evaluation(
-                                rule.get("RuleId"),
-                                "COMPLIANT",
-                                event,
-                                resource_type="AWS::Events::Rule",
-                                annotation="An Event rule that has a SNS topic and subscription to send notification emails is setup and confirmed.",
-                            )
+    for target in targets:
+        logger.info("Checking rule target: %s", target)
+        # is target an SNS input transformer?
+        target_arn: str = target.get("Arn")
+        if target_arn.startswith("arn:aws:sns:") :
+            # yes, get a list of topic subscriptions
+            subscriptions =  get_topic_subscriptions(target_arn)
+            # then search topic for a subscription with "email" protocol and is confirmed
+            for subscription in subscriptions:
+                logger.info("Checking target subscriptions: %s", subscription)
+                if subscription.get("Protocol") == "email":
+                    subscription_arn = subscription.get("SubscriptionArn")
+                    if subscription_is_confirmed(subscription_arn):
+                        return build_evaluation(
+                            rule.get("Name"),
+                            "COMPLIANT",
+                            event,
+                            resource_type="AWS::Events::Rule",
+                            annotation="An Event rule that has a SNS topic and subscription to send notification emails is setup and confirmed.",
+                        )
     
     return build_evaluation(
-        rule.get("RuleId"),
+        rule.get("Name"),
         "NON_COMPLIANT",
         event,
         resource_type="AWS::Events::Rule",
@@ -353,7 +353,7 @@ def lambda_handler(event, context):
         # yes, proceed with checking GuardDuty
         rules = get_event_bridge_rules()
         
-        guard_duty_evaluation = None
+        guard_duty_is_setup = False
         # is Guardduty enabled?
         if get_guard_duty_enabled():
             # yes, filter for rules that target GuardDuty findings
@@ -363,12 +363,15 @@ def lambda_handler(event, context):
             # are there any rules that target GuardDuty findings
             if len(guardduty_rules) > 0:
                 # yes, check that an SNS target is setup that sends an email notification to authorized personnel
-                guard_duty_evaluation = check_rules_sns_target_is_setup(guardduty_rules, event)
-                logger.info("GuardDuty Evaluation: %s", guard_duty_evaluation)
-                evaluations.append(guard_duty_evaluation)
+                for rule in guardduty_rules:
+                    eval = check_rule_sns_target_is_setup(rule, event)
+                    if eval.get("ComplianceType") == "COMPLIANT":
+                        guard_duty_is_setup = True
+                    evaluations.append(eval)
+                logger.info("GuardDuty is setup and rules are setup to notify authorized personnel: %s", guard_duty_is_setup)
         
         # are the GuardDuty rules found to be COMPLIANT?
-        if guard_duty_evaluation != None and guard_duty_evaluation.get("ComplianceType") == "COMPLIANT":
+        if guard_duty_is_setup:
             # yes, add compliance evaluation for account
             evaluations.append(
                 build_evaluation(
@@ -393,6 +396,7 @@ def lambda_handler(event, context):
                     )
                 ) 
             else:
+                evaluations = []
                 is_compliant = False
                 rule_naming_convention = get_rule_naming_convention(rule_naming_convention_file_path)
                 reg = re.compile(rule_naming_convention)
@@ -402,28 +406,26 @@ def lambda_handler(event, context):
                 # are there any rules matching the naming convention?
                 if len(filtered_rules) > 0:
                     # yes, check that an SNS target is setup that sends an email notification to authorized personnel 
-                    rule_evaluation = check_rules_sns_target_is_setup(rules, event)
-                    # are the filtered event rules found to be COMPLIANT
-                    if rule_evaluation.get("ComplianceType") == "COMPLIANT":
-                        # yes, set evaluation results to rule_evaluation because the validation should be found compliant
-                        evaluations = [rule_evaluation]
-                        # append evaluation for the account
-                        evaluations.append(
-                            build_evaluation(
-                                event["accountId"],
-                                "COMPLIANT",
-                                event,
-                                resource_type=DEFAULT_RESOURCE_TYPE,
-                                annotation="EventBridge rules have been setup to notify authorized personnel of misuse or suspicious activity.",
-                            )
-                        )
-                        is_compliant = True
-                    else:
-                        # no, append to evaluation results
-                        evaluations.append(rule_evaluation)
+                    for rule in filtered_rules :
+                        eval = check_rule_sns_target_is_setup(rule, event)
+                        if eval.get("ComplianceType") == "COMPLIANT":
+                            is_compliant = True
+                            evaluations.append(eval)
                 
-                if not is_compliant:
-                    # no, append to evaluation results
+                # are EventBridge rules setup to notify authorized personnel of misuse?
+                if is_compliant:
+                    # yes, append COMPLIANT results for account
+                    evaluations.append(
+                        build_evaluation(
+                            event["accountId"],
+                            "COMPLIANT",
+                            event,
+                            resource_type=DEFAULT_RESOURCE_TYPE,
+                            annotation="EventBridge rules have been setup to notify authorized personnel of misuse or suspicious activity.",
+                        )
+                    )
+                else:
+                    # no, append to NON_COMPLIANT results for account
                     evaluations.append(
                         build_evaluation(
                             event["accountId"],
