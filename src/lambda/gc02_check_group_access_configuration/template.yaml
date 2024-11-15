@@ -1,7 +1,7 @@
 AWSTemplateFormatVersion: '2010-09-09'
 Transform: AWS::Serverless-2016-10-31
 Description: >
-  gc02_check_access_config_groups
+  gc02_check_group_access_configuration
 
 Globals:
   Function:
@@ -9,7 +9,7 @@ Globals:
     MemorySize: 128
 
 Resources:
-  GC02CheckAccessConfigGroupLambda:
+  GC02CheckGroupAccessConfigurationLambda:
     Type: AWS::Serverless::Function
     Properties:
       CodeUri: .
