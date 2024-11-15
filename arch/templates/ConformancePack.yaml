@@ -791,42 +791,6 @@ Resources:
         SourceDetails:
           - EventSource: "aws.config"
             MessageType: "ScheduledNotification"
-  GC08CheckCloudDeploymentGuideDocumentConfigRule:
-    Type: "AWS::Config::ConfigRule"
-    Properties:
-      ConfigRuleName: gc08_check_cloud_deployment_guide
-      Description: Checks S3 bucket for the cloud deployment guide document
-      InputParameters:
-        s3ObjectPath:
-          Fn::If:
-            - s3TargetCloudDeploymentGuideDocumentPath
-            - Ref: S3TargetCloudDeploymentGuideDocumentPath
-            - Ref: AWS::NoValue
-        ExecutionRoleName:
-          Fn::If:
-            - GCLambdaExecutionRoleName
-            - Ref: GCLambdaExecutionRoleName
-            - Ref: AWS::NoValue
-        AuditAccountID:
-          Fn::If:
-            - auditAccountID
-            - Ref: AuditAccountID
-            - Ref: AWS::NoValue
-      Scope:
-        ComplianceResourceTypes:
-          - AWS::Account
-      MaximumExecutionFrequency: TwentyFour_Hours
-      Source:
-        Owner: CUSTOM_LAMBDA
-        SourceIdentifier:
-          Fn::Join:
-            - ""
-            - - "arn:aws:lambda:ca-central-1:"
-              - Ref: AuditAccountID
-              - !Sub ":function:${OrganizationName}gc08_check_cloud_deployment_guide"
-        SourceDetails:
-          - EventSource: "aws.config"
-            MessageType: "ScheduledNotification"
   # GC09
   GC09CheckNetworkSecurityArchitectureConfigRule:
     Type: "AWS::Config::ConfigRule"
