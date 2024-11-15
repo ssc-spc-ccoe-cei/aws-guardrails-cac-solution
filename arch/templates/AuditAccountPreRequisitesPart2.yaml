@@ -48,3 +48,14 @@ Resources:
       Role: !Sub "arn:aws:iam::${AuditAccountID}:role/${RolePrefix}default_assessment_role"
       Runtime: !Ref PythonRuntime
       Timeout: 180
+
+  GC02CheckGroupAccessConfigurationLambda:
+    Condition: IsAuditAccount
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub "${OrganizationName}gc02_check_group_access_configuration"
+      Code: "../../src/lambda/gc02_check_group_access_configuration/build/GC02CheckGroupAccessConfigurationLambda/"
+      Handler: app.lambda_handler
+      Role: !Sub "arn:aws:iam::${AuditAccountID}:role/${RolePrefix}default_assessment_role"
+      Runtime: !Ref PythonRuntime
+      Timeout: 180
