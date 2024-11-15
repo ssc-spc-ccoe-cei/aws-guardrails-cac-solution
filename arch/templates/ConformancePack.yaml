@@ -701,11 +701,11 @@ Resources:
       Scope:
         ComplianceResourceTypes:
           - AWS::Account
-          - AWS::S3::Bucket
-          - AWS::Redshift::Cluster
-          - AWS::ElasticLoadBalancingV2::Listener
           - AWS::ApiGateway::Stage
+          - AWS::ElasticLoadBalancingV2::Listener
           - AWS::Elasticsearch::Domain
+          - AWS::Redshift::Cluster
+          - AWS::S3::Bucket
       MaximumExecutionFrequency: TwentyFour_Hours
       Source:
         Owner: CUSTOM_LAMBDA
