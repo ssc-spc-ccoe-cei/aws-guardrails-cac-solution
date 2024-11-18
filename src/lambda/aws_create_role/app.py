@@ -212,7 +212,7 @@ def lambda_handler(event, context):
     context -- the context variable given in the lambda handler
     """
     response_data = {}
-    logger.info('Event: {}'.format(event))
+    logger.info("Received Event: %s", json.dumps(event, indent=2))
     # Get parameters from event
     trust_principal = event['ResourceProperties']['TrustPrincipal'].split(',')
     switch_role = event['ResourceProperties']['SwitchRole']
