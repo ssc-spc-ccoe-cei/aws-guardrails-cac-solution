@@ -70,13 +70,13 @@ def apply_lambda_permissions():
     i_result = 0
     permissions_validated = 0
     lambda_functions = {
+        f"{organization_name}gc01_check_alerts_flag_misuse": ["GC01CheckAlertsFlagMisuseLambda"],
         f"{organization_name}gc01_check_attestation_letter": ["GC01CheckAttestationLetterLambda"],
-        f"{organization_name}gc01_check_root_mfa": ["GC01CheckRootAccountMFAEnabledLambda"],
         f"{organization_name}gc01_check_federated_users_mfa": ["GC01CheckFederatedUsersMFALambda"],
+        f"{organization_name}gc01_check_iam_users_mfa": ["GC01CheckIAMUsersMFALambda"],
         f"{organization_name}gc01_check_mfa_digital_policy": ["GC01CheckMFADigitalPolicy"],
         f"{organization_name}gc01_check_monitoring_and_logging": ["GC01CheckMonitoringAndLoggingLambda"],
-        f"{organization_name}gc01_check_alerts_flag_misuse": ["GC01CheckAlertsFlagMisuseLambda"],
-        f"{organization_name}gc01_check_iam_users_mfa": ["GC01CheckIAMUsersMFALambda"],
+        f"{organization_name}gc01_check_root_mfa": ["GC01CheckRootAccountMFAEnabledLambda"],
         f"{organization_name}gc02_check_account_mgmt_plan": ["GC02CheckAccountManagementPlanLambda"],
         f"{organization_name}gc02_check_iam_password_policy": ["GC02CheckIAMPasswordPolicyLambda"],
         f"{organization_name}gc03_check_iam_cloudwatch_alarms": ["GC03CheckIAMCloudWatchAlarmsLambda"],
@@ -84,18 +84,18 @@ def apply_lambda_permissions():
         f"{organization_name}gc05_check_data_location": ["GC05CheckDataLocationLambda"],
         f"{organization_name}gc06_check_encryption_at_rest_part1": ["GC06CheckEncryptionAtRestPart1Lambda"],
         f"{organization_name}gc06_check_encryption_at_rest_part2": ["GC06CheckEncryptionAtRestPart2Lambda"],
-        f"{organization_name}gc07_check_secure_network_transmission_policy": ["GC07CheckSecureNetworkTransmissionPolicyLambda"],
         f"{organization_name}gc07_check_encryption_in_transit": ["GC07CheckEncryptionInTransitLambda"],
-        f"{organization_name}gc08_check_target_network_architecture": ["GC08CheckTargetNetworkArchitectureLambda"],
+        f"{organization_name}gc07_check_secure_network_transmission_policy": ["GC07CheckSecureNetworkTransmissionPolicyLambda"],
         f"{organization_name}gc08_check_cloud_deployment_guide": ["GC08CheckCloudDeploymentGuideLambda"],
+        f"{organization_name}gc08_check_target_network_architecture": ["GC08CheckTargetNetworkArchitectureLambda"],
         f"{organization_name}gc09_check_netsec_architecture": ["GC09CheckNetworkSecurityArchitectureDocumentLambda"],
         f"{organization_name}gc10_confirmation_of_mou": ["GC10CheckSignedMOULambda"],
         f"{organization_name}gc11_check_security_contact": ["GC11CheckSecurityContactLambda"],
         f"{organization_name}gc11_check_trail_logging": ["GC11CheckTrailLoggingLambda"],
         f"{organization_name}gc12_check_marketplace": ["GC12CheckMarketplacesLambda"],
+        f"{organization_name}gc13_emergency_account_alerts": ["GC13EmergencyAccountAlertsLambda"],
         f"{organization_name}gc13_emergency_account_management": ["GC13EmergencyAccountManagementLambda"],
         f"{organization_name}gc13_emergency_account_mgmt_approvals": ["GC13EmergencyAccountMgmtApprovalsLambda"],
-        f"{organization_name}gc13_emergency_account_alerts": ["GC13EmergencyAccountAlertsLambda"],
         f"{organization_name}gc13_emergency_account_testing": ["GC13EmergencyAccountTestingLambda"],
     }
     accounts = get_accounts()

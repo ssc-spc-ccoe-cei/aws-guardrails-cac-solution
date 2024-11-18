@@ -76,11 +76,11 @@ Resources:
             Effect: Allow
           - Sid: AllowS3ObjectCreation
             Action:
+              - "s3:Get*"
+              - "s3:List*"
               - "s3:PutBucketAcl"
               - "s3:PutObject"
               - "s3:PutObjectAcl"
-              - "s3:Get*"
-              - "s3:List*"
             Resource:
               - !Sub "arn:aws:s3:::${EvidenceBucketName}"
               - !Sub "arn:aws:s3:::${EvidenceBucketName}/*"
@@ -150,20 +150,20 @@ Resources:
         Statement:
           - Sid: AllowS3Access
             Action:
-              - "s3:GetObjectRetention"
-              - "s3:GetObjectVersionTagging"
-              - "s3:GetObjectAttributes"
-              - "s3:ListBucket"
-              - "s3:GetObjectLegalHold"
-              - "s3:GetObjectVersionAttributes"
-              - "s3:GetObjectVersionTorrent"
-              - "s3:GetObjectAcl"
               - "s3:GetObject"
-              - "s3:GetObjectTorrent"
-              - "s3:GetObjectVersionAcl"
+              - "s3:GetObjectAcl"
+              - "s3:GetObjectAttributes"
+              - "s3:GetObjectLegalHold"
+              - "s3:GetObjectRetention"
               - "s3:GetObjectTagging"
-              - "s3:GetObjectVersionForReplication"
+              - "s3:GetObjectTorrent"
               - "s3:GetObjectVersion"
+              - "s3:GetObjectVersionAcl"
+              - "s3:GetObjectVersionAttributes"
+              - "s3:GetObjectVersionForReplication"
+              - "s3:GetObjectVersionTagging"
+              - "s3:GetObjectVersionTorrent"
+              - "s3:ListBucket"
             Resource:
               - !Sub "arn:aws:s3:::${EvidenceBucketName}"
               - !Sub "arn:aws:s3:::${EvidenceBucketName}/*"
@@ -206,10 +206,10 @@ Resources:
               - "iam:GetCredentialReport"
               - "iam:GetLoginProfile"
               - "iam:GetRole"
+              - "iam:GetUser"
               - "iam:ListAttachedRolePolicies"
               - "iam:ListMFADevices"
               - "iam:ListUsers"
-              - "iam:GetUser"
             Resource: "*"
             Effect: Allow
           - Sid: AllowCloudWatchAlarmQueries
@@ -220,24 +220,24 @@ Resources:
           - Sid: AllowDatastoreChecks
             Action:
               - "apigateway:GET"
-              - "backup:ListRecoveryPointsByBackupVault"
               - "backup:ListBackupVaults"
+              - "backup:ListRecoveryPointsByBackupVault"
               - "cassandra:Select"
               - "codebuild:BatchGetProjects"
               - "codebuild:ListProjects"
               - "dax:DescribeClusters"
-              - "dynamodb:DescribeTable"
-              - "dynamodb:ListTables"
               - "docdb-elastic:ListClusters"
               - "docdb-elastic:ListClusterSnapshots"
+              - "dynamodb:DescribeTable"
+              - "dynamodb:ListTables"
               - "ec2:DescribeRegions"
               - "ec2:DescribeVolumes"
               - "ec2:GetEbsEncryptionByDefault"
-              - "elasticfilesystem:DescribeFileSystems"
               - "eks:DescribeCluster"
               - "eks:ListClusters"
               - "elasticache:DescribeCacheClusters"
               - "elasticache:DescribeSnapshots"
+              - "elasticfilesystem:DescribeFileSystems"
               - "kinesis:DescribeStream"
               - "kinesis:ListStreams"
               - "memorydb:DescribeClusters"
@@ -250,17 +250,17 @@ Resources:
               - "rds:DescribeDBSnapshots"
               - "resource-explorer-2:ListIndexes"
               - "resource-explorer-2:Search"
-              - "s3:GetEncryptionConfiguration"
               - "s3:GetBucketLocation"
               - "s3:GetBucketPolicy"
+              - "s3:GetEncryptionConfiguration"
               - "s3:ListAllMyBuckets"
               - "s3:ListBucket"
               - "sns:GetTopicAttributes"
               - "sns:ListTopics"
+              - "tag:GetResources"
               - "timestream:DescribeEndpoints"
               - "timestream:ListDatabases"
               - "timestream:ListTables"
-              - "tag:GetResources"
             Resource: "*"
             Effect: Allow
           - Sid: AllowReadAccountInfo
@@ -286,15 +286,15 @@ Resources:
             Effect: Allow
           - Sid: AllowOrganizationsChecks
             Action:
-              - "organizations:DescribeOrganization"
               - "organizations:DescribeAccount"
+              - "organizations:DescribeOrganization"
             Resource:
               - "*"
             Effect: Allow
           - Sid: AllowRedshift
             Action:
-              - "redshift:DescribeClusters"
               - "redshift:DescribeClusterParameters"
+              - "redshift:DescribeClusters"
             Resource: "*"
             Effect: Allow
           - Sid: AllowAPI
@@ -311,11 +311,11 @@ Resources:
             Effect: Allow
           - Sid: AllowES
             Action:
-              - "es:ListDomainNames"
               - "es:DescribeDomain"
               - "es:DescribeDomains"
               - "es:DescribeElasticsearchDomain"
               - "es:DescribeElasticsearchDomains"
+              - "es:ListDomainNames"
             Resource: "*"
             Effect: Allow
       PolicyName: !Sub "${RolePrefix}default_lambda_execution_role_policy"

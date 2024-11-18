@@ -7,27 +7,27 @@ Metadata:
       - Label:
           default: Required Parameters
         Parameters:
-          - OrganizationName
-          - OrganizationId
-          - ExecutionName
-          - RootOUID
-          - AuditAccountID
-          - SecurityOUID
-          - RolePrefix
-          - AccelRolePrefix
           - AcceleratorRole
-          - PipelineBucket
+          - AccelRolePrefix
+          - AuditAccountID
           - BGA1
           - BGA2
+          - ExecutionName
+          - OrganizationId
+          - OrganizationName
+          - PipelineBucket
+          - RolePrefix
+          - RootOUID
+          - SecurityOUID
       - Label:
           default: Optional Parameters
         Parameters:
-          - EvidenceBucketName
-          - AWSConfigConformsBucketName
           - AdditionalAssessmentAdminRoleARN
-          - DestBucketName
+          - AWSConfigConformsBucketName
           - DeployRoles
           - DeployVersion
+          - DestBucketName
+          - EvidenceBucketName
     ParameterLabels:
       OrganizationName:
         default: The name of the organization
@@ -223,33 +223,49 @@ Resources:
               "Version": "2012-10-17",
                 "Statement": [{
                   "Action": [
-                    "config:PutEvaluations",
+                    "apigateway:GET",
+                    "aws-marketplace:ListEntities",
+                    "backup:ListBackupVaults",
+                    "backup:ListRecoveryPointsByBackupVault",
+                    "cassandra:Select",
                     "cloudtrail:DescribeTrails",
                     "cloudtrail:GetTrailStatus",
                     "cloudtrail:ListTrails",
-                    "apigateway:GET",
-                    "backup:ListRecoveryPointsByBackupVault",
-                    "backup:ListBackupVaults",
-                    "cassandra:Select",
                     "codebuild:BatchGetProjects",
                     "codebuild:ListProjects",
+                    "config:PutEvaluations",
                     "dax:DescribeClusters",
-                    "dynamodb:DescribeTable",
-                    "dynamodb:ListTables",
                     "docdb-elastic:ListClusters",
                     "docdb-elastic:ListClusterSnapshots",
+                    "dynamodb:DescribeTable",
+                    "dynamodb:ListTables",
                     "ec2:DescribeRegions",
                     "ec2:DescribeVolumes",
                     "ec2:GetEbsEncryptionByDefault",
-                    "elasticfilesystem:DescribeFileSystems",
                     "eks:DescribeCluster",
                     "eks:ListClusters",
                     "elasticache:DescribeCacheClusters",
                     "elasticache:DescribeSnapshots",
+                    "elasticfilesystem:DescribeFileSystems",
+                    "events:ListRules",
+                    "events:ListTargetsByRule",
+                    "guardduty:ListDetectors",
+                    "iam:GenerateCredentialReport",
+                    "iam:GetAccountPasswordPolicy",
+                    "iam:GetCredentialReport",
+                    "iam:GetLoginProfile",
+                    "iam:GetRole",
+                    "iam:GetUser",
+                    "iam:ListAttachedRolePolicies",
+                    "iam:ListMFADevices",
+                    "iam:ListRoles",
+                    "iam:ListUsers",
                     "kinesis:DescribeStream",
                     "kinesis:ListStreams",
                     "memorydb:DescribeClusters",
                     "memorydb:DescribeSnapshots",
+                    "organizations:DescribeOrganization",
+                    "organizations:ListAccounts",
                     "qldb:DescribeLedger",
                     "qldb:ListLedgers",
                     "rds:DescribeDBClusters",
@@ -258,35 +274,19 @@ Resources:
                     "rds:DescribeDBSnapshots",
                     "resource-explorer-2:ListIndexes",
                     "resource-explorer-2:Search",
-                    "s3:GetEncryptionConfiguration",
                     "s3:GetBucketLocation",
                     "s3:GetBucketPolicy",
+                    "s3:GetEncryptionConfiguration",
                     "s3:ListAllMyBuckets",
                     "s3:ListBucket",
+                    "sns:GetSubscriptionAttributes",
                     "sns:GetTopicAttributes",
+                    "sns:ListSubscriptionsByTopic",
                     "sns:ListTopics",
+                    "tag:GetResources",
                     "timestream:DescribeEndpoints",
                     "timestream:ListDatabases",
-                    "timestream:ListTables",
-                    "tag:GetResources",
-                    "iam:GenerateCredentialReport",
-                    "iam:GetAccountPasswordPolicy",
-                    "iam:GetCredentialReport",
-                    "iam:GetLoginProfile",
-                    "iam:GetRole",
-                    "iam:ListAttachedRolePolicies",
-                    "iam:ListMFADevices",
-                    "iam:ListUsers",
-                    "iam:GetUser",
-                    "iam:ListRoles",
-                    "aws-marketplace:ListEntities",
-                    "organizations:DescribeOrganization",
-                    "organizations:ListAccounts",
-                    "events:ListTargetsByRule",
-                    "events:ListRules",
-                    "sns:ListSubscriptionsByTopic",
-                    "sns:GetSubscriptionAttributes",
-                    "guardduty:ListDetectors"
+                    "timestream:ListTables"
                   ],
                   "Resource": [
                     "*"
@@ -296,20 +296,20 @@ Resources:
                 },
                 {
                   "Action": [
-                    "s3:GetObjectRetention",
-                    "s3:GetObjectVersionTagging",
-                    "s3:GetObjectAttributes",
-                    "s3:ListBucket",
-                    "s3:GetObjectLegalHold",
-                    "s3:GetObjectVersionAttributes",
-                    "s3:GetObjectVersionTorrent",
-                    "s3:GetObjectAcl",
                     "s3:GetObject",
-                    "s3:GetObjectTorrent",
-                    "s3:GetObjectVersionAcl",
+                    "s3:GetObjectAcl",
+                    "s3:GetObjectAttributes",
+                    "s3:GetObjectLegalHold",
+                    "s3:GetObjectRetention",
                     "s3:GetObjectTagging",
+                    "s3:GetObjectTorrent",
+                    "s3:GetObjectVersion",
+                    "s3:GetObjectVersionAcl",
+                    "s3:GetObjectVersionAttributes",
                     "s3:GetObjectVersionForReplication",
-                    "s3:GetObjectVersion"
+                    "s3:GetObjectVersionTagging",
+                    "s3:GetObjectVersionTorrent",
+                    "s3:ListBucket"
                   ],
                   "Resource": [
                     "arn:${AWS::Partition}:s3:::${ClientEvidenceBucket}/*",
@@ -370,29 +370,37 @@ Resources:
             "Version": "2012-10-17",
             "Statement": [{
               "Action": [
-                "config:PutEvaluations",
+                "apigateway:GET",
+                "apigateway:GET",
+                "backup:ListBackupVaults",
+                "backup:ListRecoveryPointsByBackupVault",
+                "cassandra:Select",
                 "cloudtrail:DescribeTrails",
                 "cloudtrail:GetTrailStatus",
                 "cloudtrail:ListTrails",
-                "apigateway:GET",
-                "backup:ListRecoveryPointsByBackupVault",
-                "backup:ListBackupVaults",
-                "cassandra:Select",
                 "codebuild:BatchGetProjects",
                 "codebuild:ListProjects",
+                "config:PutEvaluations",
                 "dax:DescribeClusters",
-                "dynamodb:DescribeTable",
-                "dynamodb:ListTables",
                 "docdb-elastic:ListClusters",
                 "docdb-elastic:ListClusterSnapshots",
+                "dynamodb:DescribeTable",
+                "dynamodb:ListTables",
                 "ec2:DescribeRegions",
                 "ec2:DescribeVolumes",
                 "ec2:GetEbsEncryptionByDefault",
-                "elasticfilesystem:DescribeFileSystems",
                 "eks:DescribeCluster",
                 "eks:ListClusters",
                 "elasticache:DescribeCacheClusters",
                 "elasticache:DescribeSnapshots",
+                "elasticfilesystem:DescribeFileSystems",
+                "elasticloadbalancing:DescribeListeners",
+                "elasticloadbalancing:DescribeLoadBalancers",
+                "es:DescribeDomain",
+                "es:DescribeDomains",
+                "es:DescribeElasticsearchDomain",
+                "es:DescribeElasticsearchDomains",
+                "es:ListDomainNames",
                 "kinesis:DescribeStream",
                 "kinesis:ListStreams",
                 "memorydb:DescribeClusters",
@@ -403,33 +411,25 @@ Resources:
                 "rds:DescribeDBClusterSnapshots",
                 "rds:DescribeDBInstances",
                 "rds:DescribeDBSnapshots",
+                "redshift:DescribeClusterParameters",
+                "redshift:DescribeClusters",
                 "resource-explorer-2:ListIndexes",
                 "resource-explorer-2:Search",
-                "s3:GetEncryptionConfiguration",
                 "s3:GetBucketLocation",
                 "s3:GetBucketPolicy",
+                "s3:GetBucketPolicy",
+                "s3:GetEncryptionConfiguration",
                 "s3:ListAllMyBuckets",
+                "s3:ListAllMyBuckets",
+                "s3:ListBucket",
                 "s3:ListBucket",
                 "sns:GetTopicAttributes",
                 "sns:ListTopics",
+                "tag:GetResources",
+                "tag:GetResources",
                 "timestream:DescribeEndpoints",
                 "timestream:ListDatabases",
-                "timestream:ListTables",
-                "tag:GetResources",
-                "s3:ListAllMyBuckets",
-                "s3:ListBucket",
-                "s3:GetBucketPolicy",
-                "redshift:DescribeClusters",
-                "redshift:DescribeClusterParameters",
-                "apigateway:GET",
-                "elasticloadbalancing:DescribeListeners",
-                "elasticloadbalancing:DescribeLoadBalancers",
-                "es:ListDomainNames",
-                "es:DescribeElasticsearchDomain",
-                "es:DescribeElasticsearchDomains",
-                "es:DescribeDomain",
-                "es:DescribeDomains",
-                "tag:GetResources"
+                "timestream:ListTables"
               ],
               "Resource": [
                 "*"
