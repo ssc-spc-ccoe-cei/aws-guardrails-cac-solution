@@ -352,14 +352,14 @@ def lambda_handler(event, context):
                     missing_rules.append(rule_name)
                 elif rule.get("State") == "DISABLED":
                     annotation = f"Rule with name '{rule_name}' is 'DISABLED' in the EventBridge rule set."
-                    evaluations.append(build_evaluation(rule.get("RuleId"), "NON_COMPLIANT", event, RULE_RESOURCE_TYPE, annotation))
+                    evaluations.append(build_evaluation(rule.get("Name"), "NON_COMPLIANT", event, RULE_RESOURCE_TYPE, annotation))
                 elif not rule_is_configured_to_notify_authorized_personnel(rule_name):
                     annotation = f"Rule with name '{rule_name}' is NOT configured to send notifications."
-                    evaluations.append(build_evaluation(rule.get("RuleId"), "NON_COMPLIANT", event, RULE_RESOURCE_TYPE, annotation))
+                    evaluations.append(build_evaluation(rule.get("Name"), "NON_COMPLIANT", event, RULE_RESOURCE_TYPE, annotation))
                 else:
                     num_compliant_rules = num_compliant_rules + 1
                     annotation = f"Rule with name '{rule_name}' is enabled and configured to send notifications."
-                    evaluations.append(build_evaluation(rule.get("RuleId"), "COMPLIANT", event, RULE_RESOURCE_TYPE, annotation))
+                    evaluations.append(build_evaluation(rule.get("Name"), "COMPLIANT", event, RULE_RESOURCE_TYPE, annotation))
                 logger.info(annotation)
 
             # Report any missing rules

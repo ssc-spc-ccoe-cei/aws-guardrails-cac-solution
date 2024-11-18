@@ -1132,6 +1132,48 @@ Resources:
           - EventSource: "aws.config"
             MessageType: "ScheduledNotification"
 
+  GC13EmergencyAccountTestingConfigRule:
+    Type: "AWS::Config::ConfigRule"
+    Properties:
+      ConfigRuleName: gc13_emergency_account_testing
+      Description: Verifies that testing of emergency accounts took place and that periodic testing is included
+      InputParameters:
+        ExecutionRoleName:
+          Fn::If:
+            - GCLambdaExecutionRoleName
+            - Ref: GCLambdaExecutionRoleName
+            - Ref: AWS::NoValue
+        AuditAccountID:
+          Fn::If:
+            - auditAccountID
+            - Ref: AuditAccountID
+            - Ref: AWS::NoValue
+        BgUser1:
+          Fn::If:
+            - bgUser1
+            - Ref: BGA1
+            - Ref: AWS::NoValue
+        BgUser2:
+          Fn::If:
+            - bgUser2
+            - Ref: BGA2
+            - Ref: AWS::NoValue
+      Scope:
+        ComplianceResourceTypes:
+          - AWS::Account
+      MaximumExecutionFrequency: TwentyFour_Hours
+      Source:
+        Owner: CUSTOM_LAMBDA
+        SourceIdentifier:
+          Fn::Join:
+            - ""
+            - - "arn:aws:lambda:ca-central-1:"
+              - Ref: AuditAccountID
+              - !Sub ":function:${OrganizationName}gc13_emergency_account_testing"
+        SourceDetails:
+          - EventSource: "aws.config"
+            MessageType: "ScheduledNotification"
+
 Conditions:
   # Common
   GCLambdaExecutionRoleName:

@@ -277,6 +277,7 @@ Resources:
                     "iam:ListAttachedRolePolicies",
                     "iam:ListMFADevices",
                     "iam:ListUsers",
+                    "iam:GetUser",
                     "iam:ListRoles",
                     "aws-marketplace:ListEntities",
                     "organizations:DescribeOrganization",
@@ -1208,6 +1209,7 @@ Resources:
               - "iam:ListAttachedRolePolicies"
               - "iam:ListMFADevices"
               - "iam:ListUsers"
+              - "iam:GetUser"
             Resource: "*"
             Effect: Allow
           - Sid: AllowCloudWatchAlarmQueries

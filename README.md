@@ -85,7 +85,7 @@ This command will output a cloudshell-package.zip
 
 ### Upload and unpack the package
 
-- Open a cloudshell instance on the Main Ogranization account
+- Open a cloudshell instance on the Main Organization account
 - Select Actions -> Upload and upload the cloudshell_package.zip, if there is already a file named cloudshell-package.zip you will need to remove the existing file.
 - From the shell execute ```unzip ./cloudshell_package.zip -d /tmp/gc-dash```
 
