@@ -200,7 +200,7 @@ def ip_is_within_ranges(ip_addr: str, ip_cidr_ranges: list[str]) -> bool:
     return False
 
 
-def account_has_federated_entra_id_users(user_name: str) -> bool:
+def account_has_federated_entra_id_users() -> bool:
     return True
 
 
@@ -270,22 +270,18 @@ def lambda_handler(event, context):
         ct_event = json.loads(lookup_event.get("CloudTrailEvent", "{}"))
 
         if not ip_is_within_ranges(ct_event["sourceIPAddress"], vpn_ip_ranges):
-            annotation = f"Cloud Trail Event has a source IP address outside of the allowed ranges."
-            # evaluations.append(
-            #     build_evaluation(ct_event.get("EventId"), "NON_COMPLIANT", event, TRAIL_RESOURCE_TYPE, annotation)
-            # )
+            annotation = f"Cloud Trail Event '{ct_event.get("EventId", "")}' has a source IP address OUTSIDE of the allowed ranges."
         else:
             num_compliant_rules = num_compliant_rules + 1
-            annotation = f"Cloud Trail Event has a source IP address inside of the allowed ranges."
-            if account_has_federated_entra_id_users(lookup_event["Username"]):
+            annotation = f"Cloud Trail Event '{ct_event.get("EventId", "")}' has a source IP address inside of the allowed ranges."
+            if account_has_federated_entra_id_users():
                 annotation = f"{annotation} Dependent on the compliance of the Federated IdP."
-            # evaluations.append(
-            #     build_evaluation(ct_event.get("EventId"), "COMPLIANT", event, TRAIL_RESOURCE_TYPE, annotation)
-            # )
         logger.info(annotation)
 
     if len(cloud_trail_events) == num_compliant_rules:
         annotation = "All Cloud Trail Events are within the allowed source IP address ranges or are dependant on the federated identity provider."
+        if account_has_federated_entra_id_users():
+            annotation = f"{annotation} Dependent on the compliance of the Federated IdP."
         evaluations.append(build_evaluation(AWS_ACCOUNT_ID, "COMPLIANT", event, DEFAULT_RESOURCE_TYPE, annotation))
     else:
         annotation = "NOT all Cloud Trail Events are within the allowed source IP address ranges."

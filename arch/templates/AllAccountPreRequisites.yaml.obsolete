@@ -216,7 +216,6 @@ Resources:
               - "cloudtrail:DescribeTrails"
               - "cloudtrail:GetTrailStatus"
               - "cloudtrail:ListTrails"
-              - "cloudtrail:LookupEvents"
             Resource:
               - "*"
             Effect: Allow
