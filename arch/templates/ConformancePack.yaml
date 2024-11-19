@@ -485,10 +485,10 @@ Resources:
         SourceDetails:
           - EventSource: "aws.config"
             MessageType: "ScheduledNotification"
-  GC03TrustedDevicesAdminAccessCheckConfigRule:
+  GC03CheckTrustedDevicesAdminAccessConfigRule:
     Type: "AWS::Config::ConfigRule"
     Properties:
-      ConfigRuleName: gc03_trusted_devices_admin_access_check
+      ConfigRuleName: gc03_check_trusted_devices_admin_access
       Description: Confirm that administrative access to cloud environments is from approved and trusted locations and devices
       InputParameters:
         ExecutionRoleName:
@@ -527,7 +527,7 @@ Resources:
             - ""
             - - "arn:aws:lambda:ca-central-1:"
               - Ref: AuditAccountID
-              - !Sub ":function:${OrganizationName}gc03_trusted_devices_admin_access_check"
+              - !Sub ":function:${OrganizationName}gc03_check_trusted_devices_admin_access"
         SourceDetails:
           - EventSource: "aws.config"
             MessageType: "ScheduledNotification"

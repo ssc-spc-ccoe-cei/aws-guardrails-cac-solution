@@ -1,7 +1,7 @@
 AWSTemplateFormatVersion: "2010-09-09"
 Transform: AWS::Serverless-2016-10-31
 Description: >
-  gc03_trusted_devices_admin_access_check
+  gc03_check_trusted_devices_admin_access
 
 Globals:
   Function:
@@ -9,7 +9,7 @@ Globals:
     MemorySize: 128
 
 Resources:
-  GC03TrustedDevicesAdminAccessCheckLambda:
+  GC03CheckTrustedDevicesAdminAccessLambda:
     Type: AWS::Serverless::Function
     Properties:
       CodeUri: .
