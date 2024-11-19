@@ -17,7 +17,7 @@ DEFAULT_RESOURCE_TYPE = 'AWS::::Account'
 #  - API_GW_CACHE_ENABLED_AND_ENCRYPTED
 
 
-def assess_apigw_encryption_at_rest(event=None):
+def assess_api_gw_encryption_at_rest(event=None):
     """
     Finds API Gateway Stages with Cache enabled and not encrypted at rest
     """
@@ -25,24 +25,24 @@ def assess_apigw_encryption_at_rest(event=None):
     rest_apis = []
     resource_type = 'AWS::ApiGateway::Stage'
     try:
-        rest_apis = apigw_get_restapi_list()
+        rest_apis = api_gw_get_rest_api_list()
     except botocore.exceptions.ClientError as ex:
-        logger.error('API Gateway - Error while calling apigw_get_restapi_list %s', ex)
+        logger.error('API Gateway - Error while calling api_gw_get_rest_api_list %s', ex)
         NONCOMPLIANT_SERVICES.add('API Gateway')
     except ValueError:
-        logger.error('API Gateway - Error while calling apigw_get_restapi_list')
+        logger.error('API Gateway - Error while calling api_gw_get_rest_api_list')
         NONCOMPLIANT_SERVICES.add('API Gateway')
     logger.info('API Gateway - %s REST APIs found.', len(rest_apis))
     for api in rest_apis:
         api_id = api.get('id')
         deployments = []
         try:
-            deployments = apigw_get_deployments_list(api_id)
+            deployments = api_gw_get_deployments_list(api_id)
         except botocore.exceptions.ClientError as ex:
-            logger.error('API Gateway - Error while calling apigw_get_deployments_list %s', ex)
+            logger.error('API Gateway - Error while calling api_gw_get_deployments_list %s', ex)
             NONCOMPLIANT_SERVICES.add('API Gateway')
         except ValueError:
-            logger.error('API Gateway - Error while calling apigw_get_deployments_list')
+            logger.error('API Gateway - Error while calling api_gw_get_deployments_list')
             NONCOMPLIANT_SERVICES.add('API Gateway')
         logger.info('API Gateway - %s deployments found for REST API ID %s.', len(deployments), api_id)
         for deployment in deployments:
@@ -54,7 +54,7 @@ def assess_apigw_encryption_at_rest(event=None):
             # let's get the stages
             response = {}
             try:
-                response = AWS_APIGW_CLIENT.get_stages(
+                response = AWS_API_GW_CLIENT.get_stages(
                     restApiId=api_id, deploymentId=deployment_id)
             except botocore.exceptions.ClientError as ex:
                 logger.error('API Gateway - Error while calling get_stages %s', ex)
@@ -113,24 +113,24 @@ def assess_apigw_encryption_at_rest(event=None):
     return local_evaluations
 
 
-def apigw_get_deployments_list(api_id: str):
+def api_gw_get_deployments_list(api_id: str):
     """ Get the list of deployments for a given API ID """
     resource_list = []
-    apigw_paginator = AWS_APIGW_CLIENT.get_paginator('get_deployments')
-    apigw_resource_list = apigw_paginator.paginate(
+    api_gw_paginator = AWS_API_GW_CLIENT.get_paginator('get_deployments')
+    api_gw_deployments_page_iterator = api_gw_paginator.paginate(
         restApiId=api_id, PaginationConfig={'limit': PAGE_SIZE})
-    for page in apigw_resource_list:
+    for page in api_gw_deployments_page_iterator:
         resource_list.extend(page.get('items', []))
         time.sleep(INTERVAL_BETWEEN_API_CALLS)
     return resource_list
 
 
-def apigw_get_restapi_list():
+def api_gw_get_rest_api_list():
     """ Get the list of REST APIs """
     resource_list = []
-    apigw_paginator = AWS_APIGW_CLIENT.get_paginator('get_rest_apis')
-    apigw_resource_list = apigw_paginator.paginate(PaginationConfig={'limit': PAGE_SIZE})
-    for page in apigw_resource_list:
+    api_gw_paginator = AWS_API_GW_CLIENT.get_paginator('get_rest_apis')
+    api_gw_rest_apis_page_iterator = api_gw_paginator.paginate(PaginationConfig={'limit': PAGE_SIZE})
+    for page in api_gw_rest_apis_page_iterator:
         resource_list.extend(page.get('items', []))
         time.sleep(INTERVAL_BETWEEN_API_CALLS)
     return resource_list
@@ -157,7 +157,7 @@ def assess_backup_encryption_at_rest(event=None):
                 logger.error('Backup - Faulty structure - %s', vault)
                 continue
             try:
-                recovery_points = backup_get_recoverypoint_list(vault_name)
+                recovery_points = backup_get_recovery_point_list(vault_name)
                 if recovery_points:
                     logger.info('Backup Vault - %s - %s recovery points found.', vault_name, len(recovery_points))
                     for recovery_point in recovery_points:
@@ -179,7 +179,7 @@ def assess_backup_encryption_at_rest(event=None):
                 else:
                     logger.info('Vault %s has no recovery points.', vault_name)
             except botocore.exceptions.ClientError as ex:
-                logger.error('Backup - Error when trying to backup_get_recoverypoint_list %s', ex)
+                logger.error('Backup - Error when trying to backup_get_recovery_point_list %s', ex)
     except botocore.exceptions.ClientError as ex:
         if 'AccessDenied' in ex.response['Error']['Code']:
             logger.error('Backup - AccessDenied when trying to backup_get_vault_list %s', ex)
@@ -200,7 +200,7 @@ def backup_get_vault_list():
     return resource_list
 
 
-def backup_get_recoverypoint_list(backup_vault_name: str):
+def backup_get_recovery_point_list(backup_vault_name: str):
     """ Get the list of recovery points for a given backup vault """
     resource_list = []
     backup_paginator = AWS_BACKUP_CLIENT.get_paginator(
@@ -841,7 +841,7 @@ def lambda_handler(event, context):
     logger.setLevel(logging.INFO)
 
     # Global variables - AWS API clients
-    global AWS_APIGW_CLIENT
+    global AWS_API_GW_CLIENT
     global AWS_BACKUP_CLIENT
     global AWS_CLOUDTRAIL_CLIENT
     global AWS_CODEBUILD_CLIENT
@@ -893,13 +893,13 @@ def lambda_handler(event, context):
     else:
         AUDIT_ACCOUNT_ID = ''
 
-    # is this a scheduled invokation?
+    # is this a scheduled invocation?
     if not is_scheduled_notification(invoking_event['messageType']):
-        logger.error('Skipping assessments as this is not a scheduled invokation')
+        logger.error('Skipping assessments as this is not a scheduled invocation')
         return
 
     # establish AWS API clients
-    AWS_APIGW_CLIENT = get_client('apigateway', event)
+    AWS_API_GW_CLIENT = get_client('apigateway', event)
     AWS_BACKUP_CLIENT = get_client('backup', event)
     AWS_CLOUDTRAIL_CLIENT = get_client('cloudtrail', event)
     AWS_CODEBUILD_CLIENT = get_client('codebuild', event)
@@ -909,7 +909,7 @@ def lambda_handler(event, context):
     AWS_EC2_CLIENT = get_client('ec2', event)
 
     # API Gateway
-    evaluations.extend(assess_apigw_encryption_at_rest(event))
+    evaluations.extend(assess_api_gw_encryption_at_rest(event))
 
     # Backup
     evaluations.extend(assess_backup_encryption_at_rest(event))

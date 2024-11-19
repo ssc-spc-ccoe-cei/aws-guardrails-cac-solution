@@ -15,8 +15,8 @@ DEFAULT_RESOURCE_TYPE = 'AWS::::Account'
 ############################################################
 # AWS ElasticSearch and OpenSearch specific support functions
 #   - ELASTICSEARCH_ENCRYPTED_AT_REST
-#   - OPENSEARCH_ENCRYPTED_AT_REST
-def assess_opensearch_encryption_at_rest(event = None):
+#   - OPEN_SEARCH_ENCRYPTED_AT_REST
+def assess_open_search_encryption_at_rest(event = None):
     """
     Finds OpenSearch and ElasticSearch domains not encrypted at rest
     """
@@ -24,7 +24,7 @@ def assess_opensearch_encryption_at_rest(event = None):
     domains = []
     # we use a single call to list both OpenSearch and ElasticSearch domains
     try:
-        response = AWS_OPENSEARCH_CLIENT.list_domain_names()
+        response = AWS_OPEN_SEARCH_CLIENT.list_domain_names()
         if response:
             domains = response.get('DomainNames', [])
         else:
@@ -48,7 +48,7 @@ def assess_opensearch_encryption_at_rest(event = None):
             logger.error('OpenSearch/ElasticSearch - Invalid domain structure %s', domain)
             continue
         try:
-            response = AWS_OPENSEARCH_CLIENT.describe_domain(DomainName=domain_name)
+            response = AWS_OPEN_SEARCH_CLIENT.describe_domain(DomainName=domain_name)
             if response:
                 domain_status = response.get('DomainStatus', {})
                 if domain_status.get('EncryptionAtRestOptions', {}).get('Enabled') is True:
@@ -767,7 +767,7 @@ def lambda_handler(event, context):
     global AWS_EFS_CLIENT
     global AWS_EKS_CLIENT
     global AWS_KINESIS_CLIENT
-    global AWS_OPENSEARCH_CLIENT
+    global AWS_OPEN_SEARCH_CLIENT
     global AWS_RDS_CLIENT
     global AWS_S3_CLIENT
     global AWS_SNS_CLIENT
@@ -812,9 +812,9 @@ def lambda_handler(event, context):
     else:
         AUDIT_ACCOUNT_ID = ''
 
-    # is this a scheduled invokation?
+    # is this a scheduled invocation?
     if not is_scheduled_notification(invoking_event['messageType']):
-        logger.error('Skipping assessments as this is not a scheduled invokation')
+        logger.error('Skipping assessments as this is not a scheduled invocation')
         return
 
     # establish AWS API clients
@@ -822,7 +822,7 @@ def lambda_handler(event, context):
     AWS_EFS_CLIENT = get_client('efs', event)
     AWS_EKS_CLIENT = get_client('eks', event)
     AWS_KINESIS_CLIENT = get_client('kinesis', event)
-    AWS_OPENSEARCH_CLIENT = get_client('opensearch', event)
+    AWS_OPEN_SEARCH_CLIENT = get_client('opensearch', event)
     AWS_RDS_CLIENT = get_client('rds', event)
     AWS_S3_CLIENT = get_client('s3', event)
     AWS_SNS_CLIENT = get_client('sns', event)
@@ -834,7 +834,7 @@ def lambda_handler(event, context):
     evaluations.extend(assess_eks_encryption_at_rest(event))
 
     # ElasticSearch/OpenSearch
-    evaluations.extend(assess_opensearch_encryption_at_rest(event))
+    evaluations.extend(assess_open_search_encryption_at_rest(event))
 
     # Kinesis
     evaluations.extend(assess_kinesis_encryption_at_rest(event))
