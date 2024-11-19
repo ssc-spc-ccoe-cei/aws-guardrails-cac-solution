@@ -1,4 +1,4 @@
-""" GC13 - Check Emergency Account Alerts Lambda Function
+""" GC03 - Check trusted devices admin access
     Confirm that administrative access to cloud environments is from approved and trusted locations and devices
 """
 
@@ -268,8 +268,6 @@ def lambda_handler(event, context):
 
     for lookup_event in cloud_trail_events:
         ct_event = json.loads(lookup_event.get("CloudTrailEvent", "{}"))
-        # logger.info("lookup_event: %s", lookup_event)
-        # logger.info("ct_event: %s", ct_event)
 
         if not ip_is_within_ranges(ct_event["sourceIPAddress"], vpn_ip_ranges):
             annotation = f"Cloud Trail Event has a source IP address outside of the allowed ranges."

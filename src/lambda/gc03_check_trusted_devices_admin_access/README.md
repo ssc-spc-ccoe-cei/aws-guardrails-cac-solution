@@ -1,6 +1,6 @@
 _This readme file was created by AWS Bedrock: anthropic.claude-v2_
 
-# GC13 - Emergency Account Alerts
+# GC03 - Check trusted devices admin access
 
 ## Overview
 
@@ -10,17 +10,15 @@ The Lambda will:
 
 - Validate the rule parameters
 - Assume the Config service role to get credentials
-- Check if the S3 object specified in the parameters exists and has a list of rules
-- Get a list of EventBridge rules
-  - Ensure that each rule provided by the input file exists in the list of EventBridge rules
-  - Ensure that each rule provided by the input file is enabled in EventBridge
-  - Ensure that each rule provided by the input file is configured to send notifications via SNS
+- Check if the S3 object specified in the parameters exists and has a list of vpn ip ranges.
+- Get a list of CloudTrail events with the type of `ConsoleLogin` that are not for the break-glass users
+  - Ensure that each event has a source ip within one of the provided ranges
   - Send an evaluation result back to Config:
-    - COMPLIANT if the rule meets the above criteria
-    - NON_COMPLIANT if the rule does not meet the above criteria
+    - COMPLIANT if the source ip is in one of the provided ranges
+    - NON_COMPLIANT if the source ip is NOT in one of the provided ranges
 - Send an evaluation result back to Config:
-  - COMPLIANT if all the rules meet the above criteria
-  - NON_COMPLIANT if one of the rules does not meet the above criteria
+  - COMPLIANT if all the events meet the above criteria
+  - NON_COMPLIANT if one of the events does not meet the above criteria
 
 ## Deployment
 
@@ -28,7 +26,7 @@ The Lambda function needs to be deployed to each account that will be monitored 
 
 ## Parameters
 
-- `s3ObjectPath` - The path to a file containing the list of EventBridge rule names that need to be in-place (required). The file is a text file where each rule name is separated by a new line.
+- `s3ObjectPath` - The path to a file containing the list of valid source ip ranges in the CIDR format (required). The file must be a plain text file where each ip range is separated by a new line.
 - `ExecutionRoleName` - The role name that the function will assume (default: `AWSA-GCLambdaExecutionRole`)
 - `AuditAccountID` - The AWS account ID for the audit account (default: current account)
 - `BgUser1` - The IAM user name of the break-glass user number 1
