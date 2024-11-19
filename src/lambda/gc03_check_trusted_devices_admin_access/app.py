@@ -4,6 +4,7 @@
 
 import json
 import logging
+import time
 import re
 import ipaddress
 
@@ -101,6 +102,56 @@ def build_evaluation(resource_id, compliance_type, event, resource_type=DEFAULT_
     eval_cc["ComplianceType"] = compliance_type
     eval_cc["OrderingTimestamp"] = str(json.loads(event["invokingEvent"])["notificationCreationTime"])
     return eval_cc
+
+
+def get_organizations_mgmt_account_id():
+    """Calls the AWS Organizations API to obtain the Management Account ID"""
+    management_account_id = ""
+    i_retry_limit = 10
+    i_retries = 0
+    b_completed = False
+    b_retry = True
+    while (b_retry and (not b_completed)) and (i_retries < i_retry_limit):
+        try:
+            response = AWS_ORGANIZATIONS_CLIENT.describe_organization()
+            if response:
+                organization = response.get("Organization", None)
+                if organization:
+                    management_account_id = organization.get("MasterAccountId", "")
+                else:
+                    logger.error("Unable to read the Organization from the dict")
+            else:
+                logger.error("Invalid response.")
+            b_completed = True
+        except botocore.exceptions.ClientError as ex:
+            if "AccessDenied" in ex.response["Error"]["Code"]:
+                logger.error("ACCESS DENIED when trying to describe_organization")
+                management_account_id = "ERROR"
+                b_retry = False
+            elif "AWSOrganizationsNotInUse" in ex.response["Error"]["Code"]:
+                logger.error("AWS Organizations not in use")
+                management_account_id = "ERROR"
+                b_retry = False
+            elif "ServiceException" in ex.response["Error"]["Code"]:
+                logger.error("AWS Organizations Service Exception")
+                management_account_id = "ERROR"
+                b_retry = False
+            elif ("ConcurrentModification" in ex.response["Error"]["Code"]) or (
+                "TooManyRequests" in ex.response["Error"]["Code"]
+            ):
+                # throttling
+                logger.info("AWS Organizations API is throttling requests or going through a modification. Will retry.")
+                time.sleep(2)
+                if i_retries >= i_retry_limit:
+                    logger.error("Retry limit reached. Returning an error")
+                    management_account_id = "ERROR"
+                    b_retry = False
+                else:
+                    i_retries += 1
+        except ValueError:
+            logger.error("Unknown exception - get_organizations_mgmt_account_id.")
+            management_account_id = "ERROR"
+    return management_account_id
 
 
 def check_s3_object_exists(object_path: str) -> bool:
@@ -215,6 +266,7 @@ def lambda_handler(event, context):
     global AWS_CONFIG_CLIENT
     global AWS_S3_CLIENT
     global AWS_CLOUDTRAIL_CLIENT
+    global AWS_ORGANIZATIONS_CLIENT
     global AWS_ACCOUNT_ID
     global EXECUTION_ROLE_NAME
     global AUDIT_ACCOUNT_ID
@@ -239,6 +291,12 @@ def lambda_handler(event, context):
     AWS_CONFIG_CLIENT = get_client("config", event)
     AWS_S3_CLIENT = boto3.client("s3")
     AWS_CLOUDTRAIL_CLIENT = get_client("cloudtrail", event)
+    AWS_ORGANIZATIONS_CLIENT = get_client("organizations", event)
+
+    if AWS_ACCOUNT_ID != get_organizations_mgmt_account_id():
+        # We're not in the Management Account
+        logger.info("Cloud Trail events not checked in account %s as this is not the Management Account", AWS_ACCOUNT_ID)
+        return
 
     file_param_name = "s3ObjectPath"
     vpn_ip_ranges_file_path = valid_rule_parameters.get(file_param_name, "")
