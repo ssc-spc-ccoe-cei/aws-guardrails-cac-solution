@@ -83,16 +83,16 @@ def assess_api_gw_encryption_at_rest(event=None):
                         if caching_enabled is False:
                             # Caching is not enabled, therefore NOT_APPLICABLE
                             logger.info('API Gateway - Stage %s in deployment ID %s for REST API ID %s marked as NOT_APPLICABLE as Caching is Disabled.', stage_name, deployment_id, api_id)
+                        elif cache_data_encrypted:
+                            # Caching is enabled, and the data is encrypted
+                            compliance_status = 'COMPLIANT'
+                            compliance_annotation = 'Cache is enabled and encrypted'
+                            logger.info('API Gateway - Stage %s in deployment ID %s for REST API ID %s marked as COMPLIANT as Caching is enabled and encrypted.', stage_name, deployment_id, api_id)
                         else:
-                            # Caching is enabled, let's confirm if it's encrypted
-                            if cache_data_encrypted:
-                                compliance_status = 'COMPLIANT'
-                                compliance_annotation = 'Cache is enabled and encrypted'
-                                logger.info('API Gateway - Stage %s in deployment ID %s for REST API ID %s marked as COMPLIANT as Caching is enabled and encrypted.', stage_name, deployment_id, api_id)
-                            else:
-                                compliance_status = 'NON_COMPLIANT'
-                                compliance_annotation = 'Cache is not encrypted'
-                                logger.info('API Gateway - Stage %s in deployment ID %s for REST API ID %s marked as NON_COMPLIANT as Caching is enabled but not encrypted.', stage_name, deployment_id, api_id)
+                            # Caching is enabled, and the data is NOT encrypted
+                            compliance_status = 'NON_COMPLIANT'
+                            compliance_annotation = 'Cache is not encrypted'
+                            logger.info('API Gateway - Stage %s in deployment ID %s for REST API ID %s marked as NON_COMPLIANT as Caching is enabled but not encrypted.', stage_name, deployment_id, api_id)
                     # build evaluation
                     local_evaluations.append(
                         build_evaluation(
@@ -117,8 +117,7 @@ def api_gw_get_deployments_list(api_id: str):
     """ Get the list of deployments for a given API ID """
     resource_list = []
     api_gw_paginator = AWS_API_GW_CLIENT.get_paginator('get_deployments')
-    api_gw_deployments_page_iterator = api_gw_paginator.paginate(
-        restApiId=api_id, PaginationConfig={'limit': PAGE_SIZE})
+    api_gw_deployments_page_iterator = api_gw_paginator.paginate(restApiId=api_id, limit=PAGE_SIZE)
     for page in api_gw_deployments_page_iterator:
         resource_list.extend(page.get('items', []))
         time.sleep(INTERVAL_BETWEEN_API_CALLS)
@@ -129,7 +128,7 @@ def api_gw_get_rest_api_list():
     """ Get the list of REST APIs """
     resource_list = []
     api_gw_paginator = AWS_API_GW_CLIENT.get_paginator('get_rest_apis')
-    api_gw_rest_apis_page_iterator = api_gw_paginator.paginate(PaginationConfig={'limit': PAGE_SIZE})
+    api_gw_rest_apis_page_iterator = api_gw_paginator.paginate(limit=PAGE_SIZE)
     for page in api_gw_rest_apis_page_iterator:
         resource_list.extend(page.get('items', []))
         time.sleep(INTERVAL_BETWEEN_API_CALLS)
@@ -193,7 +192,7 @@ def backup_get_vault_list():
     """ Get the list of backup vaults """
     resource_list = []
     backup_paginator = AWS_BACKUP_CLIENT.get_paginator('list_backup_vaults')
-    backup_resource_list = backup_paginator.paginate(PaginationConfig={'MaxResults': PAGE_SIZE})
+    backup_resource_list = backup_paginator.paginate(PaginationConfig={'PageSize': PAGE_SIZE})
     for page in backup_resource_list:
         resource_list.extend(page['BackupVaultList'])
         time.sleep(INTERVAL_BETWEEN_API_CALLS)
@@ -206,7 +205,7 @@ def backup_get_recovery_point_list(backup_vault_name: str):
     backup_paginator = AWS_BACKUP_CLIENT.get_paginator(
         'list_recovery_points_by_backup_vault')
     backup_resource_list = backup_paginator.paginate(
-        BackupVaultName=backup_vault_name, PaginationConfig={'MaxResults': PAGE_SIZE})
+        BackupVaultName=backup_vault_name, PaginationConfig={'PageSize': PAGE_SIZE})
     for page in backup_resource_list:
         resource_list.extend(page['RecoveryPoints'])
         time.sleep(INTERVAL_BETWEEN_API_CALLS)
@@ -481,7 +480,7 @@ def dax_get_clusters_list():
     """
     resource_list = []
     dax_paginator = AWS_DAX_CLIENT.get_paginator('describe_clusters')
-    dax_resource_list = dax_paginator.paginate(PaginationConfig={'MaxResults': PAGE_SIZE})
+    dax_resource_list = dax_paginator.paginate(PaginationConfig={'PageSize': PAGE_SIZE})
     for page in dax_resource_list:
         resource_list.extend(page['Clusters'])
         time.sleep(INTERVAL_BETWEEN_API_CALLS)
@@ -541,7 +540,7 @@ def dynamodb_get_tables_list():
     """ Returns a list of DynamoDB tables """
     resource_list = []
     dynamodb_paginator = AWS_DYNAMODB_CLIENT.get_paginator('list_tables')
-    dynamodb_resource_list = dynamodb_paginator.paginate(PaginationConfig={'Limit': PAGE_SIZE})
+    dynamodb_resource_list = dynamodb_paginator.paginate(Limit=PAGE_SIZE)
     for page in dynamodb_resource_list:
         resource_list.extend(page['TableNames'])
         time.sleep(INTERVAL_BETWEEN_API_CALLS)
@@ -608,7 +607,7 @@ def ebs_get_volumes_list():
     """ Returns a list of Amazon EBS volumes """
     resource_list = []
     ebs_paginator = AWS_EC2_CLIENT.get_paginator('describe_volumes')
-    ebs_resource_list = ebs_paginator.paginate(PaginationConfig={'MaxResults': PAGE_SIZE})
+    ebs_resource_list = ebs_paginator.paginate(PaginationConfig={'PageSize': PAGE_SIZE})
     for page in ebs_resource_list:
         resource_list.extend(page['Volumes'])
         time.sleep(INTERVAL_BETWEEN_API_CALLS)
