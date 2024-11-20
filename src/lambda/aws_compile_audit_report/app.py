@@ -22,28 +22,30 @@ def lambda_handler(event, context):
     context -- the context variable given in the lambda handler
     """
     logger = logging.getLogger(__name__)
-    logger.info("start audit manager get assessements")
+    logger.setLevel(logging.INFO)
+    logger.info("start audit manager get assessments")
+    logger.info("Received Event: %s", json.dumps(event, indent=2))
 
     header = ['accountId', 'dataSource', 'guardrail', 'controlName', 'timestamp',
               "resourceType", "resourceArn", "compliance", "organizationId", "organizationName"]
-    csvio = io.StringIO()
-    writer = csv.writer(csvio)
+    csv_io = io.StringIO()
+    writer = csv.writer(csv_io)
     writer.writerow(header)
 
     # get list of assessment and we will loop through each one
-    assessements = get_assessments(assessment_name)
-    if len(assessements) < 1:
+    assessments = get_assessments(assessment_name)
+    if len(assessments) < 1:
         return
     count = 0
-    for assessement in assessements:
-        assessementid = assessement['id']
-        evidence_folders = get_evidence_folders_by_assessment_id(assessementid)
+    for assessment in assessments:
+        assessment_id = assessment['id']
+        evidence_folders = get_evidence_folders_by_assessment_id(assessment_id)
         for folder in evidence_folders:
-            controlsetid = folder['controlSetId']
-            folderid = folder['id']
-            controlid = folder['controlName']
+            control_set_id = folder['controlSetId']
+            folder_id = folder['id']
+            control_id = folder['controlName']
             evidences = get_evidence_by_evidence_folders(
-                assessementid, controlsetid, folderid)
+                assessment_id, control_set_id, folder_id)
             for item in evidences:
                 if item['time'] > (datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(1)):
                     rows = []
@@ -51,8 +53,8 @@ def lambda_handler(event, context):
                         rows.append([
                             item['evidenceAwsAccountId'],
                             item['dataSource'],
-                            controlsetid,
-                            controlid,
+                            control_set_id,
+                            control_id,
                             item['time'].strftime("%m/%d/%Y %H:%M:%S %Z"),
                             'None',
                             'None',
@@ -65,8 +67,8 @@ def lambda_handler(event, context):
                             rows.append([
                                 item['evidenceAwsAccountId'],
                                 item['dataSource'],
-                                controlsetid,
-                                controlid,
+                                control_set_id,
+                                control_id,
                                 item['time'].strftime("%m/%d/%Y %H:%M:%S %Z"),
                                 json.loads(sub_evidence['value'])['complianceResourceType'],
                                 json.loads(sub_evidence['value'])['complianceResourceId'],
@@ -79,8 +81,8 @@ def lambda_handler(event, context):
                             rows.append([
                                 item['evidenceAwsAccountId'],
                                 item['dataSource'],
-                                controlsetid,
-                                controlid,
+                                control_set_id,
+                                control_id,
                                 item['time'].strftime("%m/%d/%Y %H:%M:%S %Z"),
                                 'None',
                                 'None',
@@ -92,8 +94,8 @@ def lambda_handler(event, context):
                             rows.append([
                                 item['evidenceAwsAccountId'],
                                 item['dataSource'],
-                                controlsetid,
-                                controlid,
+                                control_set_id,
+                                control_id,
                                 item['time'].strftime("%m/%d/%Y %H:%M:%S %Z"),
                                 json.loads(item['resourcesIncluded'][0]['value'])['complianceResourceType'],
                                 json.loads(item['resourcesIncluded'][0]['value'])['complianceResourceId'],
@@ -105,27 +107,27 @@ def lambda_handler(event, context):
                         count += 1
                         writer.writerow(row)
     if count > 0:
-        s3.put_object(Body=csvio.getvalue(), ContentType='text/csv',
+        s3.put_object(Body=csv_io.getvalue(), ContentType='text/csv',
                       Bucket=os.environ['source_target_bucket'], Key=f'{datetime.datetime.today().strftime("%Y-%m-%d")}.csv')
-        csvio.close()
+        csv_io.close()
         return json.dumps("success", default=str)
     else:
-        csvio.close()
+        csv_io.close()
         return json.dumps("Nothing to write", default=str)
 
 
 def get_assessments(filter: str = None) -> list:
-    """Get list of all assessements if filter not provided.
-    If filter is provided return the single assessement. Filter
+    """Get list of all assessments if filter not provided.
+    If filter is provided return the single assessment. Filter
     corresponds to assessment name.
     """
     try:
-        assessements = auditManagerClient.list_assessments(status='ACTIVE')
+        assessments = auditManagerClient.list_assessments(status='ACTIVE')
     except (ValueError, TypeError) as err:
         logging.error('Error at %s', 'list_assessments', exc_info=err)
         results = []
     else:
-        results = assessements['assessmentMetadata']
+        results = assessments['assessmentMetadata']
         print(results)
     if filter is not None and len(results) != 0:
         filtered_results = []
@@ -151,13 +153,13 @@ def get_evidence_folders_by_assessment_id(id: str) -> list:
         return results
 
 
-def get_evidence_by_evidence_folders(assessementid: str, controlsetid: str, folderid: str) -> list:
+def get_evidence_by_evidence_folders(assessment_id: str, control_set_id: str, folder_id: str) -> list:
     """Get list of all evidence for an evidence folder."""
     try:
         response_evidence_folder = auditManagerClient.get_evidence_by_evidence_folder(
-            assessmentId=assessementid,
-            controlSetId=controlsetid,
-            evidenceFolderId=folderid,
+            assessmentId=assessment_id,
+            controlSetId=control_set_id,
+            evidenceFolderId=folder_id,
             maxResults=500
         )
     except (ValueError, TypeError) as err:
