@@ -136,7 +136,7 @@ def kinesis_get_streams_list():
     """
     resource_list = []
     kinesis_paginator = AWS_KINESIS_CLIENT.get_paginator('list_streams')
-    kinesis_resource_list = kinesis_paginator.paginate(PaginationConfig={'Limit': PAGE_SIZE})
+    kinesis_resource_list = kinesis_paginator.paginate(Limit=PAGE_SIZE)
     for page in kinesis_resource_list:
         resource_list.extend(page.get('StreamNames', []))
         time.sleep(INTERVAL_BETWEEN_API_CALLS)
@@ -182,7 +182,7 @@ def efs_get_filesystem_list():
     """
     resource_list = []
     efs_paginator = AWS_EFS_CLIENT.get_paginator('describe_file_systems')
-    efs_resource_list = efs_paginator.paginate(PaginationConfig={'MaxItems': PAGE_SIZE})
+    efs_resource_list = efs_paginator.paginate(PaginationConfig={'PageSize': PAGE_SIZE})
     for page in efs_resource_list:
         resource_list.extend(page['FileSystems'])
         time.sleep(INTERVAL_BETWEEN_API_CALLS)
@@ -244,7 +244,7 @@ def eks_get_cluster_list():
     """
     resource_list = []
     eks_paginator = AWS_EKS_CLIENT.get_paginator('list_clusters')
-    eks_resource_list = eks_paginator.paginate(PaginationConfig={'maxResults': PAGE_SIZE})
+    eks_resource_list = eks_paginator.paginate(maxResults=PAGE_SIZE)
     for page in eks_resource_list:
         resource_list.extend(page['clusters'])
         time.sleep(INTERVAL_BETWEEN_API_CALLS)
@@ -361,7 +361,7 @@ def rds_get_db_clusters_list():
     """
     resource_list = []
     rds_paginator = AWS_RDS_CLIENT.get_paginator('describe_db_clusters')
-    rds_resource_list = rds_paginator.paginate(PaginationConfig={'MaxRecords': PAGE_SIZE})
+    rds_resource_list = rds_paginator.paginate(MaxRecords=PAGE_SIZE)
     for page in rds_resource_list:
         resource_list.extend(page['DBClusters'])
         time.sleep(INTERVAL_BETWEEN_API_CALLS)
@@ -374,7 +374,7 @@ def rds_get_db_cluster_snapshots_list():
     """
     resource_list = []
     rds_paginator = AWS_RDS_CLIENT.get_paginator('describe_db_cluster_snapshots')
-    rds_resource_list = rds_paginator.paginate(PaginationConfig={'MaxRecords': PAGE_SIZE})
+    rds_resource_list = rds_paginator.paginate(MaxRecords=PAGE_SIZE)
     for page in rds_resource_list:
         resource_list.extend(page['DBClusterSnapshots'])
         time.sleep(INTERVAL_BETWEEN_API_CALLS)
@@ -387,7 +387,7 @@ def rds_get_db_instances_list():
     """
     resource_list = []
     rds_paginator = AWS_RDS_CLIENT.get_paginator('describe_db_instances')
-    rds_resource_list = rds_paginator.paginate(PaginationConfig={'MaxRecords': PAGE_SIZE})
+    rds_resource_list = rds_paginator.paginate(MaxRecords=PAGE_SIZE)
     for page in rds_resource_list:
         resource_list.extend(page['DBInstances'])
         time.sleep(INTERVAL_BETWEEN_API_CALLS)
@@ -400,7 +400,7 @@ def rds_get_db_snapshots_list():
     """
     resource_list = []
     rds_paginator = AWS_RDS_CLIENT.get_paginator('describe_db_snapshots')
-    rds_resource_list = rds_paginator.paginate(PaginationConfig={'MaxRecords': PAGE_SIZE})
+    rds_resource_list = rds_paginator.paginate(MaxRecords=PAGE_SIZE)
     for page in rds_resource_list:
         resource_list.extend(page['DBSnapshots'])
         time.sleep(INTERVAL_BETWEEN_API_CALLS)
