@@ -211,7 +211,7 @@ def assess_eks_encryption_at_rest(event = None):
                 encryption_config = response.get('cluster', {}).get('encryptionConfig', [])
                 if encryption_config:
                     # check if there are resources of type secrets
-                    compliance_status = 'Secrets are not encrypted'
+                    compliance_annotation = 'Secrets are not encrypted'
                     for config in encryption_config:
                         if 'secrets' in config.get('resources', []):
                             compliance_status = 'COMPLIANT'
