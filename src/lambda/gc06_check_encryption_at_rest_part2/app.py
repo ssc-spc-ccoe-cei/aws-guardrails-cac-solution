@@ -419,9 +419,9 @@ def assess_s3_encryption_at_rest(event = None):
     # list the buckets
     resource_type = 'AWS::S3::Bucket'
     try:
-        response = AWS_S3_CLIENT.list_buckets()
-        if response:
-            for bucket in response.get('Buckets'):
+        buckets = s3_list_all_buckets()
+        if buckets:
+            for bucket in buckets:
                 bucket_name = bucket.get('Name')
                 bucket_arn = f"arn:aws:s3:::{bucket_name}"
                 compliance_status = 'NON_COMPLIANT'
@@ -481,6 +481,18 @@ def assess_s3_encryption_at_rest(event = None):
     logger.info('S3 - reporting %s evaluations.', len(local_evaluations))
     return local_evaluations
 
+def s3_list_all_buckets():
+    """
+    Get a list of all the S3 Buckets
+    https://boto3.amazonaws.com/v1/documentation/api/latest/reference/services/s3/paginator/ListBuckets.html
+    """
+    resources: list[dict] = []
+    paginator = AWS_S3_CLIENT.get_paginator('list_buckets')
+    page_iterator = paginator.paginate(PaginationConfig={'PageSize': PAGE_SIZE})
+    for page in page_iterator:
+        resources.extend(page['Buckets'])
+        time.sleep(INTERVAL_BETWEEN_API_CALLS)
+    return resources
 
 ############################################################
 # SNS specific support functions
