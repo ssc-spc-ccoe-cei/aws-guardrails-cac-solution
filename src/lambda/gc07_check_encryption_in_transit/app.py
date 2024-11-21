@@ -20,9 +20,9 @@ def assess_s3_buckets_ssl_enforcement(event=None):
     condition_criteria = {"Bool": {"aws:SecureTransport": "false"}}
     resource_type = "AWS::S3::Bucket"
     try:
-        response = AWS_S3_CLIENT.list_buckets()
-        if response:
-            for bucket in response.get("Buckets"):
+        buckets = s3_list_all_buckets()
+        if buckets:
+            for bucket in buckets:
                 bucket_name = bucket.get("Name")
                 bucket_arn = f"arn:aws:s3:::{bucket_name}"
                 compliance_status = ""
@@ -33,9 +33,9 @@ def assess_s3_buckets_ssl_enforcement(event=None):
                 b_success = False
                 while (not b_success) and (i_retries < MAXIMUM_API_RETRIES):
                     try:
-                        response2 = AWS_S3_CLIENT.get_bucket_policy(Bucket=bucket.get("Name"))
-                        if response2:
-                            bucket_policy = json.loads(response2.get("Policy"))
+                        response = AWS_S3_CLIENT.get_bucket_policy(Bucket=bucket.get("Name"))
+                        if response:
+                            bucket_policy = json.loads(response.get("Policy"))
                         else:
                             logger.info("Unable to get_bucket_policy '%s'", bucket.get("Name"))
                         b_success = True
@@ -90,6 +90,20 @@ def assess_s3_buckets_ssl_enforcement(event=None):
             logger.error("S3 - Error while calling list_buckets %s", ex)
     logger.info("S3 - reporting %s evaluations.", len(local_evaluations))
     return local_evaluations
+
+
+def s3_list_all_buckets():
+    """
+    Get a list of all the S3 Buckets
+    https://boto3.amazonaws.com/v1/documentation/api/latest/reference/services/s3/paginator/ListBuckets.html
+    """
+    resources: list[dict] = []
+    paginator = AWS_S3_CLIENT.get_paginator('list_buckets')
+    page_iterator = paginator.paginate(PaginationConfig={'PageSize': PAGE_SIZE})
+    for page in page_iterator:
+        resources.extend(page['Buckets'])
+        time.sleep(INTERVAL_BETWEEN_API_CALLS)
+    return resources
 
 
 def assess_redshift_clusters_ssl_enforcement(event=None):
