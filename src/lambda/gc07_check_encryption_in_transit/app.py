@@ -211,14 +211,14 @@ def assess_redshift_clusters_ssl_enforcement(event=None):
     return local_evaluations
 
 
-def assess_elbv2_ssl_enforcement(event=None):
+def assess_elb_v2_ssl_enforcement(event=None):
     """
     Evaluate whether SSL is enforced on ELBv2.
     """
     local_evaluations = []
     load_balancers = []
     try:
-        response = AWS_ELBV2_CLIENT.describe_load_balancers(PageSize=PAGE_SIZE)
+        response = AWS_ELB_V2_CLIENT.describe_load_balancers(PageSize=PAGE_SIZE)
         b_more_data = True
         i_retries = 0
         while b_more_data and i_retries < MAXIMUM_API_RETRIES:
@@ -234,7 +234,7 @@ def assess_elbv2_ssl_enforcement(event=None):
                 if next_marker:
                     time.sleep(INTERVAL_BETWEEN_API_CALLS)
                     try:
-                        response = AWS_ELBV2_CLIENT.describe_load_balancers(
+                        response = AWS_ELB_V2_CLIENT.describe_load_balancers(
                             PageSize=PAGE_SIZE, Marker=next_marker
                         )
                     except botocore.exceptions.ClientError as ex:
@@ -257,7 +257,7 @@ def assess_elbv2_ssl_enforcement(event=None):
     for load_balancer in load_balancers:
         next_marker = ""
         try:
-            response = AWS_ELBV2_CLIENT.describe_listeners(
+            response = AWS_ELB_V2_CLIENT.describe_listeners(
                 LoadBalancerArn=load_balancer.get("LoadBalancerArn", ""),
                 PageSize=PAGE_SIZE,
             )
@@ -288,7 +288,7 @@ def assess_elbv2_ssl_enforcement(event=None):
                     if next_marker:
                         time.sleep(INTERVAL_BETWEEN_API_CALLS)
                         try:
-                            response = AWS_ELBV2_CLIENT.describe_listeners(
+                            response = AWS_ELB_V2_CLIENT.describe_listeners(
                                 LoadBalancerArn=load_balancer.get("LoadBalancerArn", ""),
                                 PageSize=PAGE_SIZE,
                                 Marker=next_marker,
@@ -700,7 +700,7 @@ def lambda_handler(event, context):
 
     global AWS_S3_CLIENT
     global AWS_REDSHIFT_CLIENT
-    global AWS_ELBV2_CLIENT
+    global AWS_ELB_V2_CLIENT
     global AWS_APIGW_CLIENT
     global AWS_ES_CLIENT
     global AWS_CONFIG_CLIENT
@@ -711,7 +711,7 @@ def lambda_handler(event, context):
     evaluations = []
     rule_parameters = {}
     invoking_event = json.loads(event["invokingEvent"])
-    logger.info("Recieved event: %s", json.dumps(event, indent=2))
+    logger.info("Received event: %s", json.dumps(event, indent=2))
 
     AWS_ACCOUNT_ID = event["accountId"]
     logger.info("Assessing account %s", AWS_ACCOUNT_ID)
@@ -731,19 +731,19 @@ def lambda_handler(event, context):
         AUDIT_ACCOUNT_ID = ""
 
     if not is_scheduled_notification(invoking_event["messageType"]):
-        logger.error("Skipping assessments as this is not a scheduled invokation")
+        logger.error("Skipping assessments as this is not a scheduled invocation")
         return
 
     AWS_S3_CLIENT = get_client("s3", event)
     AWS_REDSHIFT_CLIENT = get_client("redshift", event)
-    AWS_ELBV2_CLIENT = get_client("elbv2", event)
+    AWS_ELB_V2_CLIENT = get_client("elbv2", event)
     AWS_APIGW_CLIENT = get_client("apigateway", event)
     AWS_ES_CLIENT = get_client("es", event)
     AWS_CONFIG_CLIENT = get_client("config", event)
 
     evaluations.extend(assess_s3_buckets_ssl_enforcement(event))
     evaluations.extend(assess_redshift_clusters_ssl_enforcement(event))
-    evaluations.extend(assess_elbv2_ssl_enforcement(event))
+    evaluations.extend(assess_elb_v2_ssl_enforcement(event))
     evaluations.extend(assess_rest_api_stages_ssl_enforcement(event))
     evaluations.extend(assess_es_node_to_node_ssl_enforcement(event))
 
@@ -792,14 +792,14 @@ def lambda_handler(event, context):
 
         AWS_S3_CLIENT = get_client("s3", event)
         AWS_REDSHIFT_CLIENT = get_client("redshift", event)
-        AWS_ELBV2_CLIENT = get_client("elbv2", event)
+        AWS_ELB_V2_CLIENT = get_client("elbv2", event)
         AWS_APIGW_CLIENT = get_client("apigateway", event)
         AWS_ES_CLIENT = get_client("es", event)
         AWS_CONFIG_CLIENT = get_client("config", event)
 
         evaluations.extend(assess_s3_buckets_ssl_enforcement(event))
         evaluations.extend(assess_redshift_clusters_ssl_enforcement(event))
-        evaluations.extend(assess_elbv2_ssl_enforcement(event))
+        evaluations.extend(assess_elb_v2_ssl_enforcement(event))
         evaluations.extend(assess_rest_api_stages_ssl_enforcement(event))
         evaluations.extend(assess_es_node_to_node_ssl_enforcement(event))
 
