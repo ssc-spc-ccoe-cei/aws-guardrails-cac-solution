@@ -336,10 +336,9 @@ def assess_rest_api_stages_ssl_enforcement(event=None):
     This function evaluates the SSL enforcement on the REST API Stages.
     """
     local_evaluations = []
-    rest_apis = []
     resource_type = "AWS::ApiGateway::Stage"
     try:
-        response = AWS_APIGW_CLIENT.get_rest_apis(limit=PAGE_SIZE)
+        response = AWS_API_GW_CLIENT.get_rest_apis(limit=PAGE_SIZE)
         b_more_data = True
         i_retries = 0
         while b_more_data and i_retries < MAXIMUM_API_RETRIES:
@@ -352,8 +351,8 @@ def assess_rest_api_stages_ssl_enforcement(event=None):
                         logger.error("Skipping Malformed API item %s", api)
                         continue
                     try:
-                        api_resource_list = apigw_get_resources_list(
-                            AWS_APIGW_CLIENT,
+                        api_resource_list = api_gw_get_resources_list(
+                            AWS_API_GW_CLIENT,
                             api_id
                         )
                     except botocore.exceptions.ClientError as error:
@@ -370,7 +369,7 @@ def assess_rest_api_stages_ssl_enforcement(event=None):
                             method_types = item["resourceMethods"].keys()
                             for method_type in method_types:
                                 try:
-                                    integration_type = AWS_APIGW_CLIENT.get_integration(
+                                    integration_type = AWS_API_GW_CLIENT.get_integration(
                                         restApiId=api_id,
                                         resourceId=resource_id,
                                         httpMethod=method_type,
@@ -386,7 +385,7 @@ def assess_rest_api_stages_ssl_enforcement(event=None):
                                     AWS = True
                                 time.sleep(THROTTLE_BACKOFF / 2)
                     try:
-                        response2 = AWS_APIGW_CLIENT.get_deployments(
+                        response2 = AWS_API_GW_CLIENT.get_deployments(
                             restApiId=api_id,
                             limit=PAGE_SIZE
                         )
@@ -405,7 +404,7 @@ def assess_rest_api_stages_ssl_enforcement(event=None):
                                         logger.error("Skipping Malformed Deployment in API %s: %s", api, deployment)
                                         continue
                                     try:
-                                        response3 = AWS_APIGW_CLIENT.get_stages(
+                                        response3 = AWS_API_GW_CLIENT.get_stages(
                                             restApiId=api_id,
                                             deploymentId=deployment_id
                                         )
@@ -455,7 +454,7 @@ def assess_rest_api_stages_ssl_enforcement(event=None):
                                 if position2:
                                     time.sleep(INTERVAL_BETWEEN_API_CALLS)
                                     try:
-                                        response2 = AWS_APIGW_CLIENT.get_deployments(
+                                        response2 = AWS_API_GW_CLIENT.get_deployments(
                                             restApiId=api_id,
                                             position=position2,
                                             limit=PAGE_SIZE,
@@ -484,7 +483,7 @@ def assess_rest_api_stages_ssl_enforcement(event=None):
                 if position:
                     time.sleep(INTERVAL_BETWEEN_API_CALLS)
                     try:
-                        response = AWS_APIGW_CLIENT.get_rest_apis(
+                        response = AWS_API_GW_CLIENT.get_rest_apis(
                             position=position,
                             limit=PAGE_SIZE
                         )
@@ -562,7 +561,7 @@ def assess_es_node_to_node_ssl_enforcement(event=None):
     return local_evaluations
 
 
-def apigw_get_resources_list(api_client, rest_api_id):
+def api_gw_get_resources_list(api_client, rest_api_id):
     """Get a list of all the resources in an API Gateway Rest API.
     Keyword arguments:
     api_client -- the API Gateway client object
@@ -570,10 +569,7 @@ def apigw_get_resources_list(api_client, rest_api_id):
     """
     resource_list = []
     api_paginator = api_client.get_paginator("get_resources")
-    api_resource_list = api_paginator.paginate(
-        restApiId=rest_api_id,
-        PaginationConfig={"MaxItems": PAGE_SIZE}
-    )
+    api_resource_list = api_paginator.paginate(restApiId=rest_api_id, PaginationConfig={"PageSize": PAGE_SIZE})
     for page in api_resource_list:
         resource_list.extend(page["items"])
         time.sleep(INTERVAL_BETWEEN_API_CALLS)
@@ -715,7 +711,7 @@ def lambda_handler(event, context):
     global AWS_S3_CLIENT
     global AWS_REDSHIFT_CLIENT
     global AWS_ELB_V2_CLIENT
-    global AWS_APIGW_CLIENT
+    global AWS_API_GW_CLIENT
     global AWS_ES_CLIENT
     global AWS_CONFIG_CLIENT
     global AWS_ACCOUNT_ID
@@ -751,7 +747,7 @@ def lambda_handler(event, context):
     AWS_S3_CLIENT = get_client("s3", event)
     AWS_REDSHIFT_CLIENT = get_client("redshift", event)
     AWS_ELB_V2_CLIENT = get_client("elbv2", event)
-    AWS_APIGW_CLIENT = get_client("apigateway", event)
+    AWS_API_GW_CLIENT = get_client("apigateway", event)
     AWS_ES_CLIENT = get_client("es", event)
     AWS_CONFIG_CLIENT = get_client("config", event)
 
