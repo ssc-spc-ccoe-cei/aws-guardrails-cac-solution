@@ -237,7 +237,7 @@ def assess_elb_v2_ssl_enforcement(event=None):
         i_retries = 0
         while b_more_data and i_retries < MAXIMUM_API_RETRIES:
             if response:
-                next_marker = response.get("Marker", "")
+                next_marker = response.get("NextMarker", "")
                 for load_balancer in response.get("LoadBalancers", []):
                     load_balancers.append(
                         {
@@ -279,7 +279,7 @@ def assess_elb_v2_ssl_enforcement(event=None):
             i_retries = 0
             while b_more_data and (i_retries < MAXIMUM_API_RETRIES):
                 if response:
-                    next_marker = response.get("Marker", "")
+                    next_marker = response.get("NextMarker", "")
                     for listener in response.get("Listeners", []):
                         listener_compliance = ""
                         listener_annotation = ""
@@ -289,7 +289,7 @@ def assess_elb_v2_ssl_enforcement(event=None):
                             listener_annotation = 'Non HTTPS/TLS listener protocol - {}'.format(listener_protocol)
                         else:
                             listener_compliance = "COMPLIANT"
-                            listener_annotation = "All listeners leverage HTTPS/TLS"
+                            listener_annotation = f"Listener uses HTTPS/TLS - {listener.get("ListenerArn", "")}"
                         local_evaluations.append(
                             build_evaluation(
                                 listener.get("ListenerArn", ""),
