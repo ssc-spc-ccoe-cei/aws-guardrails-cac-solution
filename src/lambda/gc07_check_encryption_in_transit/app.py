@@ -769,6 +769,7 @@ def lambda_handler(event, context):
             account_compliance_status = "NON_COMPLIANT"
             account_compliance_annotation = "Non-compliant resources in scope found"
             break
+
     evaluations.append(
         build_evaluation(
             AWS_ACCOUNT_ID,
@@ -778,28 +779,10 @@ def lambda_handler(event, context):
             annotation=account_compliance_annotation,
         )
     )
-    number_of_evaluations = len(evaluations)
-    if number_of_evaluations > 0:
-        max_evaluations_per_call = 100
-        rounds = number_of_evaluations // max_evaluations_per_call
-        logger.info("Reporting %s evaluations in %s rounds.", number_of_evaluations, rounds + 1)
-        if number_of_evaluations > max_evaluations_per_call:
-            for rnd in range(rounds):
-                start = rnd * max_evaluations_per_call
-                end = (rnd + 1) * max_evaluations_per_call
-                AWS_CONFIG_CLIENT.put_evaluations(
-                    Evaluations=evaluations[start:end],
-                    ResultToken=event["resultToken"]
-                )
-                time.sleep(0.3)
-            start = end
-            end = number_of_evaluations
-            AWS_CONFIG_CLIENT.put_evaluations(
-                Evaluations=evaluations[start:end],
-                ResultToken=event["resultToken"]
-            )
-        else:
-            AWS_CONFIG_CLIENT.put_evaluations(
-                Evaluations=evaluations,
-                ResultToken=event["resultToken"]
-            )
+
+    max_evaluations_per_call = 100
+    while evaluations:
+        batch_of_evaluations, evaluations = evaluations[:max_evaluations_per_call], evaluations[max_evaluations_per_call:]
+        AWS_CONFIG_CLIENT.put_evaluations(Evaluations=batch_of_evaluations, ResultToken=event["resultToken"])
+        if evaluations:
+            time.sleep(0.3)
