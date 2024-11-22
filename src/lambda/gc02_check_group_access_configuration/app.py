@@ -74,26 +74,6 @@ def evaluate_parameters(rule_parameters):
     Keyword arguments:
     rule_parameters -- the Key/Value dictionary of the rule parameters
     """
-    for parameter in rule_parameters:
-        if parameter in [
-            "MinimumPasswordLength",
-            "MaxPasswordAge",
-            "PasswordReusePrevention",
-        ]:
-            PASSWORD_ASSESSMENT_POLICY[parameter] = int(rule_parameters[parameter])
-        elif parameter in [
-            "RequireSymbols",
-            "RequireNumbers",
-            "RequireUppercaseCharacters",
-            "RequireLowercaseCharacters",
-            "AllowUsersToChangePassword",
-            "ExpirePasswords",
-            "HardExpiry",
-        ]:
-            if str(rule_parameters[parameter]).lower() == "true":
-                PASSWORD_ASSESSMENT_POLICY[parameter] = True
-            elif str(rule_parameters[parameter]).lower() == "false":
-                PASSWORD_ASSESSMENT_POLICY[parameter] = False
     return rule_parameters
 
 
@@ -322,23 +302,9 @@ def lambda_handler(event, context):
     global AWS_S3_CLIENT
     global EXECUTION_ROLE_NAME
     global AUDIT_ACCOUNT_ID
-    global PASSWORD_ASSESSMENT_POLICY
 
     evaluations = []
     rule_parameters = {}
-
-    PASSWORD_ASSESSMENT_POLICY = {
-        "MinimumPasswordLength": 14,
-        "RequireSymbols": True,
-        "RequireNumbers": True,
-        "RequireUppercaseCharacters": True,
-        "RequireLowercaseCharacters": True,
-        "AllowUsersToChangePassword": True,
-        "ExpirePasswords": False,
-        "MaxPasswordAge": 90,
-        "PasswordReusePrevention": 24,
-        "HardExpiry": False,
-    }
 
     invoking_event = json.loads(event["invokingEvent"])
     logger.info("Received event: %s", json.dumps(event, indent=2))
