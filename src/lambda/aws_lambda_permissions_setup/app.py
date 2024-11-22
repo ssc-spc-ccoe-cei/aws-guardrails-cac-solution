@@ -78,6 +78,7 @@ def apply_lambda_permissions():
         f"{organization_name}gc01_check_monitoring_and_logging": ["GC01CheckMonitoringAndLoggingLambda"],
         f"{organization_name}gc01_check_root_mfa": ["GC01CheckRootAccountMFAEnabledLambda"],
         f"{organization_name}gc02_check_account_mgmt_plan": ["GC02CheckAccountManagementPlanLambda"],
+        f"{organization_name}gc02_check_password_protection_mechanisms": ["GC02CheckPasswordProtectionMechanismsLambda"],
         f"{organization_name}gc02_check_iam_password_policy": ["GC02CheckIAMPasswordPolicyLambda"],
         f"{organization_name}gc02_check_group_access_configuration": ["GC02CheckGroupAccessConfigurationLambda"],
         f"{organization_name}gc02_check_least_privileged_roles": ["GC02CheckLeastPrivilegedRolesLambda"],

@@ -9,7 +9,7 @@ Globals:
     MemorySize: 128
 
 Resources:
-  GC01CheckPasswordProtectionMechanismsLambda:
+  GC02CheckPasswordProtectionMechanismsLambda:
     Type: AWS::Serverless::Function
     Properties:
       CodeUri: .

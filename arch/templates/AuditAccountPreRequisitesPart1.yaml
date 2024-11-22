@@ -416,3 +416,17 @@ Resources:
       LoggingConfig:
         LogGroup: !Sub "${OrganizationName}gc_guardrails"
         LogFormat: "JSON"
+
+  GC02CheckPasswordProtectionMechanismsLambda:
+    Condition: IsAuditAccount
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub "${OrganizationName}gc02_check_password_protection_mechanisms"
+      Code: "../../src/lambda/gc02_check_password_protection_mechanisms/build/GC02CheckPasswordProtectionMechanismsLambda/"
+      Handler: app.lambda_handler
+      Role: !GetAtt GCDefaultLambdaExecutionRole.Arn
+      Runtime: !Ref PythonRuntime
+      Timeout: 90
+      LoggingConfig:
+        LogGroup: !Sub "${OrganizationName}gc_guardrails"
+        LogFormat: "JSON"

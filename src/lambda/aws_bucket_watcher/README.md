@@ -4,13 +4,13 @@
 
 ## Overview
 
-Lambda function to copy audit data from source s3 bucke to the destination s3 bucket.
+Lambda function to copy audit data from source s3 bucket to the destination s3 bucket.
 
 ## Functions
 
 ### lambda_handler
 
-lambda handler to copy audit data from source s3 bucke to the destination s3 bucket.
+lambda handler to copy audit data from source s3 bucket to the destination s3 bucket.
 
 Args:
 
