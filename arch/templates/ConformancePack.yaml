@@ -54,6 +54,12 @@ Parameters:
   # GC02
   S3AccountManagementPlanPath:
     Type: String
+  S3CustomRoleRationalizationDocumentPath:
+    Type: String
+  S3RoleAssignmentReviewDocumentPath:
+    Type: String
+  S3AdminAccountListPath:
+    Type: String
   GC03AlarmList:
     Default: "AWS-IAM-Authentication-From-Unapproved-IP,AWS-SSO-Authentication-From-Unapproved-IP,AWS-Console-SignIn-Without-MFA"
     Type: String
@@ -372,6 +378,114 @@ Resources:
             - - "arn:aws:lambda:ca-central-1:"
               - Ref: AuditAccountID
               - !Sub ":function:${OrganizationName}gc02_check_account_mgmt_plan"
+        SourceDetails:
+          - EventSource: "aws.config"
+            MessageType: "ScheduledNotification"
+  GC02CheckLeastPrivilegedRolesConfigRule:
+    Type: "AWS::Config::ConfigRule"
+    Properties:
+      ConfigRuleName: gc02_check_least_privileged_roles
+      Description: Checks S3 bucket for the custom role rationalization document.
+      InputParameters:
+        s3ObjectPath:
+          Fn::If:
+            - s3CustomRoleRationalizationDocumentPath
+            - Ref: S3CustomRoleRationalizationDocumentPath
+            - Ref: AWS::NoValue
+        ExecutionRoleName:
+          Fn::If:
+            - GCLambdaExecutionRoleName
+            - Ref: GCLambdaExecutionRoleName
+            - Ref: AWS::NoValue
+        AuditAccountID:
+          Fn::If:
+            - auditAccountID
+            - Ref: AuditAccountID
+            - Ref: AWS::NoValue
+      Scope:
+        ComplianceResourceTypes:
+          - AWS::Account
+      MaximumExecutionFrequency: TwentyFour_Hours
+      Source:
+        Owner: CUSTOM_LAMBDA
+        SourceIdentifier:
+          Fn::Join:
+            - ""
+            - - "arn:aws:lambda:ca-central-1:"
+              - Ref: AuditAccountID
+              - !Sub ":function:${OrganizationName}gc02_check_least_privileged_roles"
+        SourceDetails:
+          - EventSource: "aws.config"
+            MessageType: "ScheduledNotification"
+  GC02CheckPrivilegedRolesReviewConfigRule:
+    Type: "AWS::Config::ConfigRule"
+    Properties:
+      ConfigRuleName: gc02_check_privileged_roles_review
+      Description: Checks S3 bucket for the role assignment review verification document.
+      InputParameters:
+        s3ObjectPath:
+          Fn::If:
+            - s3RoleAssignmentReviewDocumentPath
+            - Ref: S3RoleAssignmentReviewDocumentPath
+            - Ref: AWS::NoValue
+        ExecutionRoleName:
+          Fn::If:
+            - GCLambdaExecutionRoleName
+            - Ref: GCLambdaExecutionRoleName
+            - Ref: AWS::NoValue
+        AuditAccountID:
+          Fn::If:
+            - auditAccountID
+            - Ref: AuditAccountID
+            - Ref: AWS::NoValue
+      Scope:
+        ComplianceResourceTypes:
+          - AWS::Account
+      MaximumExecutionFrequency: TwentyFour_Hours
+      Source:
+        Owner: CUSTOM_LAMBDA
+        SourceIdentifier:
+          Fn::Join:
+            - ""
+            - - "arn:aws:lambda:ca-central-1:"
+              - Ref: AuditAccountID
+              - !Sub ":function:${OrganizationName}gc02_check_privileged_roles_review"
+        SourceDetails:
+          - EventSource: "aws.config"
+            MessageType: "ScheduledNotification"
+  GC02CheckGroupAccessConfigurationConfigRule:
+    Type: "AWS::Config::ConfigRule"
+    Properties:
+      ConfigRuleName: gc02_check_group_access_configuration
+      Description: Checks that access configurations and policies are implemented for different classes of users.
+      InputParameters:
+        s3ObjectPath:
+          Fn::If:
+            - s3AdminAccountListPath
+            - Ref: S3AdminAccountListPath
+            - Ref: AWS::NoValue
+        ExecutionRoleName:
+          Fn::If:
+            - GCLambdaExecutionRoleName
+            - Ref: GCLambdaExecutionRoleName
+            - Ref: AWS::NoValue
+        AuditAccountID:
+          Fn::If:
+            - auditAccountID
+            - Ref: AuditAccountID
+            - Ref: AWS::NoValue
+      Scope:
+        ComplianceResourceTypes:
+          - AWS::Account
+      MaximumExecutionFrequency: TwentyFour_Hours
+      Source:
+        Owner: CUSTOM_LAMBDA
+        SourceIdentifier:
+          Fn::Join:
+            - ""
+            - - "arn:aws:lambda:ca-central-1:"
+              - Ref: AuditAccountID
+              - !Sub ":function:${OrganizationName}gc02_check_group_access_configuration"
         SourceDetails:
           - EventSource: "aws.config"
             MessageType: "ScheduledNotification"
@@ -1307,6 +1421,21 @@ Conditions:
       - Fn::Equals:
           - ""
           - Ref: S3AccountManagementPlanPath
+  s3CustomRoleRationalizationDocumentPath:
+    Fn::Not:
+      - Fn::Equals:
+          - ""
+          - Ref: S3CustomRoleRationalizationDocumentPath
+  s3AdminAccountListPath:
+    Fn::Not:
+      - Fn::Equals:
+        - ""
+        - Ref: S3AdminAccountListPath
+  s3RoleAssignmentReviewDocumentPath:
+    Fn::Not:
+      - Fn::Equals:
+          - ""
+          - Ref: S3RoleAssignmentReviewDocumentPath
   # GC03
   s3VpnIpRangesPath:
     Fn::Not:

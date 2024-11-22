@@ -74,6 +74,12 @@ def evaluate_parameters(rule_parameters):
     Keyword arguments:
     rule_parameters -- the Key/Value dictionary of the rule parameters
     """
+    if "s3ObjectPath" not in rule_parameters:
+        logger.error('The parameter with "s3ObjectPath" as key must be defined.')
+        raise ValueError('The parameter with "s3ObjectPath" as key must be defined.')
+    if not rule_parameters["s3ObjectPath"]:
+        logger.error('The parameter "s3ObjectPath" must have a defined value.')
+        raise ValueError('The parameter "s3ObjectPath" must have a defined value.')
     return rule_parameters
 
 
@@ -335,7 +341,7 @@ def lambda_handler(event, context):
     if is_scheduled_notification(invoking_event["messageType"]):
         # yes, proceed
         
-        admin_accounts_file_path = valid_rule_parameters.get("AdminAccountsFilePath", "")
+        admin_accounts_file_path = valid_rule_parameters.get("s3ObjectPath", "")
         if check_s3_object_exists(admin_accounts_file_path) == False:
             evaluations.append(
                 build_evaluation(
