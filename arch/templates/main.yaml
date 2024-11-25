@@ -211,7 +211,7 @@ Resources:
     Type: Custom::InvokeCustomLambda
     Condition: DeployRoles
     Properties:
-      Version: 21
+      Version: 23
       ServiceToken: !GetAtt CreateRoleLambda.Arn
       TrustPrincipal: !Sub arn:${AWS::Partition}:iam::${AuditAccountID}:root
       SwitchRole: !Ref AcceleratorRole
@@ -365,7 +365,7 @@ Resources:
     Type: Custom::InvokeCustomLambda
     Condition: DeployRoles
     Properties:
-      Version: 21
+      Version: 23
       ServiceToken: !GetAtt CreateRoleLambda.Arn
       TrustPrincipal: !Sub arn:${AWS::Partition}:iam::${AuditAccountID}:root
       SwitchRole: !Ref AcceleratorRole
@@ -406,8 +406,7 @@ Resources:
                 "elasticache:DescribeCacheClusters",
                 "elasticache:DescribeSnapshots",
                 "elasticfilesystem:DescribeFileSystems",
-                "elasticloadbalancing:DescribeListeners",
-                "elasticloadbalancing:DescribeLoadBalancers",
+                "elasticloadbalancing:Describe*",
                 "es:DescribeDomain",
                 "es:DescribeDomains",
                 "es:DescribeElasticsearchDomain",
@@ -1106,8 +1105,7 @@ Resources:
             Effect: Allow
           - Sid: AllowELB
             Action:
-              - "elasticloadbalancing:DescribeListeners"
-              - "elasticloadbalancing:DescribeLoadBalancers"
+              - "elasticloadbalancing:Describe*"
             Resource:
               - "*"
             Effect: Allow
@@ -1460,6 +1458,10 @@ Resources:
         - ParameterName: S3ProtectedBServiceLocationDocumentPath
           ParameterValue: !Sub
             - "s3://${ClientEvidenceBucket}/gc-05/service_location_protectedb.pdf"
+            - ClientEvidenceBucket: !If [ GenerateEvidenceBucketName, !GetAtt GenerateEvidenceBucketName.EvidenceBucketName, !Ref EvidenceBucketName ]
+        - ParameterName: S3CryptographicAlgorithmsAttestationPath
+          ParameterValue: !Sub
+            - "s3://${ClientEvidenceBucket}/gc-07/cryptographic_algorithms_attestation.pdf"
             - ClientEvidenceBucket: !If [ GenerateEvidenceBucketName, !GetAtt GenerateEvidenceBucketName.EvidenceBucketName, !Ref EvidenceBucketName ]
         - ParameterName: S3SecureNetworkTransmissionPolicyPath
           ParameterValue: !Sub
