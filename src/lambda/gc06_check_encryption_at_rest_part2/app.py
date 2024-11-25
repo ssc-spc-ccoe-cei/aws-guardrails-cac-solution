@@ -482,16 +482,16 @@ def assess_s3_encryption_at_rest(event = None):
     return local_evaluations
 
 def s3_list_all_buckets():
-    """
-    Get a list of all the S3 Buckets
-    https://boto3.amazonaws.com/v1/documentation/api/latest/reference/services/s3/paginator/ListBuckets.html
-    """
     resources: list[dict] = []
-    paginator = AWS_S3_CLIENT.get_paginator('list_buckets')
-    page_iterator = paginator.paginate(PaginationConfig={'PageSize': PAGE_SIZE})
-    for page in page_iterator:
-        resources.extend(page['Buckets'])
-        time.sleep(INTERVAL_BETWEEN_API_CALLS)
+    token = None
+    while True:
+        response = AWS_S3_CLIENT.list_buckets(MaxBuckets=PAGE_SIZE) if not token else AWS_S3_CLIENT.list_buckets(MaxBuckets=PAGE_SIZE, ContinuationToken=token)
+        resources.extend(response['Buckets'])
+        token = response.get("ContinuationToken", None)
+        if not token:
+            break
+        else:
+            time.sleep(INTERVAL_BETWEEN_API_CALLS)
     return resources
 
 ############################################################

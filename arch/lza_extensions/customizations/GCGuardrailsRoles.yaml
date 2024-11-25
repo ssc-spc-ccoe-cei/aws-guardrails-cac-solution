@@ -154,6 +154,13 @@ Resources:
               - "tag:GetResources"
             Resource: "*"
             Effect: Allow
+          - Sid: AllowCloudFront
+            Action:
+              - "cloudfront:Describe*"
+              - "cloudfront:Get*"
+              - "cloudfront:List*"
+            Resource: "*"
+            Effect: Allow
       PolicyName: !Sub "${OrganizationName}GCLambdaExecutionRoleInTransitEncryptionPolicy"
       Roles:
         - !Ref GCLambdaExecutionRole2
@@ -433,3 +440,23 @@ Resources:
       PolicyName: !Sub "${OrganizationName}GCLambdaExecutionRoleOrganizationsPolicy"
       Roles:
         - !Ref GCLambdaExecutionRole
+
+  # IAM Access
+  GCLambdaExecutionRoleCloudFrontPolicy:
+    Type: AWS::IAM::Policy
+    Properties:
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: AllowCloudFrontQueries
+            Action:
+              - "cloudfront:Describe*"
+              - "cloudfront:Get*"
+              - "cloudfront:List*"
+            Resource: 
+              - "*"
+            Effect: Allow
+      PolicyName: !Sub "${OrganizationName}GCLambdaExecutionRoleCloudFrontPolicy"
+      Roles:
+        - !Ref GCLambdaExecutionRole
+        - !Ref GCLambdaExecutionRole2
