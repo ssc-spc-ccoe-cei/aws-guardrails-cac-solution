@@ -143,4 +143,3 @@ Resources:
           - "CronTriggerLambdaPermissions"
           - "Arn"
     DependsOn:
-      - LambdaPermissionsLambda

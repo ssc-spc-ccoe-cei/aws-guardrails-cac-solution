@@ -211,7 +211,7 @@ Resources:
     Type: Custom::InvokeCustomLambda
     Condition: DeployRoles
     Properties:
-      Version: 18
+      Version: 21
       ServiceToken: !GetAtt CreateRoleLambda.Arn
       TrustPrincipal: !Sub arn:${AWS::Partition}:iam::${AuditAccountID}:root
       SwitchRole: !Ref AcceleratorRole
@@ -228,6 +228,9 @@ Resources:
                     "backup:ListBackupVaults",
                     "backup:ListRecoveryPointsByBackupVault",
                     "cassandra:Select",
+                    "cloudfront:Describe*",
+                    "cloudfront:Get*",
+                    "cloudfront:List*",
                     "cloudtrail:DescribeTrails",
                     "cloudtrail:GetEventSelectors",
                     "cloudtrail:GetTrail",
@@ -362,7 +365,7 @@ Resources:
     Type: Custom::InvokeCustomLambda
     Condition: DeployRoles
     Properties:
-      Version: 18
+      Version: 21
       ServiceToken: !GetAtt CreateRoleLambda.Arn
       TrustPrincipal: !Sub arn:${AWS::Partition}:iam::${AuditAccountID}:root
       SwitchRole: !Ref AcceleratorRole
@@ -378,6 +381,9 @@ Resources:
                 "backup:ListBackupVaults",
                 "backup:ListRecoveryPointsByBackupVault",
                 "cassandra:Select",
+                "cloudfront:Describe*",
+                "cloudfront:Get*",
+                "cloudfront:List*",
                 "cloudtrail:DescribeTrails",
                 "cloudtrail:GetEventSelectors",
                 "cloudtrail:GetTrail",
@@ -1116,6 +1122,13 @@ Resources:
               - "tag:GetResources"
             Resource: "*"
             Effect: Allow
+          - Sid: AllowCloudFront
+            Action:
+              - "cloudfront:Describe*"
+              - "cloudfront:Get*"
+              - "cloudfront:List*"
+            Resource: "*"
+            Effect: Allow
       PolicyName: !Sub "${OrganizationName}GCLambdaExecutionRoleInTransitEncryptionPolicy"
       Roles:
         - !Ref GCLambdaExecutionRole2
@@ -1241,6 +1254,9 @@ Resources:
               - "backup:ListRecoveryPointsByBackupVault"
               - "backup:ListBackupVaults"
               - "cassandra:Select"
+              - "cloudfront:Describe*"
+              - "cloudfront:Get*"
+              - "cloudfront:List*"
               - "codebuild:BatchGetProjects"
               - "codebuild:ListProjects"
               - "dax:DescribeClusters"
@@ -1369,6 +1385,27 @@ Resources:
       PolicyName: !Sub "${OrganizationName}GCLambdaExecutionRoleOrganizationsPolicy"
       Roles:
         - !Ref GCLambdaExecutionRole
+
+  # IAM Access
+  GCLambdaExecutionRoleCloudFrontPolicy:
+    Condition: DeployRoles
+    Type: AWS::IAM::Policy
+    Properties:
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: AllowCloudFrontQueries
+            Action:
+              - "cloudfront:Describe*"
+              - "cloudfront:Get*"
+              - "cloudfront:List*"
+            Resource: 
+              - "*"
+            Effect: Allow
+      PolicyName: !Sub "${OrganizationName}GCLambdaExecutionRoleCloudFrontPolicy"
+      Roles:
+        - !Ref GCLambdaExecutionRole
+        - !Ref GCLambdaExecutionRole2
 
   #######################################################
   # Part 4 - Conformance Pack

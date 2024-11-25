@@ -83,6 +83,7 @@ def apply_lambda_permissions():
         f"{organization_name}gc02_check_group_access_configuration": ["GC02CheckGroupAccessConfigurationLambda"],
         f"{organization_name}gc02_check_least_privileged_roles": ["GC02CheckLeastPrivilegedRolesLambda"],
         f"{organization_name}gc02_check_privileged_roles_review": ["GC02CheckPrivilegedRolesReviewLambda"],
+        f"{organization_name}gc03_check_endpoint_access_config": ["GC03CheckEndpointAccessConfigLambda"],
         f"{organization_name}gc03_check_iam_cloudwatch_alarms": ["GC03CheckIAMCloudWatchAlarmsLambda"],
         f"{organization_name}gc03_check_trusted_devices_admin_access": ["GC03CheckTrustedDevicesAdminAccessLambda"],
         f"{organization_name}gc04_check_enterprise_monitoring": ["GC04CheckEnterpriseMonitoringLambda"],

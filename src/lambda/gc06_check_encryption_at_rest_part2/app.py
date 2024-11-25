@@ -15,8 +15,8 @@ DEFAULT_RESOURCE_TYPE = 'AWS::::Account'
 ############################################################
 # AWS ElasticSearch and OpenSearch specific support functions
 #   - ELASTICSEARCH_ENCRYPTED_AT_REST
-#   - OPENSEARCH_ENCRYPTED_AT_REST
-def assess_opensearch_encryption_at_rest(event = None):
+#   - OPEN_SEARCH_ENCRYPTED_AT_REST
+def assess_open_search_encryption_at_rest(event = None):
     """
     Finds OpenSearch and ElasticSearch domains not encrypted at rest
     """
@@ -24,7 +24,7 @@ def assess_opensearch_encryption_at_rest(event = None):
     domains = []
     # we use a single call to list both OpenSearch and ElasticSearch domains
     try:
-        response = AWS_OPENSEARCH_CLIENT.list_domain_names()
+        response = AWS_OPEN_SEARCH_CLIENT.list_domain_names()
         if response:
             domains = response.get('DomainNames', [])
         else:
@@ -48,7 +48,7 @@ def assess_opensearch_encryption_at_rest(event = None):
             logger.error('OpenSearch/ElasticSearch - Invalid domain structure %s', domain)
             continue
         try:
-            response = AWS_OPENSEARCH_CLIENT.describe_domain(DomainName=domain_name)
+            response = AWS_OPEN_SEARCH_CLIENT.describe_domain(DomainName=domain_name)
             if response:
                 domain_status = response.get('DomainStatus', {})
                 if domain_status.get('EncryptionAtRestOptions', {}).get('Enabled') is True:
@@ -136,7 +136,7 @@ def kinesis_get_streams_list():
     """
     resource_list = []
     kinesis_paginator = AWS_KINESIS_CLIENT.get_paginator('list_streams')
-    kinesis_resource_list = kinesis_paginator.paginate(PaginationConfig={'Limit': PAGE_SIZE})
+    kinesis_resource_list = kinesis_paginator.paginate(Limit=PAGE_SIZE)
     for page in kinesis_resource_list:
         resource_list.extend(page.get('StreamNames', []))
         time.sleep(INTERVAL_BETWEEN_API_CALLS)
@@ -182,7 +182,7 @@ def efs_get_filesystem_list():
     """
     resource_list = []
     efs_paginator = AWS_EFS_CLIENT.get_paginator('describe_file_systems')
-    efs_resource_list = efs_paginator.paginate(PaginationConfig={'MaxItems': PAGE_SIZE})
+    efs_resource_list = efs_paginator.paginate(PaginationConfig={'PageSize': PAGE_SIZE})
     for page in efs_resource_list:
         resource_list.extend(page['FileSystems'])
         time.sleep(INTERVAL_BETWEEN_API_CALLS)
@@ -211,7 +211,7 @@ def assess_eks_encryption_at_rest(event = None):
                 encryption_config = response.get('cluster', {}).get('encryptionConfig', [])
                 if encryption_config:
                     # check if there are resources of type secrets
-                    compliance_status = 'Secrets are not encrypted'
+                    compliance_annotation = 'Secrets are not encrypted'
                     for config in encryption_config:
                         if 'secrets' in config.get('resources', []):
                             compliance_status = 'COMPLIANT'
@@ -244,7 +244,7 @@ def eks_get_cluster_list():
     """
     resource_list = []
     eks_paginator = AWS_EKS_CLIENT.get_paginator('list_clusters')
-    eks_resource_list = eks_paginator.paginate(PaginationConfig={'maxResults': PAGE_SIZE})
+    eks_resource_list = eks_paginator.paginate(maxResults=PAGE_SIZE)
     for page in eks_resource_list:
         resource_list.extend(page['clusters'])
         time.sleep(INTERVAL_BETWEEN_API_CALLS)
@@ -361,7 +361,7 @@ def rds_get_db_clusters_list():
     """
     resource_list = []
     rds_paginator = AWS_RDS_CLIENT.get_paginator('describe_db_clusters')
-    rds_resource_list = rds_paginator.paginate(PaginationConfig={'MaxRecords': PAGE_SIZE})
+    rds_resource_list = rds_paginator.paginate(MaxRecords=PAGE_SIZE)
     for page in rds_resource_list:
         resource_list.extend(page['DBClusters'])
         time.sleep(INTERVAL_BETWEEN_API_CALLS)
@@ -374,7 +374,7 @@ def rds_get_db_cluster_snapshots_list():
     """
     resource_list = []
     rds_paginator = AWS_RDS_CLIENT.get_paginator('describe_db_cluster_snapshots')
-    rds_resource_list = rds_paginator.paginate(PaginationConfig={'MaxRecords': PAGE_SIZE})
+    rds_resource_list = rds_paginator.paginate(MaxRecords=PAGE_SIZE)
     for page in rds_resource_list:
         resource_list.extend(page['DBClusterSnapshots'])
         time.sleep(INTERVAL_BETWEEN_API_CALLS)
@@ -387,7 +387,7 @@ def rds_get_db_instances_list():
     """
     resource_list = []
     rds_paginator = AWS_RDS_CLIENT.get_paginator('describe_db_instances')
-    rds_resource_list = rds_paginator.paginate(PaginationConfig={'MaxRecords': PAGE_SIZE})
+    rds_resource_list = rds_paginator.paginate(MaxRecords=PAGE_SIZE)
     for page in rds_resource_list:
         resource_list.extend(page['DBInstances'])
         time.sleep(INTERVAL_BETWEEN_API_CALLS)
@@ -400,7 +400,7 @@ def rds_get_db_snapshots_list():
     """
     resource_list = []
     rds_paginator = AWS_RDS_CLIENT.get_paginator('describe_db_snapshots')
-    rds_resource_list = rds_paginator.paginate(PaginationConfig={'MaxRecords': PAGE_SIZE})
+    rds_resource_list = rds_paginator.paginate(MaxRecords=PAGE_SIZE)
     for page in rds_resource_list:
         resource_list.extend(page['DBSnapshots'])
         time.sleep(INTERVAL_BETWEEN_API_CALLS)
@@ -419,9 +419,9 @@ def assess_s3_encryption_at_rest(event = None):
     # list the buckets
     resource_type = 'AWS::S3::Bucket'
     try:
-        response = AWS_S3_CLIENT.list_buckets()
-        if response:
-            for bucket in response.get('Buckets'):
+        buckets = s3_list_all_buckets()
+        if buckets:
+            for bucket in buckets:
                 bucket_name = bucket.get('Name')
                 bucket_arn = f"arn:aws:s3:::{bucket_name}"
                 compliance_status = 'NON_COMPLIANT'
@@ -481,6 +481,18 @@ def assess_s3_encryption_at_rest(event = None):
     logger.info('S3 - reporting %s evaluations.', len(local_evaluations))
     return local_evaluations
 
+def s3_list_all_buckets():
+    resources: list[dict] = []
+    token = None
+    while True:
+        response = AWS_S3_CLIENT.list_buckets(MaxBuckets=PAGE_SIZE) if not token else AWS_S3_CLIENT.list_buckets(MaxBuckets=PAGE_SIZE, ContinuationToken=token)
+        resources.extend(response['Buckets'])
+        token = response.get("ContinuationToken", None)
+        if not token:
+            break
+        else:
+            time.sleep(INTERVAL_BETWEEN_API_CALLS)
+    return resources
 
 ############################################################
 # SNS specific support functions
@@ -767,7 +779,7 @@ def lambda_handler(event, context):
     global AWS_EFS_CLIENT
     global AWS_EKS_CLIENT
     global AWS_KINESIS_CLIENT
-    global AWS_OPENSEARCH_CLIENT
+    global AWS_OPEN_SEARCH_CLIENT
     global AWS_RDS_CLIENT
     global AWS_S3_CLIENT
     global AWS_SNS_CLIENT
@@ -812,9 +824,9 @@ def lambda_handler(event, context):
     else:
         AUDIT_ACCOUNT_ID = ''
 
-    # is this a scheduled invokation?
+    # is this a scheduled invocation?
     if not is_scheduled_notification(invoking_event['messageType']):
-        logger.error('Skipping assessments as this is not a scheduled invokation')
+        logger.error('Skipping assessments as this is not a scheduled invocation')
         return
 
     # establish AWS API clients
@@ -822,7 +834,7 @@ def lambda_handler(event, context):
     AWS_EFS_CLIENT = get_client('efs', event)
     AWS_EKS_CLIENT = get_client('eks', event)
     AWS_KINESIS_CLIENT = get_client('kinesis', event)
-    AWS_OPENSEARCH_CLIENT = get_client('opensearch', event)
+    AWS_OPEN_SEARCH_CLIENT = get_client('opensearch', event)
     AWS_RDS_CLIENT = get_client('rds', event)
     AWS_S3_CLIENT = get_client('s3', event)
     AWS_SNS_CLIENT = get_client('sns', event)
@@ -834,7 +846,7 @@ def lambda_handler(event, context):
     evaluations.extend(assess_eks_encryption_at_rest(event))
 
     # ElasticSearch/OpenSearch
-    evaluations.extend(assess_opensearch_encryption_at_rest(event))
+    evaluations.extend(assess_open_search_encryption_at_rest(event))
 
     # Kinesis
     evaluations.extend(assess_kinesis_encryption_at_rest(event))
