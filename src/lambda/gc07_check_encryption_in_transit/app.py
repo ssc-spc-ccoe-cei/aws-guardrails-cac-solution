@@ -507,19 +507,19 @@ def assess_rest_api_stages_ssl_enforcement(event=None):
     return local_evaluations
 
 
-def assess_es_node_to_node_ssl_enforcement(event=None):
+def assess_open_search_node_to_node_ssl_enforcement(event: dict) -> list[dict]:
     """
     This function evaluates the Node to Node SSL Enforcement compliance
-    for the AWS Elasticsearch Service.
+    for the AWS OpenSearch Service.
     Args:
         event (dict): Lambda event object
     Returns:
         list: List of evaluation objects.
     """
-    resource_type = "AWS::Elasticsearch::Domain"
+    resource_type = "AWS::OpenSearch::Domain"
     local_evaluations = []
     try:
-        response = AWS_ES_CLIENT.list_domain_names()
+        response = AWS_OPEN_SEARCH_CLIENT.list_domain_names()
         if response:
             for domain in response.get("DomainNames", []):
                 time.sleep(INTERVAL_BETWEEN_API_CALLS)
@@ -527,12 +527,10 @@ def assess_es_node_to_node_ssl_enforcement(event=None):
                 if not domain_name:
                     logger.error("Malformed domain result - %s", domain)
                     continue
-                response2 = AWS_ES_CLIENT.describe_elasticsearch_domains(
-                    DomainNames=[domain_name]
-                )
+                response2 = AWS_OPEN_SEARCH_CLIENT.describe_domains(DomainNames=[domain_name])
                 if response2:
                     for domain_status in response2.get("DomainStatusList", []):
-                        if (domain_status.get("NodeToNodeEncryptionOptions", {}).get("Enabled", "") == "True"):
+                        if (domain_status.get("NodeToNodeEncryptionOptions", {}).get("Enabled", False) == True):
                             compliance_status = "COMPLIANT"
                             compliance_annotation = "Node to Node Encryption enabled"
                         else:
@@ -551,13 +549,13 @@ def assess_es_node_to_node_ssl_enforcement(event=None):
                             )
                         )
                 else:
-                    logger.error("ES - Empty response on describe_elasticsearch_domains call.")
+                    logger.error("OS - Empty response on describe_domains call.")
         else:
-            logger.error("ES - Empty response on list_domain_names call.")
+            logger.error("OS - Empty response on list_domain_names call.")
     except botocore.exceptions.ClientError as ex:
-        logger.error("ES - Error while trying to list_domain_names or describe_elasticsearch_domains.\n%s", ex)
+        logger.error("OS - Error while trying to list_domain_names or describe_domains.\n%s", ex)
         raise ex
-    logger.info("ElasticSearch - reporting %s evaluations.", len(local_evaluations))
+    logger.info("OpenSearch - reporting %s evaluations.", len(local_evaluations))
     return local_evaluations
 
 
@@ -712,33 +710,23 @@ def lambda_handler(event, context):
     global AWS_REDSHIFT_CLIENT
     global AWS_ELB_V2_CLIENT
     global AWS_API_GW_CLIENT
-    global AWS_ES_CLIENT
+    global AWS_OPEN_SEARCH_CLIENT
     global AWS_CONFIG_CLIENT
     global AWS_ACCOUNT_ID
     global AUDIT_ACCOUNT_ID
     global EXECUTION_ROLE_NAME
 
     evaluations = []
-    rule_parameters = {}
-    invoking_event = json.loads(event["invokingEvent"])
+    rule_parameters = json.loads(event.get("ruleParameters", "{}"))
+    invoking_event = json.loads(event.get("invokingEvent", "{}"))
     logger.info("Received event: %s", json.dumps(event, indent=2))
 
     AWS_ACCOUNT_ID = event["accountId"]
     logger.info("Assessing account %s", AWS_ACCOUNT_ID)
-    if "ruleParameters" in event:
-        rule_parameters = json.loads(event["ruleParameters"])
 
     valid_rule_parameters = rule_parameters
-
-    if "ExecutionRoleName" in valid_rule_parameters:
-        EXECUTION_ROLE_NAME = valid_rule_parameters["ExecutionRoleName"]
-    else:
-        EXECUTION_ROLE_NAME = "AWSA-GCLambdaExecutionRole2"
-
-    if "AuditAccountID" in valid_rule_parameters:
-        AUDIT_ACCOUNT_ID = valid_rule_parameters["AuditAccountID"]
-    else:
-        AUDIT_ACCOUNT_ID = ""
+    EXECUTION_ROLE_NAME = valid_rule_parameters.get("ExecutionRoleName", "AWSA-GCLambdaExecutionRole")
+    AUDIT_ACCOUNT_ID = valid_rule_parameters.get("AuditAccountID", "")
 
     if not is_scheduled_notification(invoking_event["messageType"]):
         logger.error("Skipping assessments as this is not a scheduled invocation")
@@ -748,14 +736,14 @@ def lambda_handler(event, context):
     AWS_REDSHIFT_CLIENT = get_client("redshift", event)
     AWS_ELB_V2_CLIENT = get_client("elbv2", event)
     AWS_API_GW_CLIENT = get_client("apigateway", event)
-    AWS_ES_CLIENT = get_client("es", event)
+    AWS_OPEN_SEARCH_CLIENT = get_client("opensearch", event)
     AWS_CONFIG_CLIENT = get_client("config", event)
 
     evaluations.extend(assess_s3_buckets_ssl_enforcement(event))
     evaluations.extend(assess_redshift_clusters_ssl_enforcement(event))
     evaluations.extend(assess_elb_v2_ssl_enforcement(event))
     evaluations.extend(assess_rest_api_stages_ssl_enforcement(event))
-    evaluations.extend(assess_es_node_to_node_ssl_enforcement(event))
+    evaluations.extend(assess_open_search_node_to_node_ssl_enforcement(event))
 
     account_compliance_status = "COMPLIANT"
     account_compliance_annotation = "No non-compliant resources found"
