@@ -91,7 +91,7 @@ Resources:
 
           SUCCESS = "SUCCESS"
           FAILED = "FAILED"
-          # cfnresponse replacement
+          # cfn response replacement
           http = urllib3.PoolManager()
           logger = logging.getLogger()
           logger.setLevel(logging.INFO)
@@ -321,7 +321,7 @@ Resources:
                   if account['Status'] != "ACTIVE":
                       logger.info(f"Found inactive account {account['Id']}")
                       continue  # Skip non-active accounts
-                  if account_id in account['Id']:  # Skip the managment account
+                  if account_id in account['Id']:  # Skip the management account
                       logger.info(f"Skipping the management account {account['Id']}")
                       continue # do not skip the management account
                   logger.info(f"Account: {account['Id']}")
@@ -417,6 +417,9 @@ Resources:
                             "backup:ListBackupVaults",
                             "backup:ListRecoveryPointsByBackupVault",
                             "cassandra:Select",
+                            "cloudfront:Describe*",
+                            "cloudfront:Get*",
+                            "cloudfront:List*",
                             "cloudtrail:DescribeTrails",
                             "cloudtrail:GetEventSelectors",
                             "cloudtrail:GetTrail",
@@ -494,6 +497,9 @@ Resources:
                                 "backup:ListBackupVaults",
                                 "backup:ListRecoveryPointsByBackupVault",
                                 "cassandra:Select",
+                                "cloudfront:Describe*",
+                                "cloudfront:Get*",
+                                "cloudfront:List*",
                                 "cloudtrail:DescribeTrails",
                                 "cloudtrail:GetEventSelectors",
                                 "cloudtrail:GetTrail",

@@ -93,16 +93,16 @@ def assess_s3_buckets_ssl_enforcement(event=None):
 
 
 def s3_list_all_buckets():
-    """
-    Get a list of all the S3 Buckets
-    https://boto3.amazonaws.com/v1/documentation/api/latest/reference/services/s3/paginator/ListBuckets.html
-    """
     resources: list[dict] = []
-    paginator = AWS_S3_CLIENT.get_paginator('list_buckets')
-    page_iterator = paginator.paginate(PaginationConfig={'PageSize': PAGE_SIZE})
-    for page in page_iterator:
-        resources.extend(page['Buckets'])
-        time.sleep(INTERVAL_BETWEEN_API_CALLS)
+    token = None
+    while True:
+        response = AWS_S3_CLIENT.list_buckets(MaxBuckets=PAGE_SIZE) if not token else AWS_S3_CLIENT.list_buckets(MaxBuckets=PAGE_SIZE, ContinuationToken=token)
+        resources.extend(response['Buckets'])
+        token = response.get("ContinuationToken", None)
+        if not token:
+            break
+        else:
+            time.sleep(INTERVAL_BETWEEN_API_CALLS)
     return resources
 
 
@@ -574,6 +574,54 @@ def api_gw_get_resources_list(api_client, rest_api_id):
     return resource_list
 
 
+def assess_cloud_front_ssl_enforcement(event: dict) -> list[dict]:
+    resource_type = "AWS::CloudFront::Distribution"
+    local_evaluations = []
+    distributions = cloud_front_list_all_distributions()
+    for distribution in distributions:
+        id = distribution["Id"]
+        resource_id = distribution.get("ARN", id)
+        viewer_certificate = distribution.get("ViewerCertificate", None)
+
+        if not viewer_certificate:
+            annotation = "Distribution does not have SSL/TLS enabled."
+            local_evaluations.append(
+                build_evaluation(resource_id, "NON_COMPLIANT", event, resource_type, annotation)
+            )
+            logger.info(f"{annotation} ({resource_id})")
+            continue
+
+        min_protocol_version = viewer_certificate.get("MinimumProtocolVersion", None)
+        if min_protocol_version.startswith("TLSv1.2"):
+            annotation = f"Distribution has a minimum protocol version of TLS1.2. ({min_protocol_version})"
+            local_evaluations.append(
+                build_evaluation(resource_id, "COMPLIANT", event, resource_type, annotation)
+            )
+        else:
+            annotation = f"Distribution does NOT have a minimum protocol version of TLS1.2. ({min_protocol_version})"
+            local_evaluations.append(
+                build_evaluation(resource_id, "NON_COMPLIANT", event, resource_type, annotation)
+            )
+        logger.info(f"{annotation} ({resource_id})")
+
+    logger.info("CloudFront - reporting %s evaluations.", len(local_evaluations))
+    return local_evaluations
+
+
+def cloud_front_list_all_distributions() -> list[dict]:
+    """
+    Get a list of all the Cloud Front Distributions
+    https://boto3.amazonaws.com/v1/documentation/api/latest/reference/services/cloudfront/paginator/ListDistributions.html
+    """
+    resources: list[dict] = []
+    paginator = AWS_CLOUD_FRONT_CLIENT.get_paginator('list_distributions')
+    page_iterator = paginator.paginate(PaginationConfig={'PageSize': PAGE_SIZE})
+    for page in page_iterator:
+        resources.extend(page.get('DistributionList', {}).get('Items', []))
+        time.sleep(INTERVAL_BETWEEN_API_CALLS)
+    return resources
+
+
 def build_evaluation(
     resource_id, compliance_type, event, resource_type, annotation=None
 ):
@@ -712,6 +760,7 @@ def lambda_handler(event, context):
     global AWS_API_GW_CLIENT
     global AWS_OPEN_SEARCH_CLIENT
     global AWS_CONFIG_CLIENT
+    global AWS_CLOUD_FRONT_CLIENT
     global AWS_ACCOUNT_ID
     global AUDIT_ACCOUNT_ID
     global EXECUTION_ROLE_NAME
@@ -738,12 +787,14 @@ def lambda_handler(event, context):
     AWS_API_GW_CLIENT = get_client("apigateway", event)
     AWS_OPEN_SEARCH_CLIENT = get_client("opensearch", event)
     AWS_CONFIG_CLIENT = get_client("config", event)
+    AWS_CLOUD_FRONT_CLIENT = get_client("cloudfront", event)
 
     evaluations.extend(assess_s3_buckets_ssl_enforcement(event))
     evaluations.extend(assess_redshift_clusters_ssl_enforcement(event))
     evaluations.extend(assess_elb_v2_ssl_enforcement(event))
     evaluations.extend(assess_rest_api_stages_ssl_enforcement(event))
     evaluations.extend(assess_open_search_node_to_node_ssl_enforcement(event))
+    evaluations.extend(assess_cloud_front_ssl_enforcement(event))
 
     account_compliance_status = "COMPLIANT"
     account_compliance_annotation = "No non-compliant resources found"
