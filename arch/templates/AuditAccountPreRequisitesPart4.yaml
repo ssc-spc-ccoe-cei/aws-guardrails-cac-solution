@@ -128,6 +128,20 @@ Resources:
         LogFormat: "JSON"
 
   ## GC03
+  GC03CheckEndpointAccessConfigLambda:
+    Condition: IsAuditAccount
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub "${OrganizationName}gc03_check_endpoint_access_config"
+      Code: "../../src/lambda/gc03_check_endpoint_access_config/build/GC03CheckEndpointAccessConfigLambda/"
+      Handler: app.lambda_handler
+      Role: !Sub "arn:aws:iam::${AuditAccountID}:role/${RolePrefix}default_assessment_role"
+      Runtime: !Ref PythonRuntime
+      Timeout: 180
+      LoggingConfig:
+        LogGroup: !Sub "${OrganizationName}gc_guardrails"
+        LogFormat: "JSON"
+
   GC03CheckIAMCloudWatchAlarmsLambda:
     Condition: IsAuditAccount
     Type: AWS::Lambda::Function

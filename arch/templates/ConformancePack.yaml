@@ -231,7 +231,7 @@ Resources:
     Type: "AWS::Config::ConfigRule"
     Properties:
       ConfigRuleName: gc01_check_alerts_flag_misuse
-      Description: Checks that alerts are setup to notify authorized personnel of suspicous activities.
+      Description: Checks that alerts are setup to notify authorized personnel of suspicious activities.
       InputParameters:
         RuleNamingConventionFilePath:
           Fn::If:
@@ -269,7 +269,7 @@ Resources:
     Type: "AWS::Config::ConfigRule"
     Properties:
       ConfigRuleName: gc01_check_mfa_digital_policy
-      Description: Checks that an mfa digital policy is in place to ensure taht MFA configurations are enforced.
+      Description: Checks that an mfa digital policy is in place to ensure that MFA configurations are enforced.
       InputParameters:
         ExecutionRoleName:
           Fn::If:
@@ -451,8 +451,38 @@ Resources:
         SourceDetails:
           - EventSource: "aws.config"
             MessageType: "ScheduledNotification"
-  # GC03 - uses the same MFA IAM Users check from GC02
-  # GC03 - "Check a list of strings for substrings of alarms"
+  # GC03
+  GC03CheckEndpointAccessConfigConfigRule:
+    Type: "AWS::Config::ConfigRule"
+    Properties:
+      ConfigRuleName: gc03_check_endpoint_access_config
+      Description: Demonstrate that access configurations and policies are implemented for devices
+      InputParameters:
+        ExecutionRoleName:
+          Fn::If:
+            - GCLambdaExecutionRoleName
+            - Ref: GCLambdaExecutionRoleName
+            - Ref: AWS::NoValue
+        AuditAccountID:
+          Fn::If:
+            - auditAccountID
+            - Ref: AuditAccountID
+            - Ref: AWS::NoValue
+      Scope:
+        ComplianceResourceTypes:
+          - AWS::Account
+      MaximumExecutionFrequency: TwentyFour_Hours
+      Source:
+        Owner: CUSTOM_LAMBDA
+        SourceIdentifier:
+          Fn::Join:
+            - ""
+            - - "arn:aws:lambda:ca-central-1:"
+              - Ref: AuditAccountID
+              - !Sub ":function:${OrganizationName}gc03_check_endpoint_access_config"
+        SourceDetails:
+          - EventSource: "aws.config"
+            MessageType: "ScheduledNotification"
   GC03CheckIAMCloudWatchAlarmsConfigRule:
     Type: "AWS::Config::ConfigRule"
     Properties:
