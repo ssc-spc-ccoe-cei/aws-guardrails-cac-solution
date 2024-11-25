@@ -231,11 +231,13 @@ def lambda_handler(event, context):
                 annotation="Dependent on the compliance of Federated IdP"
                 
             evaluations.append(
-                AWS_ACCOUNT_ID,
-                "COMPLIANT",
-                event,
-                DEFAULT_RESOURCE_TYPE,
-                annotation
+                build_evaluation(
+                    AWS_ACCOUNT_ID,
+                    "COMPLIANT",
+                    event,
+                    DEFAULT_RESOURCE_TYPE,
+                    annotation
+                )
             )
         else:
             # no, add non compliant evaluation
