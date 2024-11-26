@@ -121,7 +121,7 @@ def extract_bucket_name_and_key(object_path):
         raise ValueError(f"Unable to parse S3 object path {object_path}")
     return bucket_name,key_name
 
-def read_s3_object(s3_file_path):
+def read_s3_object(s3_file_path) -> str:
     bucket, key = extract_bucket_name_and_key(s3_file_path)
     response = AWS_S3_CLIENT.get_object(Bucket=bucket, Key=key)
     rule_naming_convention = response.get("Body").read().decode("utf-8")
@@ -354,8 +354,7 @@ def lambda_handler(event, context):
             )
         else:     
             is_compliant = True
-            admin_accounts_json_list = read_s3_object(admin_accounts_file_path)
-            admin_accounts = json.loads(admin_accounts_json_list)
+            admin_accounts = read_s3_object(admin_accounts_file_path).splitlines()
             
             groups = fetch_groups()
             for g in groups:

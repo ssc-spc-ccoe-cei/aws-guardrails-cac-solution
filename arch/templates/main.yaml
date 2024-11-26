@@ -1467,7 +1467,7 @@ Resources:
             - ClientEvidenceBucket: !If [ GenerateEvidenceBucketName, !GetAtt GenerateEvidenceBucketName.EvidenceBucketName, !Ref EvidenceBucketName ]
         - ParameterName: S3AdminAccountListPath
           ParameterValue: !Sub
-            - "s3://${ClientEvidenceBucket}/gc-02/admin_account_list.json"
+            - "s3://${ClientEvidenceBucket}/gc-02/admin_accounts.txt"
             - ClientEvidenceBucket: !If [ GenerateEvidenceBucketName, !GetAtt GenerateEvidenceBucketName.EvidenceBucketName, !Ref EvidenceBucketName ]
         - ParameterName: S3ProtectedBServiceLocationDocumentPath
           ParameterValue: !Sub
