@@ -4,7 +4,7 @@
 
 ## Overview
 
-This Lambda function checks alerts to authorized personnel have been implemented to flag misuse, suspicious sign-in attempts, or when changes are made to privileged and non-privileged accounts.
+This Lambda function checks alerts to authorized personnel have been implemented to flag misuse, suspicious sign-in attempts, or when changes are made to the cloud broker account.
 
 ## Functions
 
