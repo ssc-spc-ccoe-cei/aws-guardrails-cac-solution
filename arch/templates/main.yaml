@@ -211,7 +211,7 @@ Resources:
     Type: Custom::InvokeCustomLambda
     Condition: DeployRoles
     Properties:
-      Version: 23
+      Version: 25
       ServiceToken: !GetAtt CreateRoleLambda.Arn
       TrustPrincipal: !Sub arn:${AWS::Partition}:iam::${AuditAccountID}:root
       SwitchRole: !Ref AcceleratorRole
@@ -223,6 +223,9 @@ Resources:
               "Version": "2012-10-17",
                 "Statement": [{
                   "Action": [
+                    "acm:Describe*",
+                    "acm:Get*",
+                    "acm:List*",
                     "apigateway:GET",
                     "aws-marketplace:ListEntities",
                     "backup:ListBackupVaults",
@@ -365,7 +368,7 @@ Resources:
     Type: Custom::InvokeCustomLambda
     Condition: DeployRoles
     Properties:
-      Version: 23
+      Version: 25
       ServiceToken: !GetAtt CreateRoleLambda.Arn
       TrustPrincipal: !Sub arn:${AWS::Partition}:iam::${AuditAccountID}:root
       SwitchRole: !Ref AcceleratorRole
@@ -376,7 +379,9 @@ Resources:
             "Version": "2012-10-17",
             "Statement": [{
               "Action": [
-                "apigateway:GET",
+                "acm:Describe*",
+                "acm:Get*",
+                "acm:List*",
                 "apigateway:GET",
                 "backup:ListBackupVaults",
                 "backup:ListRecoveryPointsByBackupVault",
@@ -428,15 +433,11 @@ Resources:
                 "resource-explorer-2:Search",
                 "s3:GetBucketLocation",
                 "s3:GetBucketPolicy",
-                "s3:GetBucketPolicy",
                 "s3:GetEncryptionConfiguration",
                 "s3:ListAllMyBuckets",
-                "s3:ListAllMyBuckets",
-                "s3:ListBucket",
                 "s3:ListBucket",
                 "sns:GetTopicAttributes",
                 "sns:ListTopics",
-                "tag:GetResources",
                 "tag:GetResources",
                 "timestream:DescribeEndpoints",
                 "timestream:ListDatabases",
@@ -1140,20 +1141,20 @@ Resources:
         Statement:
           - Sid: AllowS3Access
             Action:
-              - "s3:GetObjectRetention"
-              - "s3:GetObjectVersionTagging"
-              - "s3:GetObjectAttributes"
-              - "s3:ListBucket"
-              - "s3:GetObjectLegalHold"
-              - "s3:GetObjectVersionAttributes"
-              - "s3:GetObjectVersionTorrent"
-              - "s3:GetObjectAcl"
               - "s3:GetObject"
-              - "s3:GetObjectTorrent"
-              - "s3:GetObjectVersionAcl"
+              - "s3:GetObjectAcl"
+              - "s3:GetObjectAttributes"
+              - "s3:GetObjectLegalHold"
+              - "s3:GetObjectRetention"
               - "s3:GetObjectTagging"
-              - "s3:GetObjectVersionForReplication"
+              - "s3:GetObjectTorrent"
               - "s3:GetObjectVersion"
+              - "s3:GetObjectVersionAcl"
+              - "s3:GetObjectVersionAttributes"
+              - "s3:GetObjectVersionForReplication"
+              - "s3:GetObjectVersionTagging"
+              - "s3:GetObjectVersionTorrent"
+              - "s3:ListBucket"
             Resource:
               - !Sub
                 - "arn:${AWS::Partition}:s3:::${ClientEvidenceBucket}"
@@ -1223,10 +1224,10 @@ Resources:
               - "iam:GetCredentialReport"
               - "iam:GetLoginProfile"
               - "iam:GetRole"
+              - "iam:GetUser"
               - "iam:ListAttachedRolePolicies"
               - "iam:ListMFADevices"
               - "iam:ListUsers"
-              - "iam:GetUser"
             Resource: "*"
             Effect: Allow
           - Sid: AllowCloudWatchAlarmQueries
@@ -1249,8 +1250,8 @@ Resources:
           - Sid: AllowDatastoreChecks
             Action:
               - "apigateway:GET"
-              - "backup:ListRecoveryPointsByBackupVault"
               - "backup:ListBackupVaults"
+              - "backup:ListRecoveryPointsByBackupVault"
               - "cassandra:Select"
               - "cloudfront:Describe*"
               - "cloudfront:Get*"
@@ -1258,18 +1259,21 @@ Resources:
               - "codebuild:BatchGetProjects"
               - "codebuild:ListProjects"
               - "dax:DescribeClusters"
-              - "dynamodb:DescribeTable"
-              - "dynamodb:ListTables"
               - "docdb-elastic:ListClusters"
               - "docdb-elastic:ListClusterSnapshots"
+              - "dynamodb:DescribeTable"
+              - "dynamodb:ListTables"
               - "ec2:DescribeRegions"
               - "ec2:DescribeVolumes"
               - "ec2:GetEbsEncryptionByDefault"
-              - "elasticfilesystem:DescribeFileSystems"
               - "eks:DescribeCluster"
               - "eks:ListClusters"
               - "elasticache:DescribeCacheClusters"
               - "elasticache:DescribeSnapshots"
+              - "elasticfilesystem:DescribeFileSystems"
+              - "events:ListRules"
+              - "events:ListTargetsByRule"
+              - "guardduty:ListDetectors"
               - "kinesis:DescribeStream"
               - "kinesis:ListStreams"
               - "memorydb:DescribeClusters"
@@ -1282,22 +1286,19 @@ Resources:
               - "rds:DescribeDBSnapshots"
               - "resource-explorer-2:ListIndexes"
               - "resource-explorer-2:Search"
-              - "s3:GetEncryptionConfiguration"
               - "s3:GetBucketLocation"
               - "s3:GetBucketPolicy"
+              - "s3:GetEncryptionConfiguration"
               - "s3:ListAllMyBuckets"
               - "s3:ListBucket"
+              - "sns:GetSubscriptionAttributes"
               - "sns:GetTopicAttributes"
+              - "sns:ListSubscriptionsByTopic"
               - "sns:ListTopics"
+              - "tag:GetResources"
               - "timestream:DescribeEndpoints"
               - "timestream:ListDatabases"
               - "timestream:ListTables"
-              - "tag:GetResources"
-              - "events:ListTargetsByRule"
-              - "events:ListRules"
-              - "sns:ListSubscriptionsByTopic"
-              - "sns:GetSubscriptionAttributes"
-              - "guardduty:ListDetectors"
             Resource: "*"
             Effect: Allow
       PolicyName: !Sub "${OrganizationName}GCLambdaExecutionRoleDatastorePolicy"
@@ -1405,6 +1406,27 @@ Resources:
         - !Ref GCLambdaExecutionRole
         - !Ref GCLambdaExecutionRole2
 
+  # ACM Access
+  GCLambdaExecutionRoleAcmPolicy:
+    Condition: DeployRoles
+    Type: AWS::IAM::Policy
+    Properties:
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: AllowAcmQueries
+            Action:
+              - "acm:Describe*"
+              - "acm:Get*"
+              - "acm:List*"
+            Resource: 
+              - "*"
+            Effect: Allow
+      PolicyName: !Sub "${OrganizationName}GCLambdaExecutionRoleAcmPolicy"
+      Roles:
+        - !Ref GCLambdaExecutionRole
+        - !Ref GCLambdaExecutionRole2
+
   #######################################################
   # Part 4 - Conformance Pack
   #######################################################
@@ -1458,6 +1480,14 @@ Resources:
         - ParameterName: S3ProtectedBServiceLocationDocumentPath
           ParameterValue: !Sub
             - "s3://${ClientEvidenceBucket}/gc-05/service_location_protectedb.pdf"
+            - ClientEvidenceBucket: !If [ GenerateEvidenceBucketName, !GetAtt GenerateEvidenceBucketName.EvidenceBucketName, !Ref EvidenceBucketName ]
+        - ParameterName: S3CertificateAuthorityAttestationPath
+          ParameterValue: !Sub
+            - "s3://${ClientEvidenceBucket}/gc-07/certificate_authority_attestation.pdf"
+            - ClientEvidenceBucket: !If [ GenerateEvidenceBucketName, !GetAtt GenerateEvidenceBucketName.EvidenceBucketName, !Ref EvidenceBucketName ]
+        - ParameterName: S3CasCurrentlyInUsePath
+          ParameterValue: !Sub
+            - "s3://${ClientEvidenceBucket}/gc-07/cas_currently_in_use.txt"
             - ClientEvidenceBucket: !If [ GenerateEvidenceBucketName, !GetAtt GenerateEvidenceBucketName.EvidenceBucketName, !Ref EvidenceBucketName ]
         - ParameterName: S3CryptographicAlgorithmsAttestationPath
           ParameterValue: !Sub

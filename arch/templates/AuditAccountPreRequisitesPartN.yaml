@@ -94,7 +94,7 @@ Resources:
     Properties:
       ServiceToken: !Sub "arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:${OrganizationName}aws_lambda_permissions_setup"
       UpdateVariable: QVdTb21lCg8
-      TriggerProperty: 23
+      TriggerProperty: 25
     DependsOn:
       - LambdaPermissionsLambda
 

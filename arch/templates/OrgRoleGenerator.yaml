@@ -412,7 +412,9 @@ Resources:
                         "Version": "2012-10-17",
                         "Statement": [{
                           "Action": [
-                            "apigateway:GET",
+                            "acm:Describe*",
+                            "acm:Get*",
+                            "acm:List*",
                             "apigateway:GET", 
                             "backup:ListBackupVaults",
                             "backup:ListRecoveryPointsByBackupVault",
@@ -491,6 +493,9 @@ Resources:
                           "Version": "2012-10-17",
                             "Statement": [{
                               "Action": [
+                                "acm:Describe*",
+                                "acm:Get*",
+                                "acm:List*",
                                 "apigateway:GET",
                                 "aws-marketplace:ListEntities",
                                 "backup:ListBackupVaults",

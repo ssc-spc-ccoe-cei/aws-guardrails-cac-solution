@@ -67,10 +67,14 @@ Parameters:
   EnterpriseMonitoringIAMTrustedPrincipal:
     Default: "arn:aws:iam::939755092653:root"
     Type: String
-  #GC05
+  # GC05
   S3ProtectedBServiceLocationDocumentPath:
     Type: String
   # GC07
+  S3CertificateAuthorityAttestationPath:
+    Type: String
+  S3CasCurrentlyInUsePath:
+    Type: String
   S3CryptographicAlgorithmsAttestationPath:
     Type: String
   S3SecureNetworkTransmissionPolicyPath:
@@ -763,6 +767,47 @@ Resources:
         SourceDetails:
           - EventSource: "aws.config"
             MessageType: "ScheduledNotification"
+  GC07CheckCertificateAuthoritiesConfigRule:
+    Type: "AWS::Config::ConfigRule"
+    Properties:
+      ConfigRuleName: gc07_check_certificate_authorities
+      Description: Verify cryptographic algorithms and protocols are configured by the user in accordance with ITSP.40.111 and ITSP.40.062
+      InputParameters:
+        s3ObjectPath:
+            Fn::If:
+              - s3CertificateAuthorityAttestationPath
+              - Ref: S3CertificateAuthorityAttestationPath
+              - Ref: AWS::NoValue
+        S3CasCurrentlyInUsePath:
+            Fn::If:
+              - s3CasCurrentlyInUsePath
+              - Ref: S3CasCurrentlyInUsePath
+              - Ref: AWS::NoValue
+        ExecutionRoleName:
+          Fn::If:
+            - GCLambdaExecutionRoleName2
+            - Ref: GCLambdaExecutionRoleName2
+            - Ref: AWS::NoValue
+        AuditAccountID:
+          Fn::If:
+            - auditAccountID
+            - Ref: AuditAccountID
+            - Ref: AWS::NoValue
+      Scope:
+        ComplianceResourceTypes:
+          - AWS::Account
+      MaximumExecutionFrequency: TwentyFour_Hours
+      Source:
+        Owner: CUSTOM_LAMBDA
+        SourceIdentifier:
+          Fn::Join:
+            - ""
+            - - "arn:aws:lambda:ca-central-1:"
+              - Ref: AuditAccountID
+              - !Sub ":function:${OrganizationName}gc07_check_certificate_authorities"
+        SourceDetails:
+          - EventSource: "aws.config"
+            MessageType: "ScheduledNotification"
   GC07CheckCryptographicAlgorithmsConfigRule:
     Type: "AWS::Config::ConfigRule"
     Properties:
@@ -1368,6 +1413,16 @@ Conditions:
           - ""
           - Ref: S3ProtectedBServiceLocationDocumentPath
   # GC07
+  s3CertificateAuthorityAttestationPath:
+    Fn::Not:
+      - Fn::Equals:
+          - ""
+          - Ref: S3CertificateAuthorityAttestationPath
+  s3CasCurrentlyInUsePath:
+    Fn::Not:
+      - Fn::Equals:
+          - ""
+          - Ref: S3CasCurrentlyInUsePath
   s3CryptographicAlgorithmsAttestationPath:
     Fn::Not:
       - Fn::Equals:
