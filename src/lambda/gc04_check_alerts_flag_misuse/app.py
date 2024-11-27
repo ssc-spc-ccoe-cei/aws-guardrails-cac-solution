@@ -71,10 +71,6 @@ def evaluate_parameters(rule_parameters):
         raise ValueError('The parameter with "IAM_Role_Name" as key must be defined.')
     if not rule_parameters["IAM_Role_Name"]:
         raise ValueError('The parameter "IAM_Role_Name" must have a defined value.')
-    if "IAM_Trusted_Principal" not in rule_parameters:
-        raise ValueError('The parameter with "IAM_Trusted_Principal" as key must be defined.')
-    if not rule_parameters["IAM_Trusted_Principal"]:
-        raise ValueError('The parameter "IAM_Trusted_Principal" must have a defined value.')
     return rule_parameters
 
 
@@ -195,17 +191,67 @@ def fetch_rule_targets(rule_name):
             ex.response["Error"]["Code"] = "InternalError"
         raise ex
 
-def rule_matches_against_cb_role_identity(rule):
+def flatten_dict(d, parent_key='', sep='.'):
+    items = []
+    for k, v in d.items():
+        new_key = f"{parent_key}{sep}{k}" if parent_key else k
+        if isinstance(v, dict):
+            items.extend(flatten_dict(v, new_key, sep=sep).items())
+        else:
+            items.append((new_key, v))
+    return dict(items)
+
+def rule_matches_against_cb_role_identity(rule_event_pattern, cb_role_arn):
     if rule_event_pattern == None:
         return False
     logger.info("rule_event_pattern: %s", rule_event_pattern)
     
     event_pattern_dict = json.loads(rule_event_pattern)
     logger.info("event_pattern_dict: %s", event_pattern_dict)
-    return "aws.guardduty" in event_pattern_dict.get("source", []) and "GuardDuty Finding" in event_pattern_dict.get("detail-type", [])
+    
+    ep_detail = flatten_dict(event_pattern_dict.get("detail", {}))
+    return cb_role_arn in ep_detail.get("userIdentity.sessionContext.sessionIssuer.arn", []) and "Role" in ep_detail.get("userIdentity.sessionContext.sessionIssuer.type", [])
+
+def check_cb_role(cb_role, event):
+    """Checks cloudtrail events to see if the CloudBroker role has been changed. Build evaluation based on discovery."""
+    
+    role_change_events = [
+        "DeleteRolePolicy",
+        "AttachRolePolicy",
+        "DeleteRole",
+        "DetachRolePolicy",
+        "PutRolePolicy",
+        "UpdateAssumeRolePolicy"
+    ]
+    next_token = None
+    while True:
+        response = AWS_CLOUD_TRAIL_CLIENT.lookup_events(
+            LookupAttributes = [ { "AttributeKey": "ResourceName", "AttributeValue": cb_role } ]
+        )
+        next_token = response.get("NextToken")
+        
+        for e in response.get("Events", []):
+            event_name = e.get("EventName", "")
+            if event_name in role_change_events:
+                return build_evaluation(
+                    AWS_ACCOUNT_ID,
+                    "NON_COMPLIANT",
+                    event,
+                    DEFAULT_RESOURCE_TYPE,
+                    f"Event \"{e.get("EventId")}\" was found performing action \"{event_name}\" on Cloud Broker role."
+                )     
+        
+        if not next_token:
+            break
+    
+    return build_evaluation(
+        AWS_ACCOUNT_ID,
+        "COMPLIANT",
+        event,
+        DEFAULT_RESOURCE_TYPE
+    )        
 
 def check_rule_sns_target_is_setup(rule, event):
-    
     logger.info("Checking rule: %s", rule)
     if rule.get("State") == "DISABLED":
         return build_evaluation(
@@ -257,6 +303,7 @@ def lambda_handler(event, context):
     global AWS_CONFIG_CLIENT
     global AWS_SNS_CLIENT
     global AWS_EVENT_BRIDGE_CLIENT
+    global AWS_CLOUD_TRAIL_CLIENT
     global AWS_ACCOUNT_ID
     global EXECUTION_ROLE_NAME
     global AUDIT_ACCOUNT_ID
@@ -288,7 +335,30 @@ def lambda_handler(event, context):
     AWS_CONFIG_CLIENT = get_client("config", event)
     AWS_EVENT_BRIDGE_CLIENT = get_client("events", event)
     AWS_SNS_CLIENT = get_client("sns", event)
+    AWS_CLOUD_TRAIL_CLIENT = get_client("cloudtrail", event)
+    
 
     # is this a scheduled invokation?
     if is_scheduled_notification(invoking_event["messageType"]):
+        rules_are_compliant = True
+        rules = get_event_bridge_rules()
+        cb_role = valid_rule_parameters["IAM_Role_Name"]
+        for rule in rules:
+            if rule_matches_against_cb_role_identity(rule, cb_role):
+                rule_evaluation = check_rule_sns_target_is_setup(rule)
+                if rule_evaluation.get("ComplianceType", "NON_COMPLIANT") == "NON_COMPLIANT":
+                    rules_are_compliant = False
+                evaluations.append(rule_evaluation)
         
+        if rules_are_compliant:
+            evaluations.append(check_cb_role(cb_role, event))            
+        else:
+            evaluations.append(build_evaluation(
+                AWS_ACCOUNT_ID,
+                "NON_COMPLIANT",
+                event,
+                DEFAULT_RESOURCE_TYPE,
+                "One or more event bridge rules are not compliant."
+            ))  
+            
+        AWS_CONFIG_CLIENT.put_evaluations(Evaluations=evaluations, ResultToken=event["resultToken"])
