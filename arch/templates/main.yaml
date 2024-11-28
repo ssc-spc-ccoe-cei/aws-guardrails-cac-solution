@@ -1461,6 +1461,10 @@ Resources:
           ParameterValue: !Sub
             - "s3://${ClientEvidenceBucket}/gc-09/network_security_architecture.pdf"
             - ClientEvidenceBucket: !If [ GenerateEvidenceBucketName, !GetAtt GenerateEvidenceBucketName.EvidenceBucketName, !Ref EvidenceBucketName ]
+        - ParameterName: S3LogBucketsPath
+          ParameterValue: !Sub
+            - "s3://${ClientEvidenceBucket}/gc-10/log_buckets.txt"
+            - ClientEvidenceBucket: !If [ GenerateEvidenceBucketName, !GetAtt GenerateEvidenceBucketName.EvidenceBucketName, !Ref EvidenceBucketName ]
         - ParameterName: S3SignedMOUDocumentPath
           ParameterValue: !Sub
             - "s3://${ClientEvidenceBucket}/gc-10/signed_mou.pdf"
