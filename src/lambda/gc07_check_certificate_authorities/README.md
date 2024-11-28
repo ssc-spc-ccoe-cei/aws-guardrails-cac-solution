@@ -1,15 +1,16 @@
-# GC07 - Check Cryptographic Algorithms
+# GC07 - Check Certificate Authorities
 
 ## Overview
 
-This is a Lambda function that checks to ensure that the Classic Load Balancers Leverage cryptographic algorithms and protocols configurable by the user in accordance with ITSP.40.111 and ITSP.40.062. It is designed to be used by AWS Config to evaluate compliance against a custom Config rule.
+This is a Lambda function that Confirms that non-person entity certificates are issued from certificate authorities that align with GC
+recommendations for TLS server certificates. It is designed to be used by AWS Config to evaluate compliance against a custom Config rule.
 
 The Lambda will:
 
 - Validate the rule parameters
 - Assume the Config service role to get credentials
 - Check if the S3 object specified in the parameters exists
-- Check for custom policies in Classic Load Balancers and ensure that they use the recommended protocols and cipher suites
+- Verify that the each certificate issues is by one of the listed certificate authority values in the input file
 - Send an evaluation result back to Config:
   - COMPLIANT if the objects are compliant
   - NON_COMPLIANT if an object is non-compliant
@@ -20,7 +21,8 @@ The Lambda function needs to be deployed to each account that will be monitored 
 
 ## Parameters
 
-- `s3ObjectPath` - S3 path to the Emergency Account Management Procedure object (required)
+- `s3ObjectPath` - S3 path to the certificate authority attestation object (required)
+- `S3CasCurrentlyInUsePath` - S3 path to the list of CAs currently in use object (required)
 - `ExecutionRoleName` - The role name that the function will assume (default: `AWSA-GCLambdaExecutionRole`)
 - `AuditAccountID` - The AWS account ID for the audit account (default: current account)
 

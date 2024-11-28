@@ -1,4 +1,4 @@
-""" GC07 - Check Cryptographic Algorithms
+""" GC07 - Check Certificate Authorities
 """
 
 import json
@@ -155,7 +155,8 @@ def acm_list_all_certificates(acm_client, page_size: int = 50, interval_between_
     """
     resources: list[dict] = []
     paginator = acm_client.get_paginator("list_certificates")
-    page_iterator = paginator.paginate(PaginationConfig={"PageSize": page_size})
+    # Override the default 'keyTypes' so that we get all the types
+    page_iterator = paginator.paginate(Includes={"keyTypes": []}, PaginationConfig={"PageSize": page_size})
     for page in page_iterator:
         resources.extend(page.get("CertificateSummaryList", []))
         time.sleep(interval_between_calls)
@@ -181,41 +182,31 @@ def acm_describe_certificate(acm_client, certificate_arn: str) -> dict | None:
 
 
 def assess_certificate_manager_enforcement(
-    load_balancers_details: list[dict], attestation_file_exists: bool, event
-) -> list[dict]:
-    resource_type = "AWS::ElasticLoadBalancing::LoadBalancer"
+    certificate_descriptions: list[dict], cas_currently_in_use: list[str], attestation_file_exists: bool, event: dict
+) -> tuple[list, bool]:
+    resource_type = "AWS::ACM::Certificate"
     evaluations = []
     all_resources_are_compliant = True
 
-    # for load_balancer_details in load_balancers_details:
-    #     lb_name: str = load_balancer_details["Description"]["LoadBalancerName"]
-    #     resource_id = lb_name
-    #     custom_policies = extract_custom_policies(load_balancer_details.get("Policies", []))
-    #     logger.info("Custom Policies found for Load Balancer '%s': %s", lb_name, custom_policies)
+    for cert_description in certificate_descriptions:
+        cert_arn: str = cert_description.get("CertificateArn", "")
+        cert_issuer: str = cert_description.get("Issuer", "")
 
-    #     if custom_policies:
-    #         if policy_protocols_and_cipher_suites_meet_recommendations(lb_name, custom_policies):
-    #             if attestation_file_exists:
-    #                 annotation = "The load balancer is using a custom policy and the protocol and cipher suite meet recommendations, but the attestation file exists."
-    #                 compliance_type = "COMPLIANT"
-    #             else:
-    #                 annotation = "The load balancer is using a custom policy and the protocol and cipher suite meet recommendations, but the attestation file does NOT exist."
-    #                 compliance_type = "NON_COMPLIANT"
-    #         else:
-    #             annotation = "The load balancer is using a custom policy, but the protocol and/or cipher suite do NOT meet recommendations."
-    #             compliance_type = "NON_COMPLIANT"
-    #     else:
-    #         if attestation_file_exists:
-    #             annotation = "The load balancer is NOT using a custom policy, but the attestation file exists."
-    #             compliance_type = "COMPLIANT"
-    #         else:
-    #             annotation = "The load balancer is NOT using a custom policy, but the attestation file does NOT exist."
-    #             compliance_type = "NON_COMPLIANT"
+        if cert_issuer in cas_currently_in_use:
+            if attestation_file_exists:
+                annotation = "The certificate is issued by a current CA and the attestation file exists."
+                compliance_type = "COMPLIANT"
+            else:
+                annotation = "The certificate is issued by a current CA, but the attestation file does NOT exist."
+                compliance_type = "NON_COMPLIANT"
+        else:
+            annotation = f"The certificate is NOT issued by a current CA ({cert_issuer})."
+            compliance_type = "NON_COMPLIANT"
 
-    #     logger.info(f"{annotation} LoadBalancerName: '{resource_id}'")
-    #     evaluations.append(build_evaluation(resource_id, compliance_type, event, resource_type, annotation))
-    #     if compliance_type == "NON_COMPLIANT":
-    #         all_resources_are_compliant = False
+        logger.info(f"{annotation} Certificate ARN: '{cert_arn}'")
+        evaluations.append(build_evaluation(cert_arn, compliance_type, event, resource_type, annotation))
+        if compliance_type == "NON_COMPLIANT":
+            all_resources_are_compliant = False
 
     return evaluations, all_resources_are_compliant
 
@@ -269,13 +260,12 @@ def lambda_handler(event, context):
     aws_config_client = get_client("config", event)
     # Not using get_client to get S3 client for the Audit account
     aws_s3_client = boto3.client("s3")
-    # Using older 'elb' api instead of 'elbv2' so that we get the 'Classic' load balancers
     aws_acm_client = get_client("acm", event)
 
     file_param_name = "S3CasCurrentlyInUsePath"
     cas_currently_in_use_file_path = valid_rule_parameters.get(file_param_name, "")
 
-    if not check_s3_object_exists(cas_currently_in_use_file_path):
+    if not check_s3_object_exists(aws_s3_client, cas_currently_in_use_file_path):
         annotation = (
             f"No file found for s3 path '{cas_currently_in_use_file_path}' via '{file_param_name}' input parameter."
         )
@@ -288,26 +278,30 @@ def lambda_handler(event, context):
     logger.info("cas_currently_in_use from the file in s3: %s", cas_currently_in_use)
 
     attestation_file_exists = check_s3_object_exists(aws_s3_client, valid_rule_parameters["s3ObjectPath"])
-
-    certificate_summaries = acm_list_all_certificates(aws_acm_client, page_size, interval_between_api_calls)
-    certificates = [
-        acm_describe_certificate(aws_acm_client, x.get("CertificateArn", "")) for x in certificate_summaries
+    
+    certificates_summaries = acm_list_all_certificates(aws_acm_client, page_size, interval_between_api_calls)
+    certificates_descriptions = [
+        acm_describe_certificate(aws_acm_client, x.get("CertificateArn", "")) for x in certificates_summaries
     ]
 
-    # status = "COMPLIANT" if all_resources_are_compliant and attestation_file_exists else "NON_COMPLIANT"
-    # resources_annotation = (
-    #     "All resources found are compliant."
-    #     if all_resources_are_compliant
-    #     else "Non-compliant resources found in scope."
-    # )
-    # file_annotation = (
-    #     "Cryptographic Algorithms Attestation file exists."
-    #     if attestation_file_exists
-    #     else "Cryptographic Algorithms Attestation file DOES NOT exist."
-    # )
-    # annotation = f"{resources_annotation} {file_annotation}"
+    evaluations, all_acm_resources_are_compliant = assess_certificate_manager_enforcement(
+        certificates_descriptions, cas_currently_in_use, attestation_file_exists, event
+    )
 
-    # logger.info(f"{status}: {annotation}")
-    # evaluations.append(build_evaluation(AWS_ACCOUNT_ID, status, event, ACCOUNT_RESOURCE_TYPE, annotation))
+    status = "COMPLIANT" if all_acm_resources_are_compliant and attestation_file_exists else "NON_COMPLIANT"
+    resources_annotation = (
+        "All resources found are compliant."
+        if all_acm_resources_are_compliant
+        else "Non-compliant resources found in scope."
+    )
+    file_annotation = (
+        "Certificate Authority Attestation file exists."
+        if attestation_file_exists
+        else "Certificate Authority Attestation file does NOT exist."
+    )
+    annotation = f"{resources_annotation} {file_annotation}"
+
+    logger.info(f"{status}: {annotation}")
+    evaluations.append(build_evaluation(AWS_ACCOUNT_ID, status, event, ACCOUNT_RESOURCE_TYPE, annotation))
 
     submit_evaluations(aws_config_client, event["resultToken"], evaluations, interval_between_api_calls)
