@@ -1453,6 +1453,10 @@ Resources:
           ParameterValue: !Sub
             - "s3://${ClientEvidenceBucket}/gc-08/cloud_deployment_guide.pdf"
             - ClientEvidenceBucket: !If [ GenerateEvidenceBucketName, !GetAtt GenerateEvidenceBucketName.EvidenceBucketName, !Ref EvidenceBucketName ]
+        - ParameterName: S3TargetCloudSegmentationDesignDocumentPath
+          ParameterValue: !Sub
+            - "s3://${ClientEvidenceBucket}/gc-08/cloud_segmentation_design.pdf"
+            - ClientEvidenceBucket: !If [ GenerateEvidenceBucketName, !GetAtt GenerateEvidenceBucketName.EvidenceBucketName, !Ref EvidenceBucketName ]
         - ParameterName: S3NetworkArchitectureDocumentPath
           ParameterValue: !Sub
             - "s3://${ClientEvidenceBucket}/gc-09/network_security_architecture.pdf"

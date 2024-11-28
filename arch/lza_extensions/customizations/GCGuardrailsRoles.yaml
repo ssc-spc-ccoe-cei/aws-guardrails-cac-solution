@@ -54,6 +54,7 @@ Resources:
                               "arn:aws:sts::${AuditAccountID}:assumed-role/${RolePrefix}default_assessment_role/${OrganizationName}gc05_check_data_location",
                               "arn:aws:sts::${AuditAccountID}:assumed-role/${RolePrefix}default_assessment_role/${OrganizationName}gc07_check_secure_network_transmission_policy",
                               "arn:aws:sts::${AuditAccountID}:assumed-role/${RolePrefix}default_assessment_role/${OrganizationName}gc08_check_cloud_deployment_guide",
+                              "arn:aws:sts::${AuditAccountID}:assumed-role/${RolePrefix}default_assessment_role/${OrganizationName}gc08_check_cloud_segmentation_design",
                               "arn:aws:sts::${AuditAccountID}:assumed-role/${RolePrefix}default_assessment_role/${OrganizationName}gc08_check_target_network_architecture",
                               "arn:aws:sts::${AuditAccountID}:assumed-role/${RolePrefix}default_assessment_role/${OrganizationName}gc09_check_netsec_architecture",
                               "arn:aws:sts::${AuditAccountID}:assumed-role/${RolePrefix}default_assessment_role/${OrganizationName}gc10_confirmation_of_mou",
