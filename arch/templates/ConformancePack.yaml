@@ -917,7 +917,7 @@ Resources:
         SourceDetails:
           - EventSource: "aws.config"
             MessageType: "ScheduledNotification"
-  GC08CheckCloudDeploymentGuideDocumentConfigRule:
+  GC08CheckCloudDeploymentGuideConfigRule:
     Type: "AWS::Config::ConfigRule"
     Properties:
       ConfigRuleName: gc08_check_cloud_deployment_guide
