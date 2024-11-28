@@ -228,20 +228,22 @@ def get_organizations_mgmt_account_id(aws_organizations_client):
     return management_account_id
 
 
-def organizations_list_all_accounts(organizations_client, interval_between_calls: float = 0.1) -> list[dict]:
+def organizations_list_all_accounts(
+    organizations_client, page_size: int = 100, interval_between_calls: float = 0.25
+) -> list[dict]:
     """
     https://boto3.amazonaws.com/v1/documentation/api/latest/reference/services/organizations/paginator/ListAccounts.html
     """
     resources: list[dict] = []
     paginator = organizations_client.get_paginator("list_accounts")
-    page_iterator = paginator.paginate()
+    page_iterator = paginator.paginate(PaginationConfig={"PageSize": page_size})
     for page in page_iterator:
         resources.extend(page.get("Accounts", []))
         time.sleep(interval_between_calls)
     return resources
 
 
-def iam_list_all_roles(iam_client, page_size: int = 100, interval_between_calls: float = 0.1) -> list[dict]:
+def iam_list_all_roles(iam_client, page_size: int = 100, interval_between_calls: float = 0.25) -> list[dict]:
     """
     https://boto3.amazonaws.com/v1/documentation/api/latest/reference/services/iam/paginator/ListRoles.html
     """
@@ -262,26 +264,9 @@ def s3_get_bucket_replication(s3_client, bucket_name) -> tuple[dict, None] | tup
         return None, e.response["Error"]["Message"]
 
 
-def s3_list_all_buckets(aws_s3_client, page_size=100, interval_between_calls: float = 0.1):
-    resources: list[dict] = []
-    params = {"MaxBuckets": page_size}
-    while True:
-        response = aws_s3_client.list_buckets(**params)
-        resources.extend(response["Buckets"])
-        params["ContinuationToken"] = response.get("ContinuationToken", None)
-        if not params["ContinuationToken"]:
-            break
-        else:
-            time.sleep(interval_between_calls)
-    return resources
-
-
-def replication_config_exists(config: dict) -> bool:
-    rules: list[dict] = config.get("Rules", [])
-    for rule in rules:
-        if rule.get("Status", "") == "Enabled" and not rule.get("Filter", None) and not rule.get("Prefix", None):
-            return True
-    return False
+def replication_config_exists_for_cyber_centre(config: dict) -> bool:
+    # TODO: Implement this
+    raise Exception("replication_config_exists_for_cyber_centre Not Implemented")
 
 
 def assess_bucket_replication_policies(s3_client, log_buckets: list[str], event: dict) -> tuple[list, bool]:
@@ -289,30 +274,19 @@ def assess_bucket_replication_policies(s3_client, log_buckets: list[str], event:
     evaluations = []
     all_resources_are_compliant = True
 
-    all_buckets = [x.get("Name") for x in s3_list_all_buckets(s3_client)]
-    logger.info("All Buckets: %s", all_buckets)
-
     for bucket_name in log_buckets:
-        if bucket_name not in all_buckets:
-            error = None
-            compliance_type = "NON_COMPLIANT"
-            annotation = f"Bucket '{bucket_name}' does not exist in the log archive account."
-        else:
-            replication_config, error = s3_get_bucket_replication(s3_client, bucket_name)
-            if error:
-                compliance_type = "NON_COMPLIANT"
-                annotation = f"An error occurred when querying the replication configuration for bucket '{bucket_name}' in the log archive account."
-            elif replication_config_exists(replication_config):
-                compliance_type = "COMPLIANT"
-                annotation = f"The replication configuration for bucket '{bucket_name}' was found."
-            else:
-                compliance_type = "NON_COMPLIANT"
-                annotation = f"The replication configuration for bucket '{bucket_name}' was NOT found."
-
+        replication_config, error = s3_get_bucket_replication(s3_client, bucket_name)
         if error:
-            logger.info(f"{compliance_type}: {annotation} Error: %s", error)
+            compliance_type = "NON_COMPLIANT"
+            annotation = f"An error occurred when querying the replication configuration for bucket '{bucket_name}' in the log archive account '{log_archive_account_name}'."
+        elif replication_config_exists_for_cyber_centre(replication_config):
+            compliance_type = "COMPLIANT"
+            annotation = f"The replication configuration for bucket '{bucket_name}' was found."
         else:
-            logger.info(f"{compliance_type}: {annotation}")
+            compliance_type = "NON_COMPLIANT"
+            annotation = f"The replication configuration for bucket '{bucket_name}' was NOT found."
+
+        logger.info(f"{compliance_type}: {annotation}. Error: %s", error)
         evaluations.append(build_evaluation(bucket_name, compliance_type, event, resource_type, annotation))
         if compliance_type == "NON_COMPLIANT":
             all_resources_are_compliant = False
@@ -321,7 +295,7 @@ def assess_bucket_replication_policies(s3_client, log_buckets: list[str], event:
 
 
 def submit_evaluations(
-    aws_config_client, result_token: str, evaluations: list[dict], interval_between_calls: float = 0.1
+    aws_config_client, result_token: str, evaluations: list[dict], interval_between_calls: float = 0.25
 ):
     max_evaluations_per_call = 100
     while evaluations:
@@ -351,9 +325,6 @@ def lambda_handler(event, context):
     AWS_ACCOUNT_ID = event["accountId"]
     logger.info("Assessing account %s", AWS_ACCOUNT_ID)
 
-    ###
-    # Check pre-conditions
-    ###
     if not is_scheduled_notification(invoking_event["messageType"]):
         logger.error("Skipping assessments as this is not a scheduled invocation")
         return
@@ -361,7 +332,7 @@ def lambda_handler(event, context):
     valid_rule_parameters = evaluate_parameters(rule_parameters)
     target_role_name = "cbs-global-reader"
     file_param_name = "S3LogBucketsPath"
-    log_buckets_s3_path = valid_rule_parameters.get(file_param_name, "")
+    log_buckets_file_path = valid_rule_parameters.get(file_param_name, "")
     log_archive_account_name = valid_rule_parameters["LogArchiveAccountName"]
     EXECUTION_ROLE_NAME = valid_rule_parameters.get("ExecutionRoleName", "AWSA-GCLambdaExecutionRole")
     AUDIT_ACCOUNT_ID = valid_rule_parameters.get("AuditAccountID", "")
@@ -376,19 +347,16 @@ def lambda_handler(event, context):
         return
 
     aws_config_client = get_client("config", event)
-    # Not using get_client so that we have an S3 client for the Audit account (the current account)
+    # Not using get_client to get S3 client for the Audit account
     aws_s3_client_for_audit_account = boto3.client("s3")
 
-    if not check_s3_object_exists(aws_s3_client_for_audit_account, log_buckets_s3_path):
-        annotation = f"No file found for s3 path '{log_buckets_s3_path}' via '{file_param_name}' input parameter."
+    if not check_s3_object_exists(aws_s3_client_for_audit_account, log_buckets_file_path):
+        annotation = f"No file found for s3 path '{log_buckets_file_path}' via '{file_param_name}' input parameter."
         logger.info(f"NON_COMPLIANT: {annotation}")
         evaluations = [build_evaluation(AWS_ACCOUNT_ID, "NON_COMPLIANT", event, ACCOUNT_RESOURCE_TYPE, annotation)]
         submit_evaluations(aws_config_client, event["resultToken"], evaluations)
         return
 
-    ###
-    # Assert that the log archive account exists
-    ###
     accounts = organizations_list_all_accounts(aws_organizations_client)
     log_archive_account = next((x for x in accounts if x.get("Name", "") == log_archive_account_name), None)
 
@@ -401,14 +369,11 @@ def lambda_handler(event, context):
 
     logger.info("A log archive account with name '%s' was found: %s", log_archive_account_name, log_archive_account)
 
-    ###
-    # Assert that the cbs-global-reader role exists
-    ###
     aws_iam_client_for_log_archive_account = get_client_for_account(
         "iam", log_archive_account["Id"], EXECUTION_ROLE_NAME
     )
-
     roles = iam_list_all_roles(aws_iam_client_for_log_archive_account)
+
     target_role = next((x for x in roles if x.get("RoleName", "") == target_role_name), None)
 
     if not target_role:
@@ -418,10 +383,7 @@ def lambda_handler(event, context):
         submit_evaluations(aws_config_client, event["resultToken"], evaluations)
         return
 
-    ###
-    # Assert that buckets have the replication policy configured
-    ###
-    log_buckets = set(get_lines_from_s3_file(aws_s3_client_for_audit_account, log_buckets_s3_path))
+    log_buckets = set(get_lines_from_s3_file(aws_s3_client_for_audit_account, log_buckets_file_path))
     logger.info("log_buckets from the file in s3: %s", log_buckets)
 
     aws_s3_client_for_log_archive_account = get_client_for_account("s3", log_archive_account["Id"], EXECUTION_ROLE_NAME)
@@ -430,9 +392,6 @@ def lambda_handler(event, context):
         aws_s3_client_for_log_archive_account, log_buckets, event
     )
 
-    ###
-    # Create account evaluation and submit evaluations
-    ###
     if all_s3_resources_are_compliant:
         compliance_type = "COMPLIANT"
         annotation = "All resources found are compliant."
