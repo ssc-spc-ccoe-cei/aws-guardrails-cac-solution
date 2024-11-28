@@ -12,11 +12,33 @@ The S3 bucket location and optional Execution Role name can be provided via Conf
 
 The lambda handler function is `lambda_handler` which accepts the standard lambda event and context arguments.
 
+Key steps:
+
+- Validate input parameters
+- Check if running in the Audit account
+- Use STS AssumeRole to get credentials to access S3 in Audit account
+- Check if S3 object exists
+- Build compliance evaluation and send to Config via PutEvaluations API
+
 ## Configuration
 
 The following parameters can be provided in the Config Rule payload:
 
-- **s3ObjectPath** - Required - Full S3 path to object e.g. s3://mybucket/log_buckets.txt
-- **LogArchiveAccountName** - Required - The name of the log archive account
+- **s3ObjectPath** - Required - Full S3 path to object e.g. s3://mybucket/architecture.pdf
 - **ExecutionRoleName** - Optional - IAM Role name to assume in Audit account
-- **AuditAccountId** - Optional - Explicitly specify Audit account ID
+- **AuditAccountId** - Optional - Explicitly specify Audit account ID 
+
+## Testing
+
+Testing requires valid Config Rule test event payload and mocking of the STS and S3 clients.
+
+Unit tests should cover:
+
+- Parameter validation
+- STS AssumeRole
+- S3 object check
+- Building Compliance evaluation
+
+## Logging
+
+Standard Python logging is used for debugging information.
