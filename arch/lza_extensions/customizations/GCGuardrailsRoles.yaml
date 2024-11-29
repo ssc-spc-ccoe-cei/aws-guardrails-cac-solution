@@ -436,7 +436,8 @@ Resources:
         Statement:
           - Sid: AllowOrganizationsChecks
             Action:
-              - "organizations:DescribeOrganization"
+              - "organizations:Describe*"
+              - "organizations:list*"
             Resource:
               - "*"
             Effect: Allow

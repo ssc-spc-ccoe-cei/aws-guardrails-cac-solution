@@ -203,7 +203,8 @@ Resources:
                 Resource: !Sub arn:${AWS::Partition}:iam::*:role/${AcceleratorRole}
               - Effect: Allow
                 Action:
-                  - "organizations:ListAccounts"
+                  - "organizations:Describe*"
+                  - "organizations:List*"
                 Resource:
                   - "*"
 
@@ -211,7 +212,7 @@ Resources:
     Type: Custom::InvokeCustomLambda
     Condition: DeployRoles
     Properties:
-      Version: 26
+      Version: 27
       ServiceToken: !GetAtt CreateRoleLambda.Arn
       TrustPrincipal: !Sub arn:${AWS::Partition}:iam::${AuditAccountID}:root
       SwitchRole: !Ref AcceleratorRole
@@ -258,8 +259,8 @@ Resources:
                     "kinesis:DescribeStream",
                     "kinesis:ListStreams",
                     "memorydb:Describe*",
-                    "organizations:DescribeOrganization",
-                    "organizations:ListAccounts",
+                    "organizations:Describe*",
+                    "organizations:List*",
                     "qldb:DescribeLedger",
                     "qldb:ListLedgers",
                     "rds:Describe*",
@@ -333,7 +334,7 @@ Resources:
     Type: Custom::InvokeCustomLambda
     Condition: DeployRoles
     Properties:
-      Version: 26
+      Version: 27
       ServiceToken: !GetAtt CreateRoleLambda.Arn
       TrustPrincipal: !Sub arn:${AWS::Partition}:iam::${AuditAccountID}:root
       SwitchRole: !Ref AcceleratorRole
@@ -436,7 +437,8 @@ Resources:
             Action:
               - "organizations:EnableAWSServiceAccess"
               - "organizations:RegisterDelegatedAdministrator"
-              - "organizations:ListDelegatedAdministrators"
+              - "organizations:Describe*"
+              - "organizations:List*"
             Resource: "*"
             Effect: Allow
       PolicyName: gc_setup_config_lambda_execution_role_policy
@@ -510,8 +512,8 @@ Resources:
             Action:
               - "organizations:EnableAWSServiceAccess"
               - "organizations:RegisterDelegatedAdministrator"
-              - "organizations:ListDelegatedAdministrators"
-              - "organizations:ListAWSServiceAccessForOrganization"
+              - "organizations:Describe*"
+              - "organizations:List*"
             Resource: "*"
             Effect: Allow
       PolicyName: !Sub "${OrganizationName}setup_auditmanager_lambda_execution_role_policy"
@@ -1325,7 +1327,8 @@ Resources:
         Statement:
           - Sid: AllowOrganizationsChecks
             Action:
-              - "organizations:DescribeOrganization"
+              - "organizations:Describe*"
+              - "organizations:List*"
             Resource:
               - "*"
             Effect: Allow
