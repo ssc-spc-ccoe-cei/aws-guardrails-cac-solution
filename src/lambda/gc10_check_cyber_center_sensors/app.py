@@ -229,14 +229,14 @@ def get_organizations_mgmt_account_id(aws_organizations_client):
 
 
 def organizations_list_all_accounts(
-    organizations_client, page_size: int = 100, interval_between_calls: float = 0.25
+    organizations_client, interval_between_calls: float = 0.25
 ) -> list[dict]:
     """
     https://boto3.amazonaws.com/v1/documentation/api/latest/reference/services/organizations/paginator/ListAccounts.html
     """
     resources: list[dict] = []
     paginator = organizations_client.get_paginator("list_accounts")
-    page_iterator = paginator.paginate(PaginationConfig={"PageSize": page_size})
+    page_iterator = paginator.paginate()
     for page in page_iterator:
         resources.extend(page.get("Accounts", []))
         time.sleep(interval_between_calls)
