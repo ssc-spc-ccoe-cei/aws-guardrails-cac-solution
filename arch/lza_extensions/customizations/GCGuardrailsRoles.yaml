@@ -93,6 +93,7 @@ Resources:
                         "AWS": [
                             "arn:aws:sts::${AuditAccountID}:assumed-role/${RolePrefix}default_assessment_role/${OrganizationName}gc06_check_encryption_at_rest_part1",
                             "arn:aws:sts::${AuditAccountID}:assumed-role/${RolePrefix}default_assessment_role/${OrganizationName}gc06_check_encryption_at_rest_part2",
+                            "arn:aws:sts::${AuditAccountID}:assumed-role/${RolePrefix}default_assessment_role/${OrganizationName}gc07_check_certificate_authorities",
                             "arn:aws:sts::${AuditAccountID}:assumed-role/${RolePrefix}default_assessment_role/${OrganizationName}gc07_check_cryptographic_algorithms",
                             "arn:aws:sts::${AuditAccountID}:assumed-role/${RolePrefix}default_assessment_role/${OrganizationName}gc07_check_encryption_in_transit",
                             "arn:aws:sts::${AuditAccountID}:assumed-role/${RolePrefix}default_assessment_role/configLambdaExecution"
@@ -457,6 +458,26 @@ Resources:
               - "*"
             Effect: Allow
       PolicyName: !Sub "${OrganizationName}GCLambdaExecutionRoleCloudFrontPolicy"
+      Roles:
+        - !Ref GCLambdaExecutionRole
+        - !Ref GCLambdaExecutionRole2
+
+  # ACM Access
+  GCLambdaExecutionRoleAcmPolicy:
+    Type: AWS::IAM::Policy
+    Properties:
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: AllowAcmQueries
+            Action:
+              - "acm:Describe*"
+              - "acm:Get*"
+              - "acm:List*"
+            Resource: 
+              - "*"
+            Effect: Allow
+      PolicyName: !Sub "${OrganizationName}GCLambdaExecutionRoleAcmPolicy"
       Roles:
         - !Ref GCLambdaExecutionRole
         - !Ref GCLambdaExecutionRole2

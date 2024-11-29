@@ -27,6 +27,20 @@ Conditions:
     - !Ref AuditAccountID
 
 Resources:
+  GC07CheckCertificateAuthoritiesLambda:
+    Condition: IsAuditAccount
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub "${OrganizationName}gc07_check_certificate_authorities"
+      Code: "../../src/lambda/gc07_check_certificate_authorities/build/GC07CheckCertificateAuthoritiesLambda/"
+      Handler: app.lambda_handler
+      Role: !Sub "arn:aws:iam::${AuditAccountID}:role/${RolePrefix}default_assessment_role"
+      Runtime: !Ref PythonRuntime
+      Timeout: 600
+      LoggingConfig:
+        LogGroup: !Sub "${OrganizationName}gc_guardrails"
+        LogFormat: "JSON"
+
   GC07CheckCryptographicAlgorithmsLambda:
     Condition: IsAuditAccount
     Type: AWS::Lambda::Function
