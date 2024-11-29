@@ -71,6 +71,8 @@ Parameters:
   S3ProtectedBServiceLocationDocumentPath:
     Type: String
   # GC07
+  S3CryptographicAlgorithmsAttestationPath:
+    Type: String
   S3SecureNetworkTransmissionPolicyPath:
     Type: String
   # GC08
@@ -761,6 +763,42 @@ Resources:
         SourceDetails:
           - EventSource: "aws.config"
             MessageType: "ScheduledNotification"
+  GC07CheckCryptographicAlgorithmsConfigRule:
+    Type: "AWS::Config::ConfigRule"
+    Properties:
+      ConfigRuleName: gc07_check_cryptographic_algorithms
+      Description: Verify cryptographic algorithms and protocols are configured by the user in accordance with ITSP.40.111 and ITSP.40.062
+      InputParameters:
+        s3ObjectPath:
+            Fn::If:
+              - s3CryptographicAlgorithmsAttestationPath
+              - Ref: S3CryptographicAlgorithmsAttestationPath
+              - Ref: AWS::NoValue
+        ExecutionRoleName:
+          Fn::If:
+            - GCLambdaExecutionRoleName2
+            - Ref: GCLambdaExecutionRoleName2
+            - Ref: AWS::NoValue
+        AuditAccountID:
+          Fn::If:
+            - auditAccountID
+            - Ref: AuditAccountID
+            - Ref: AWS::NoValue
+      Scope:
+        ComplianceResourceTypes:
+          - AWS::Account
+      MaximumExecutionFrequency: TwentyFour_Hours
+      Source:
+        Owner: CUSTOM_LAMBDA
+        SourceIdentifier:
+          Fn::Join:
+            - ""
+            - - "arn:aws:lambda:ca-central-1:"
+              - Ref: AuditAccountID
+              - !Sub ":function:${OrganizationName}gc07_check_cryptographic_algorithms"
+        SourceDetails:
+          - EventSource: "aws.config"
+            MessageType: "ScheduledNotification"
   GC07CheckEncryptionInTransitConfigRule:
     Type: "AWS::Config::ConfigRule"
     Properties:
@@ -1330,6 +1368,11 @@ Conditions:
           - ""
           - Ref: S3ProtectedBServiceLocationDocumentPath
   # GC07
+  s3CryptographicAlgorithmsAttestationPath:
+    Fn::Not:
+      - Fn::Equals:
+          - ""
+          - Ref: S3CryptographicAlgorithmsAttestationPath
   s3SecureNetworkTransmissionPolicyPath:
     Fn::Not:
       - Fn::Equals:

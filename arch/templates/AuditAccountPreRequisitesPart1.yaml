@@ -307,8 +307,7 @@ Resources:
             Effect: Allow
           - Sid: AllowELB
             Action:
-              - "elasticloadbalancing:DescribeListeners"
-              - "elasticloadbalancing:DescribeLoadBalancers"
+              - "elasticloadbalancing:Describe*"
             Resource:
               - "*"
             Effect: Allow

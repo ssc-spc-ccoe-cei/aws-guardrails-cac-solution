@@ -86,6 +86,7 @@ def apply_lambda_permissions():
         f"{organization_name}gc05_check_data_location": ["GC05CheckDataLocationLambda"],
         f"{organization_name}gc06_check_encryption_at_rest_part1": ["GC06CheckEncryptionAtRestPart1Lambda"],
         f"{organization_name}gc06_check_encryption_at_rest_part2": ["GC06CheckEncryptionAtRestPart2Lambda"],
+        f"{organization_name}gc07_check_cryptographic_algorithms": ["GC07CheckCryptographicAlgorithmsLambda"],
         f"{organization_name}gc07_check_encryption_in_transit": ["GC07CheckEncryptionInTransitLambda"],
         f"{organization_name}gc07_check_secure_network_transmission_policy": ["GC07CheckSecureNetworkTransmissionPolicyLambda"],
         f"{organization_name}gc08_check_cloud_deployment_guide": ["GC08CheckCloudDeploymentGuideLambda"],
