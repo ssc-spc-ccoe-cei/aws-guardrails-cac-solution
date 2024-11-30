@@ -1038,7 +1038,7 @@ Resources:
     Type: "AWS::Config::ConfigRule"
     Properties:
       ConfigRuleName: gc10_check_cyber_center_sensors
-      Description: Confirms if the signed MOU with CCS has been uploaded to the S3 bucket
+      Description: Confirm that the Cyber Centre's sensors or other cyber defense services are implemented where available.
       InputParameters:
         S3LogBucketsPath:
           Fn::If:
