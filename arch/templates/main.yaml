@@ -212,7 +212,7 @@ Resources:
     Type: Custom::InvokeCustomLambda
     Condition: DeployRoles
     Properties:
-      Version: 27
+      Version: 28
       ServiceToken: !GetAtt CreateRoleLambda.Arn
       TrustPrincipal: !Sub arn:${AWS::Partition}:iam::${AuditAccountID}:root
       SwitchRole: !Ref AcceleratorRole
@@ -334,7 +334,7 @@ Resources:
     Type: Custom::InvokeCustomLambda
     Condition: DeployRoles
     Properties:
-      Version: 27
+      Version: 28
       ServiceToken: !GetAtt CreateRoleLambda.Arn
       TrustPrincipal: !Sub arn:${AWS::Partition}:iam::${AuditAccountID}:root
       SwitchRole: !Ref AcceleratorRole
