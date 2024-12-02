@@ -59,7 +59,8 @@ Resources:
             Effect: Allow
           - Sid: AllowOrganizationsReadAccess
             Action:
-              - "organizations:ListAccounts"
+              - "organizations:Describe*"
+              - "organizations:List*"
             Resource: "*"
             Effect: Allow
       PolicyName: gc_setup_lambda_execution_role_policy
@@ -94,7 +95,7 @@ Resources:
     Properties:
       ServiceToken: !Sub "arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:${OrganizationName}aws_lambda_permissions_setup"
       UpdateVariable: QVdTb21lCg8
-      TriggerProperty: 7
+      TriggerProperty: 31
     DependsOn:
       - LambdaPermissionsLambda
 
