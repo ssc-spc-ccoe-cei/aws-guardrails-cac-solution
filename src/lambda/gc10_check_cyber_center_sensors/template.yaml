@@ -1,0 +1,19 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: >
+  gc10_check_cyber_center_sensors
+
+Globals:
+  Function:
+    Timeout: 90
+    MemorySize: 128
+
+Resources:
+  GC10CheckCyberCenterSensorsLambda:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: .
+      Handler: app.lambda_handler
+      Runtime: python3.9
+      Architectures:
+        - x86_64
