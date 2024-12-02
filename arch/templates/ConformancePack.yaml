@@ -84,6 +84,8 @@ Parameters:
     Type: String
   S3TargetCloudDeploymentGuideDocumentPath:
     Type: String
+  S3TargetCloudSegmentationDesignDocumentPath:
+    Type: String
   # GC09
   S3NetworkArchitectureDocumentPath:
     Type: String
@@ -917,7 +919,7 @@ Resources:
         SourceDetails:
           - EventSource: "aws.config"
             MessageType: "ScheduledNotification"
-  GC08CheckCloudDeploymentGuideDocumentConfigRule:
+  GC08CheckCloudDeploymentGuideConfigRule:
     Type: "AWS::Config::ConfigRule"
     Properties:
       ConfigRuleName: gc08_check_cloud_deployment_guide
@@ -950,6 +952,42 @@ Resources:
             - - "arn:aws:lambda:ca-central-1:"
               - Ref: AuditAccountID
               - !Sub ":function:${OrganizationName}gc08_check_cloud_deployment_guide"
+        SourceDetails:
+          - EventSource: "aws.config"
+            MessageType: "ScheduledNotification"
+  GC08CheckCloudSegmentationDesignConfigRule:
+    Type: "AWS::Config::ConfigRule"
+    Properties:
+      ConfigRuleName: gc08_check_cloud_segmentation_design
+      Description: Checks S3 bucket for the cloud segmentation guide document
+      InputParameters:
+        s3ObjectPath:
+          Fn::If:
+            - s3TargetCloudSegmentationDesignDocumentPath
+            - Ref: S3TargetCloudSegmentationDesignDocumentPath
+            - Ref: AWS::NoValue
+        ExecutionRoleName:
+          Fn::If:
+            - GCLambdaExecutionRoleName
+            - Ref: GCLambdaExecutionRoleName
+            - Ref: AWS::NoValue
+        AuditAccountID:
+          Fn::If:
+            - auditAccountID
+            - Ref: AuditAccountID
+            - Ref: AWS::NoValue
+      Scope:
+        ComplianceResourceTypes:
+          - AWS::Account
+      MaximumExecutionFrequency: TwentyFour_Hours
+      Source:
+        Owner: CUSTOM_LAMBDA
+        SourceIdentifier:
+          Fn::Join:
+            - ""
+            - - "arn:aws:lambda:ca-central-1:"
+              - Ref: AuditAccountID
+              - !Sub ":function:${OrganizationName}gc08_check_cloud_segmentation_design"
         SourceDetails:
           - EventSource: "aws.config"
             MessageType: "ScheduledNotification"
@@ -1444,6 +1482,11 @@ Conditions:
       - Fn::Equals:
           - ""
           - Ref: S3TargetCloudDeploymentGuideDocumentPath
+  s3TargetCloudSegmentationDesignDocumentPath:
+    Fn::Not:
+      - Fn::Equals:
+          - ""
+          - Ref: S3TargetCloudSegmentationDesignDocumentPath
   # GC09
   s3NetworkArchitectureDocumentPath:
     Fn::Not:

@@ -1,4 +1,4 @@
-""" GC08 - check Cloud Deployment Guide
+""" GC08 - check Cloud Segmentation Design
     https://canada-ca.github.io/cloud-guardrails/EN/08_Segmentation.html
 """
 
@@ -146,7 +146,7 @@ def build_evaluation(
 
 def lambda_handler(event, context):
     """
-    Lambda function that evaluates the Guardrail Cloud Deployment Guide document in the S3 bucket.
+    Lambda function that evaluates the Guardrail Cloud Segmentation Design document in the S3 bucket.
     Keyword arguments:
     event -- the event variable given in the lambda handler
     context -- the context variable given in the lambda handler
@@ -175,7 +175,8 @@ def lambda_handler(event, context):
     # This check only applies to the audit account
     if AWS_ACCOUNT_ID != AUDIT_ACCOUNT_ID:
         logger.info(
-            "Target Cloud Deployment Guide document not checked in account %s - not the Audit account", AWS_ACCOUNT_ID
+            "Target Cloud Segmentation Design document not checked in account %s - not the Audit account",
+            AWS_ACCOUNT_ID,
         )
         return
 
@@ -184,10 +185,10 @@ def lambda_handler(event, context):
 
     if check_s3_object_exists(valid_rule_parameters["s3ObjectPath"]):
         compliance_type = "COMPLIANT"
-        annotation = "Target Cloud Deployment Guide document found"
+        annotation = "Target Cloud Segmentation Design document found"
     else:
         compliance_type = "NON_COMPLIANT"
-        annotation = "Target Cloud Deployment Guide document NOT found"
+        annotation = "Target Cloud Segmentation Design document NOT found"
 
     evaluations = [
         build_evaluation(
