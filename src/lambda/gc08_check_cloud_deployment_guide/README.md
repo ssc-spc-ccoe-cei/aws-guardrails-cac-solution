@@ -1,10 +1,10 @@
-*This readme file was created by AWS Bedrock: anthropic.claude-v2*
+_This readme file was created by AWS Bedrock: anthropic.claude-v2_
 
-# GC08 - check Target Network Architecture
+# GC08 - check Target Cloud Deployment Guide
 
 ## Overview
 
-This lambda checks for the existence of the Target Network Architecture document in an S3 bucket. It is designed to run in the Audit account and report compliance back to AWS Config.
+This lambda checks for the existence of the Target Cloud Deployment Guide document in an S3 bucket. It is designed to run in the Audit account and report compliance back to AWS Config.
 
 The S3 bucket location and optional Execution Role name can be provided via Config Rule parameters.
 
@@ -24,9 +24,9 @@ Key steps:
 
 The following parameters can be provided in the Config Rule payload:
 
-- **s3ObjectPath** - Required - Full S3 path to object e.g. s3://mybucket/architecture.pdf
+- **s3ObjectPath** - Required - Full S3 path to object e.g. s3://mybucket/deployment_guide.pdf
 - **ExecutionRoleName** - Optional - IAM Role name to assume in Audit account
-- **AuditAccountId** - Optional - Explicitly specify Audit account ID 
+- **AuditAccountId** - Optional - Explicitly specify Audit account ID
 
 ## Testing
 

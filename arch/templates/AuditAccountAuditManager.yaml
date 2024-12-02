@@ -63,7 +63,8 @@ Resources:
             Effect: Allow
           - Sid: AllowOrganizationsReadAccess
             Action:
-              - "organizations:ListAccounts"
+              - "organizations:Describe*"
+              - "organizations:List*"
             Resource: "*"
             Effect: Allow
           - Sid: AllowIAM

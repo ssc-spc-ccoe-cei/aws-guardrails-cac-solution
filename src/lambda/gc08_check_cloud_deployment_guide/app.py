@@ -1,6 +1,7 @@
 """ GC08 - check Cloud Deployment Guide
     https://canada-ca.github.io/cloud-guardrails/EN/08_Segmentation.html
 """
+
 import json
 import logging
 import re
@@ -14,7 +15,7 @@ logger.setLevel(logging.INFO)
 
 # Set to True to get the lambda to assume the Role attached on the Config Service
 ASSUME_ROLE_MODE = True
-DEFAULT_RESOURCE_TYPE = "AWS::::Account"
+ACCOUNT_RESOURCE_TYPE = "AWS::::Account"
 
 
 # This gets the client after assuming the Config service role
@@ -48,10 +49,7 @@ def get_assume_role_credentials(role_arn):
     role_session_name = "config-lambda-execution"
     sts_client = boto3.client("sts")
     try:
-        assume_role_response = sts_client.assume_role(
-            RoleArn=role_arn,
-            RoleSessionName=role_session_name
-        )
+        assume_role_response = sts_client.assume_role(RoleArn=role_arn, RoleSessionName=role_session_name)
         return assume_role_response["Credentials"]
     except botocore.exceptions.ClientError as ex:
         # Scrub error message for any internal account info leaks
@@ -124,7 +122,7 @@ def build_evaluation(
     resource_id,
     compliance_type,
     event,
-    resource_type=DEFAULT_RESOURCE_TYPE,
+    resource_type=ACCOUNT_RESOURCE_TYPE,
     annotation=None,
 ):
     """Form an evaluation as a dictionary. Usually suited to report on scheduled rules.
@@ -142,15 +140,13 @@ def build_evaluation(
     eval_cc["ComplianceResourceType"] = resource_type
     eval_cc["ComplianceResourceId"] = resource_id
     eval_cc["ComplianceType"] = compliance_type
-    eval_cc["OrderingTimestamp"] = str(
-        json.loads(event["invokingEvent"])["notificationCreationTime"]
-    )
+    eval_cc["OrderingTimestamp"] = str(json.loads(event["invokingEvent"])["notificationCreationTime"])
     return eval_cc
 
 
 def lambda_handler(event, context):
     """
-    Lambda function that evaluates the Guardrail Network Architecture document in the S3 bucket.
+    Lambda function that evaluates the Guardrail Cloud Deployment Guide document in the S3 bucket.
     Keyword arguments:
     event -- the event variable given in the lambda handler
     context -- the context variable given in the lambda handler
@@ -161,63 +157,46 @@ def lambda_handler(event, context):
     global EXECUTION_ROLE_NAME
     global AUDIT_ACCOUNT_ID
 
-    evaluations = []
-    rule_parameters = {}
+    rule_parameters = json.loads(event.get("ruleParameters", "{}"))
     invoking_event = json.loads(event["invokingEvent"])
     logger.info("Received event: %s", json.dumps(event, indent=2))
 
-    # parse parameters
     AWS_ACCOUNT_ID = event["accountId"]
-
-    if "ruleParameters" in event:
-        rule_parameters = json.loads(event["ruleParameters"])
+    logger.info("Assessing account %s", AWS_ACCOUNT_ID)
 
     valid_rule_parameters = evaluate_parameters(rule_parameters)
+    EXECUTION_ROLE_NAME = valid_rule_parameters.get("ExecutionRoleName", "AWSA-GCLambdaExecutionRole")
+    AUDIT_ACCOUNT_ID = valid_rule_parameters.get("AuditAccountID", "")
 
-    if "ExecutionRoleName" in valid_rule_parameters:
-        EXECUTION_ROLE_NAME = valid_rule_parameters["ExecutionRoleName"]
+    if not is_scheduled_notification(invoking_event["messageType"]):
+        logger.error("Skipping assessments as this is not a scheduled invocation")
+        return
+
+    # This check only applies to the audit account
+    if AWS_ACCOUNT_ID != AUDIT_ACCOUNT_ID:
+        logger.info(
+            "Target Cloud Deployment Guide document not checked in account %s - not the Audit account", AWS_ACCOUNT_ID
+        )
+        return
+
+    AWS_CONFIG_CLIENT = get_client("config", event)
+    AWS_S3_CLIENT = get_client("s3", event)
+
+    if check_s3_object_exists(valid_rule_parameters["s3ObjectPath"]):
+        compliance_type = "COMPLIANT"
+        annotation = "Target Cloud Deployment Guide document found"
     else:
-        EXECUTION_ROLE_NAME = "AWSA-GCLambdaExecutionRole"
+        compliance_type = "NON_COMPLIANT"
+        annotation = "Target Cloud Deployment Guide document NOT found"
 
-    if "AuditAccountID" in valid_rule_parameters:
-        AUDIT_ACCOUNT_ID = valid_rule_parameters["AuditAccountID"]
-    else:
-        AUDIT_ACCOUNT_ID = ""
+    evaluations = [
+        build_evaluation(
+            AWS_ACCOUNT_ID,
+            compliance_type,
+            event,
+            ACCOUNT_RESOURCE_TYPE,
+            annotation,
+        )
+    ]
 
-    compliance_value = "NOT_APPLICABLE"
-    custom_annotation = "Guardrail only applicable in the Audit Account"
-
-    # is this a scheduled invokation?
-    if is_scheduled_notification(invoking_event["messageType"]):
-        # yes, proceed
-        # is this being executed against the Audit Account -
-        # (this check only applies to the audit account)
-        if AWS_ACCOUNT_ID == AUDIT_ACCOUNT_ID:
-            # yes, we're in the Audit account
-            AWS_CONFIG_CLIENT = get_client("config", event)
-            AWS_S3_CLIENT = get_client("s3", event)
-
-            # check if object exists in S3
-            if check_s3_object_exists(valid_rule_parameters["s3ObjectPath"]):
-                compliance_value = "COMPLIANT"
-                custom_annotation = "Cloud Deployment Guide document found"
-            else:
-                compliance_value = "NON_COMPLIANT"
-                custom_annotation = "Cloud Deployment Guide document NOT found"
-
-            # Update AWS Config with the evaluation result
-            evaluations.append(
-                build_evaluation(
-                    event["accountId"],
-                    compliance_value,
-                    event,
-                    resource_type=DEFAULT_RESOURCE_TYPE,
-                    annotation=custom_annotation,
-                )
-            )
-            AWS_CONFIG_CLIENT.put_evaluations(
-                Evaluations=evaluations,
-                ResultToken=event["resultToken"]
-            )
-        else:
-            logger.info("Cloud Deployment Guide document not checked in account %s - not the Audit account", AWS_ACCOUNT_ID)
+    AWS_CONFIG_CLIENT.put_evaluations(Evaluations=evaluations, ResultToken=event["resultToken"])
