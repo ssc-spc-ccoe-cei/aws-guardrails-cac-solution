@@ -97,6 +97,7 @@ def apply_lambda_permissions():
         f"{organization_name}gc10_check_cyber_center_sensors": ["GC10CheckCyberCenterSensorsLambda"],
         f"{organization_name}gc10_confirmation_of_mou": ["GC10CheckSignedMOULambda"],
         f"{organization_name}gc11_check_monitoring_all_users": ["GC11CheckMonitoringAllUsersLambda"],
+        f"{organization_name}gc11_check_monitoring_use_cases": ["GC11CheckMonitoringUseCasesLambda"],
         f"{organization_name}gc11_check_policy_event_logging": ["GC11CheckPolicyEventLoggingLambda"],
         f"{organization_name}gc11_check_security_contact": ["GC11CheckSecurityContactLambda"],
         f"{organization_name}gc11_check_timezone": ["GC11CheckTimezoneLambda"],

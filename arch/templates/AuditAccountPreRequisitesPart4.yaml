@@ -41,6 +41,20 @@ Resources:
         LogGroup: !Sub "${OrganizationName}gc_guardrails"
         LogFormat: "JSON"
 
+  GC11CheckMonitoringUseCasesLambda:
+    Condition: IsAuditAccount
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub "${OrganizationName}gc11_check_monitoring_use_cases"
+      Code: "../../src/lambda/gc11_check_monitoring_use_cases/build/GC11CheckMonitoringUseCasesLambda/"
+      Handler: app.lambda_handler
+      Role: !Sub "arn:aws:iam::${AuditAccountID}:role/${RolePrefix}default_assessment_role"
+      Runtime: !Ref PythonRuntime
+      Timeout: 90
+      LoggingConfig:
+        LogGroup: !Sub "${OrganizationName}gc_guardrails"
+        LogFormat: "JSON"
+
   GC11CheckPolicyEventLoggingLambda:
     Condition: IsAuditAccount
     Type: AWS::Lambda::Function

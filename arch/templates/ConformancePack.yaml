@@ -97,6 +97,9 @@ Parameters:
   LogArchiveAccountName:
     Type: String
     Default: LogArchive
+  # GC11
+  S3MonitoringUseCasesPath:
+    Type: String
   # GC13
   S3AccountManagementProcedurePath:
     Type: String
@@ -1145,6 +1148,42 @@ Resources:
           - EventSource: "aws.config"
             MessageType: "ScheduledNotification"
   # GC11 - Check Trail Logging
+  GC11CheckMonitoringUseCasesConfigRule:
+    Type: "AWS::Config::ConfigRule"
+    Properties:
+      ConfigRuleName: gc11_check_monitoring_use_cases
+      Description: Confirms whether monitoring and auditing is implemented for all users
+      InputParameters:
+        ExecutionRoleName:
+          Fn::If:
+            - GCLambdaExecutionRoleName
+            - Ref: GCLambdaExecutionRoleName
+            - Ref: AWS::NoValue
+        AuditAccountID:
+          Fn::If:
+            - auditAccountID
+            - Ref: AuditAccountID
+            - Ref: AWS::NoValue
+        s3ObjectPath:
+          Fn::If:
+            - s3MonitoringUseCasesPath
+            - Ref: S3MonitoringUseCasesPath
+            - Ref: AWS::NoValue
+      Scope:
+        ComplianceResourceTypes:
+          - AWS::Account
+      MaximumExecutionFrequency: TwentyFour_Hours
+      Source:
+        Owner: CUSTOM_LAMBDA
+        SourceIdentifier:
+          Fn::Join:
+            - ""
+            - - "arn:aws:lambda:ca-central-1:"
+              - Ref: AuditAccountID
+              - !Sub ":function:${OrganizationName}gc11_check_monitoring_use_cases"
+        SourceDetails:
+          - EventSource: "aws.config"
+            MessageType: "ScheduledNotification"
   GC11CheckMonitoringAllUsersConfigRule:
     Type: "AWS::Config::ConfigRule"
     Properties:
@@ -1649,6 +1688,12 @@ Conditions:
       - Fn::Equals:
           - ""
           - Ref: LogArchiveAccountName
+  # GC11
+  s3MonitoringUseCasesPath:
+    Fn::Not:
+      - Fn::Equals:
+          - ""
+          - Ref: S3MonitoringUseCasesPath
   # GC13
   s3AccountManagementProcedurePath:
     Fn::Not:
