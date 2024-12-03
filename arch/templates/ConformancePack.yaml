@@ -1145,6 +1145,37 @@ Resources:
           - EventSource: "aws.config"
             MessageType: "ScheduledNotification"
   # GC11 - Check Trail Logging
+  GC11CheckMonitoringAllUsersConfigRule:
+    Type: "AWS::Config::ConfigRule"
+    Properties:
+      ConfigRuleName: gc11_check_monitoring_all_users
+      Description: Confirms whether monitoring and auditing is implemented for all users
+      InputParameters:
+        ExecutionRoleName:
+          Fn::If:
+            - GCLambdaExecutionRoleName
+            - Ref: GCLambdaExecutionRoleName
+            - Ref: AWS::NoValue
+        AuditAccountID:
+          Fn::If:
+            - auditAccountID
+            - Ref: AuditAccountID
+            - Ref: AWS::NoValue
+      Scope:
+        ComplianceResourceTypes:
+          - AWS::Account
+      MaximumExecutionFrequency: TwentyFour_Hours
+      Source:
+        Owner: CUSTOM_LAMBDA
+        SourceIdentifier:
+          Fn::Join:
+            - ""
+            - - "arn:aws:lambda:ca-central-1:"
+              - Ref: AuditAccountID
+              - !Sub ":function:${OrganizationName}gc11_check_monitoring_all_users"
+        SourceDetails:
+          - EventSource: "aws.config"
+            MessageType: "ScheduledNotification"
   GC11CheckPolicyEventLoggingConfigRule:
     Type: "AWS::Config::ConfigRule"
     Properties:
