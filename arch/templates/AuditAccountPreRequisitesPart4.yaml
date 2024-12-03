@@ -55,6 +55,20 @@ Resources:
         LogGroup: !Sub "${OrganizationName}gc_guardrails"
         LogFormat: "JSON"
 
+  GC11CheckTimezoneLambda:
+    Condition: IsAuditAccount
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub "${OrganizationName}gc11_check_timezone"
+      Code: "../../src/lambda/gc11_check_timezone/build/GC11CheckTimezoneLambda/"
+      Handler: app.lambda_handler
+      Role: !Sub "arn:aws:iam::${AuditAccountID}:role/${RolePrefix}default_assessment_role"
+      Runtime: !Ref PythonRuntime
+      Timeout: 90
+      LoggingConfig:
+        LogGroup: !Sub "${OrganizationName}gc_guardrails"
+        LogFormat: "JSON"
+
   GC11CheckTrailLoggingLambda:
     Condition: IsAuditAccount
     Type: AWS::Lambda::Function

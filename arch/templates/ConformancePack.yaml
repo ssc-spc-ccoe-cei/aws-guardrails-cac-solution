@@ -1207,6 +1207,37 @@ Resources:
         SourceDetails:
           - EventSource: "aws.config"
             MessageType: "ScheduledNotification"
+  GC11CheckTimezoneConfigRule:
+    Type: "AWS::Config::ConfigRule"
+    Properties:
+      ConfigRuleName: gc11_check_timezone
+      Description: Confirms the appropriate timezone has been set
+      InputParameters:
+        ExecutionRoleName:
+          Fn::If:
+            - GCLambdaExecutionRoleName
+            - Ref: GCLambdaExecutionRoleName
+            - Ref: AWS::NoValue
+        AuditAccountID:
+          Fn::If:
+            - auditAccountID
+            - Ref: AuditAccountID
+            - Ref: AWS::NoValue
+      Scope:
+        ComplianceResourceTypes:
+          - AWS::Account
+      MaximumExecutionFrequency: TwentyFour_Hours
+      Source:
+        Owner: CUSTOM_LAMBDA
+        SourceIdentifier:
+          Fn::Join:
+            - ""
+            - - "arn:aws:lambda:ca-central-1:"
+              - Ref: AuditAccountID
+              - !Sub ":function:${OrganizationName}gc11_check_timezone"
+        SourceDetails:
+          - EventSource: "aws.config"
+            MessageType: "ScheduledNotification"
   GC11CheckTrailLoggingConfigRule:
     Type: "AWS::Config::ConfigRule"
     Properties:

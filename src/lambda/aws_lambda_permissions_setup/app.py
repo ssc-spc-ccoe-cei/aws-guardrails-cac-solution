@@ -99,6 +99,7 @@ def apply_lambda_permissions():
         f"{organization_name}gc11_check_monitoring_all_users": ["GC11CheckMonitoringAllUsersLambda"],
         f"{organization_name}gc11_check_policy_event_logging": ["GC11CheckPolicyEventLoggingLambda"],
         f"{organization_name}gc11_check_security_contact": ["GC11CheckSecurityContactLambda"],
+        f"{organization_name}gc11_check_timezone": ["GC11CheckTimezoneLambda"],
         f"{organization_name}gc11_check_trail_logging": ["GC11CheckTrailLoggingLambda"],
         f"{organization_name}gc12_check_marketplace": ["GC12CheckMarketplacesLambda"],
         f"{organization_name}gc13_emergency_account_alerts": ["GC13EmergencyAccountAlertsLambda"],
