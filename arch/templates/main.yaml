@@ -1378,7 +1378,7 @@ Resources:
   #######################################################
   # Part 4 - Conformance Pack
   #######################################################
-  ConformancePack:
+  ConformancePack1:
     DependsOn:
       - AuditAccountPreRequisitesPart1
       - AuditAccountPreRequisitesPart2
@@ -1425,6 +1425,10 @@ Resources:
           ParameterValue: !Sub
             - "s3://${ClientEvidenceBucket}/gc-02/account_management_plan.pdf"
             - ClientEvidenceBucket: !If [ GenerateEvidenceBucketName, !GetAtt GenerateEvidenceBucketName.EvidenceBucketName, !Ref EvidenceBucketName ]
+        - ParameterName: S3VpnIpRangesPath
+          ParameterValue: !Sub
+            - "s3://${ClientEvidenceBucket}/gc-03/vpn_ip_ranges.txt"
+            - ClientEvidenceBucket: !If [ GenerateEvidenceBucketName, !GetAtt GenerateEvidenceBucketName.EvidenceBucketName, !Ref EvidenceBucketName ]
         - ParameterName: S3ProtectedBServiceLocationDocumentPath
           ParameterValue: !Sub
             - "s3://${ClientEvidenceBucket}/gc-05/service_location_protectedb.pdf"
@@ -1445,6 +1449,38 @@ Resources:
           ParameterValue: !Sub
             - "s3://${ClientEvidenceBucket}/gc-07/secure_network_transmission.pdf"
             - ClientEvidenceBucket: !If [ GenerateEvidenceBucketName, !GetAtt GenerateEvidenceBucketName.EvidenceBucketName, !Ref EvidenceBucketName ]
+      OrganizationConformancePackName: !Sub "${OrganizationName}-GC-CP-Guardrails-Part-1"
+      TemplateS3Uri: !Sub s3://${PipelineBucket}/${DeployVersion}/ConformancePack1.yaml
+  
+  ConformancePack2:
+    DependsOn:
+      - AuditAccountPreRequisitesPart1
+      - AuditAccountPreRequisitesPart2
+      - AuditAccountPreRequisitesPart3
+      - AuditAccountPreRequisitesPart4
+      - AuditAccountPreRequisitesPart5
+      - AuditAccountPreRequisitesPart6
+      - AuditAccountPreRequisitesPart7
+      - AuditAccountPreRequisitesPart8
+      - AuditAccountPreRequisitesPartN
+      #- AllAccountPreRequisites
+    Type: AWS::Config::OrganizationConformancePack
+    Properties:
+      ConformancePackInputParameters:
+        - ParameterName: GCLambdaExecutionRoleName
+          ParameterValue: !Sub "${AccelRolePrefix}GCLambdaExecutionRole"
+        - ParameterName: GCLambdaExecutionRoleName2
+          ParameterValue: !Sub ${AccelRolePrefix}GCLambdaExecutionRole2
+        - ParameterName: AuditAccountID
+          ParameterValue: !Ref AuditAccountID
+        - ParameterName: DeployVersion
+          ParameterValue: !Ref DeployVersion
+        - ParameterName: BGA1
+          ParameterValue: !Ref BGA1
+        - ParameterName: BGA2
+          ParameterValue: !Ref BGA2
+        - ParameterName: OrganizationName
+          ParameterValue: !Ref OrganizationName
         - ParameterName: S3TargetNetworkArchitecturePath
           ParameterValue: !Sub
             - "s3://${ClientEvidenceBucket}/gc-08/target_network_architecture.pdf"
@@ -1477,12 +1513,8 @@ Resources:
           ParameterValue: !Sub
             - "s3://${ClientEvidenceBucket}/gc-13/rule_names.txt"
             - ClientEvidenceBucket: !If [ GenerateEvidenceBucketName, !GetAtt GenerateEvidenceBucketName.EvidenceBucketName, !Ref EvidenceBucketName ]
-        - ParameterName: S3VpnIpRangesPath
-          ParameterValue: !Sub
-            - "s3://${ClientEvidenceBucket}/gc-03/vpn_ip_ranges.txt"
-            - ClientEvidenceBucket: !If [ GenerateEvidenceBucketName, !GetAtt GenerateEvidenceBucketName.EvidenceBucketName, !Ref EvidenceBucketName ]
-      OrganizationConformancePackName: !Sub "${OrganizationName}-GC-CP-Guardrails"
-      TemplateS3Uri: !Sub s3://${PipelineBucket}/${DeployVersion}/ConformancePack.yaml
+      OrganizationConformancePackName: !Sub "${OrganizationName}-GC-CP-Guardrails-Part-2"
+      TemplateS3Uri: !Sub s3://${PipelineBucket}/${DeployVersion}/ConformancePack2.yaml
 
   #######################################################
   # Part 5 - Audit Manager Components
@@ -1492,6 +1524,7 @@ Resources:
     DependsOn:
       - AWSAuditManagerOrganizationsSetup
       - ConformancePack
+      - ConformancePack2
       - AuditAccountPreRequisitesPart1
       - AuditAccountPreRequisitesPart2
       - AuditAccountPreRequisitesPart3
