@@ -14,6 +14,7 @@ logger.setLevel(logging.INFO)
 # Set to True to get the lambda to assume the Role attached on the Config Service
 ASSUME_ROLE_MODE = True
 DEFAULT_RESOURCE_TYPE = "AWS::::Account"
+S3_BUCKET_RESOURCE_TYPE = "AWS::S3::Bucket"
 
 
 # This gets the client after assuming the Config service role
@@ -117,8 +118,24 @@ def get_buckets():
     
     return buckets
 
-def check_bucket_acls(bucket_name):
-    
+def check_bucket_acls(bucket_name, event):
+    response = AWS_S3_CLIENT.get_public_access_block(Bucket=bucket_name)
+    configuration = response.get("PublicAccessBlockConfiguration", {})
+    if configuration.get("BlockPublicAcls", False) and configuration.get("IgnorePublicAcls", False) and configuration.get("BlockPublicPolicy", False) and configuration.get("RestrictPublicBuckets", False):
+        return build_evaluation(
+            bucket_name,
+            "COMPLIANT",
+            event,
+            S3_BUCKET_RESOURCE_TYPE
+        )
+    else:
+         return build_evaluation(
+            bucket_name,
+            "NON_COMPLIANT",
+            event,
+            S3_BUCKET_RESOURCE_TYPE,
+            "S3 bucket has misconfigured public access block. Ensure that 'BlockPublicAcls', 'IgnorePublicAcls', 'BlockPublicPolicy', and 'RestrictPublicBuckets' are all enabled."
+        )
 
 def lambda_handler(event, context):
     """This function is the main entry point for Lambda.
@@ -155,13 +172,22 @@ def lambda_handler(event, context):
     else:
         AUDIT_ACCOUNT_ID = ""
 
-    compliance_value = "NOT_APPLICABLE"
-    custom_annotation = "Guardrail only applicable in the Audit Account"
+    compliance_value = "COMPLIANT"
+    custom_annotation = ""
 
     # is this a scheduled invokation?
     if is_scheduled_notification(invoking_event["messageType"]):
         AWS_CONFIG_CLIENT = get_client("config", event)
         AWS_S3_CLIENT = get_client("s3", event)
+        
+        
+        buckets = get_buckets()
+        for b in buckets:
+            b_eval = check_bucket_acls(b)
+            evaluations.append(b_eval)
+            if b_eval.get("ComplianceType", "NON_COMPLIANT") == "NON_COMPLIANT":
+                compliance_value = "NON_COMPLIANT"
+                custom_annotation = "One or more S3 buckets have misconfigured public access blocks."
         
         # Update AWS Config with the evaluation result
         evaluations.append(
