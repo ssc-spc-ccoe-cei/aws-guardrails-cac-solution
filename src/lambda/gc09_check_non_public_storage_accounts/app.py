@@ -72,12 +72,6 @@ def evaluate_parameters(rule_parameters):
     Keyword arguments:
     rule_parameters -- the Key/Value dictionary of the Config Rules parameters
     """
-    if "s3ObjectPath" not in rule_parameters:
-        logger.error('The parameter with "s3ObjectPath" as key must be defined.')
-        raise ValueError('The parameter with "s3ObjectPath" as key must be defined.')
-    if not rule_parameters["s3ObjectPath"]:
-        logger.error('The parameter "s3ObjectPath" must have a defined value.')
-        raise ValueError('The parameter "s3ObjectPath" must have a defined value.')
     return rule_parameters
 
 # This generate an evaluation for config
@@ -110,11 +104,13 @@ def build_evaluation(
 
 def get_buckets():
     buckets = []
-    paginator = AWS_S3_CLIENT.get_paginator('list_buckets')
-    iterator = paginator.paginate()
-    
-    for page in iterator:
-        buckets = buckets + page['Buckets']
+    response = AWS_S3_CLIENT.list_buckets()
+    while True:
+        buckets = buckets + response.get('Buckets', [])
+        continuationToken = response.get('ContinuationToken')
+        if not continuationToken:
+            break
+        response = AWS_S3_CLIENT.list_buckets(ContinuationToken=continuationToken)
     
     return buckets
 
@@ -183,7 +179,7 @@ def lambda_handler(event, context):
         
         buckets = get_buckets()
         for b in buckets:
-            b_eval = check_bucket_acls(b)
+            b_eval = check_bucket_acls(b.get("Name", ""), event)
             evaluations.append(b_eval)
             if b_eval.get("ComplianceType", "NON_COMPLIANT") == "NON_COMPLIANT":
                 compliance_value = "NON_COMPLIANT"
