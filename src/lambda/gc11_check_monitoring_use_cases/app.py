@@ -1,9 +1,9 @@
-""" GC11 - Check Security Contact
-    https://canada-ca.github.io/cloud-guardrails/EN/12_Cloud-Marketplace-Config.html
+""" GC11 - Check Monitoring Use Cases
 """
 
 import json
 import logging
+import re
 
 import boto3
 import botocore
@@ -38,13 +38,17 @@ def get_client(service, event):
 
 
 def get_assume_role_credentials(role_arn):
-    """Returns the temporary credentials for the service account.
+    """Returns the credentials required to assume the provided role.
     Keyword arguments:
-    role_arn -- the ARN of the service account
+    role_arn -- the arn of the role to assume
     """
+    if role_arn is None:
+        logger.info("Role ARN is None")
+        return {}
+    role_session_name = "config-lambda-execution"
     sts_client = boto3.client("sts")
     try:
-        assume_role_response = sts_client.assume_role(RoleArn=role_arn, RoleSessionName="configLambdaExecution")
+        assume_role_response = sts_client.assume_role(RoleArn=role_arn, RoleSessionName=role_session_name)
         return assume_role_response["Credentials"]
     except botocore.exceptions.ClientError as ex:
         # Scrub error message for any internal account info leaks
@@ -53,51 +57,64 @@ def get_assume_role_credentials(role_arn):
         else:
             ex.response["Error"]["Message"] = "InternalError"
             ex.response["Error"]["Code"] = "InternalError"
-        logger.error("ERROR assuming role.\n%s", ex.response["Error"])
         raise ex
 
 
+# Check whether the message is a ScheduledNotification or not.
 def is_scheduled_notification(message_type):
-    """Check whether the message is a ScheduledNotification or not"""
+    """Check whether the message is a ScheduledNotification or not.
+    Keyword arguments:
+    message_type -- the message type string
+    """
     return message_type == "ScheduledNotification"
 
 
 def evaluate_parameters(rule_parameters):
-    """Evaluate the rule parameters dictionary.
+    """Evaluate the rule parameters dictionary validity. Raise a ValueError for invalid parameters.
     Keyword arguments:
-    rule_parameters -- the Key/Value dictionary of the Config rule parameters
+    rule_parameters -- the Key/Value dictionary of the Config Rules parameters
     """
+    if "s3ObjectPath" not in rule_parameters:
+        logger.error('The parameter with "s3ObjectPath" as key must be defined.')
+        raise ValueError('The parameter with "s3ObjectPath" as key must be defined.')
+    if not rule_parameters["s3ObjectPath"]:
+        logger.error('The parameter "s3ObjectPath" must have a defined value.')
+        raise ValueError('The parameter "s3ObjectPath" must have a defined value.')
     return rule_parameters
 
 
-def check_security_contact(aws_account_client):
-    """Check if the account has a security contact.
-    Returns:
-    True if the account has a security contact, False otherwise.
+def check_s3_object_exists(s3_client, object_path):
+    """Check whether the S3 object exists.
+    Keyword arguments:
+    object_path -- the S3 object path
     """
-    try:
-        response = aws_account_client.get_alternate_contact(AlternateContactType="SECURITY")
-    except botocore.exceptions.ClientError as err:
-        if "ResourceNotFound" in err.response["Error"]["Code"]:
-            return False
-        else:
-            raise ValueError(f"Unexpected error: {err}") from err
+    # parse the S3 path
+    match = re.match(r"s3:\/\/([^/]+)\/((?:[^/]*/)*.*)", object_path)
+    if match:
+        bucket_name = match.group(1)
+        key_name = match.group(2)
     else:
-        if response:
-            alternate_contact = response.get("AlternateContact", {})
-            if (
-                alternate_contact.get("AlternateContactType", "") == "SECURITY"
-                and alternate_contact.get("EmailAddress", None)
-                and alternate_contact.get("Name", None)
-                and alternate_contact.get("PhoneNumber", None)
-            ):
-                return True
-        else:
-            raise ValueError("No response returned from get_alternate_contact.")
-    return False
+        logger.error("Unable to parse S3 object path %s", object_path)
+        raise ValueError(f"Unable to parse S3 object path {object_path}")
+    try:
+        s3_client.head_object(Bucket=bucket_name, Key=key_name)
+        # The object exists.
+        return True
+    except botocore.exceptions.ClientError as err:
+        if err.response["Error"]["Code"] == "404":
+            # The object does NOT exist.
+            logger.info("Object %s not found in bucket %s", key_name, bucket_name)
+            return False
+        if err.response["Error"]["Code"] == "403":
+            # AccessDenied
+            logger.info("Access denied to bucket %s", bucket_name)
+            return False
+        # Something else has gone wrong.
+        logger.error("Error trying to find object %s in bucket %s", key_name, bucket_name)
+        raise ValueError(f"Error trying to find object {key_name} in bucket {bucket_name}") from err
 
 
-# This generates an evaluation for config
+# This generate an evaluation for config
 def build_evaluation(
     resource_id,
     compliance_type,
@@ -125,7 +142,8 @@ def build_evaluation(
 
 
 def lambda_handler(event, context):
-    """This function is the main entry point for Lambda.
+    """
+    Lambda function that evaluates the Guardrail Cloud Segmentation Design document in the S3 bucket.
     Keyword arguments:
     event -- the event variable given in the lambda handler
     context -- the context variable given in the lambda handler
@@ -136,31 +154,38 @@ def lambda_handler(event, context):
 
     rule_parameters = json.loads(event.get("ruleParameters", "{}"))
     invoking_event = json.loads(event["invokingEvent"])
-    logger.info("Received Event: %s", json.dumps(event, indent=2))
+    logger.info("Received event: %s", json.dumps(event, indent=2))
 
-    # parse parameters
     AWS_ACCOUNT_ID = event["accountId"]
     logger.info("Assessing account %s", AWS_ACCOUNT_ID)
-
-    if not is_scheduled_notification(invoking_event["messageType"]):
-        logger.error("Skipping assessments as this is not a scheduled invocation")
-        return
 
     valid_rule_parameters = evaluate_parameters(rule_parameters)
     EXECUTION_ROLE_NAME = valid_rule_parameters.get("ExecutionRoleName", "AWSA-GCLambdaExecutionRole")
     AUDIT_ACCOUNT_ID = valid_rule_parameters.get("AuditAccountID", "")
 
-    aws_config_client = get_client("config", event)
-    aws_account_client = get_client("account", event)
+    if not is_scheduled_notification(invoking_event["messageType"]):
+        logger.error("Skipping assessments as this is not a scheduled invocation")
+        return
 
-    if check_security_contact(aws_account_client):
+    # This check only applies to the audit account
+    if AWS_ACCOUNT_ID != AUDIT_ACCOUNT_ID:
+        logger.info(
+            "Monitoring Use Cases document not checked in account %s - not the Audit account",
+            AWS_ACCOUNT_ID,
+        )
+        return
+
+    aws_config_client = get_client("config", event)
+    aws_s3_client = get_client("s3", event)
+
+    if check_s3_object_exists(aws_s3_client, valid_rule_parameters["s3ObjectPath"]):
         compliance_type = "COMPLIANT"
-        annotation = "Security contact registered"
+        annotation = "Monitoring Use Cases document found"
     else:
         compliance_type = "NON_COMPLIANT"
-        annotation = "Security contact NOT registered"
+        annotation = "Monitoring Use Cases document NOT found"
 
-    logger.info(f"{compliance_type}: {annotation}")
     evaluations = [build_evaluation(AWS_ACCOUNT_ID, compliance_type, event, ACCOUNT_RESOURCE_TYPE, annotation)]
 
+    logger.info(f"{compliance_type}: {annotation}")
     aws_config_client.put_evaluations(Evaluations=evaluations, ResultToken=event["resultToken"])

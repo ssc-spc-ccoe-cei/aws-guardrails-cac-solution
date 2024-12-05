@@ -1,5 +1,4 @@
-""" GC11 - Check Trail Logging
-    https://canada-ca.github.io/cloud-guardrails/EN/11_Logging-and-Monitoring.html
+""" GC11 - Confirms the appropriate timezone has been set
 """
 
 import json
@@ -115,84 +114,7 @@ def submit_evaluations(
             time.sleep(interval_between_calls)
 
 
-def cloudtrail_list_all_trails(cloudtrail_client, interval_between_calls: float = 0.1) -> list[dict]:
-    """
-    https://boto3.amazonaws.com/v1/documentation/api/latest/reference/services/cloudtrail/paginator/ListTrails.html
-    """
-    resources: list[dict] = []
-    paginator = cloudtrail_client.get_paginator("list_trails")
-    page_iterator = paginator.paginate()
-    for page in page_iterator:
-        resources.extend(page.get("Trails", []))
-        time.sleep(interval_between_calls)
-    return resources
-
-
-def event_selectors_are_configured_correctly(event_selectors):
-    for selector in event_selectors:
-        if selector.get("IncludeManagementEvents", None) != True or selector.get("ReadWriteType", "") != "All":
-            logger.info("Improperly Configured Event Selector found: %s", selector)
-            return False
-    return True
-
-
-def assess_cloudtrail_configurations(cloudtrail_client, event: dict) -> tuple[list[dict], bool]:
-    resource_type = "AWS::CloudTrail::Trail"
-    evaluations = []
-    all_resources_are_compliant = True
-
-    trail_list = cloudtrail_list_all_trails(cloudtrail_client)
-
-    if not trail_list:
-        return [], False
-
-    response = cloudtrail_client.describe_trails(
-        trailNameList=[x.get("TrailARN") for x in trail_list], includeShadowTrails=True
-    )
-    trails_descriptions = response.get("trailList", [])
-
-    for trail in trails_descriptions:
-        trail_name = trail.get("Name", "")
-        resource_id = trail.get("TrailARN", trail_name)
-        trail_status = cloudtrail_client.get_trail_status(Name=trail_name)
-
-        if not trail_status.get("IsLogging", False):
-            compliance_type = "NON_COMPLIANT"
-            annotation = f"Cloud Trail '{trail_name}' is NOT logging."
-        elif not trail.get("IncludeGlobalServiceEvents", False):
-            compliance_type = "NON_COMPLIANT"
-            annotation = f"Cloud Trail '{trail_name}' does NOT have IncludeGlobalServiceEvents set to True."
-        else:
-            response = cloudtrail_client.get_event_selectors(TrailName=trail_name)
-            event_selectors = response.get("EventSelectors", [])
-            if not event_selectors:
-                compliance_type = "NON_COMPLIANT"
-                annotation = f"Cloud Trail '{trail_name}' does have any event selectors."
-            elif not event_selectors_are_configured_correctly(event_selectors):
-                compliance_type = "NON_COMPLIANT"
-                annotation = f"Cloud Trail '{trail_name}' has an improperly configured event selector."
-            else:
-                compliance_type = "COMPLIANT"
-                annotation = f"Cloud Trail '{trail_name}' has the required configuration."
-
-        logger.info(f"{compliance_type}: {annotation}")
-        evaluations.append(build_evaluation(resource_id, compliance_type, event, resource_type, annotation))
-        if compliance_type == "NON_COMPLIANT":
-            all_resources_are_compliant = False
-
-    return evaluations, all_resources_are_compliant
-
-
-def aws_config_is_enabled(config_client):
-    result = config_client.describe_configuration_recorder_status()
-    recorders_status = result.get("ConfigurationRecordersStatus")
-    for status in recorders_status:
-        if status.get("recording", False) == True:
-            return True
-    return False
-
-
-def lambda_handler(event, context):
+def lambda_handler(event: dict, context):
     """Lambda handler to check CloudTrail trails are logging.
     Keyword arguments:
     event -- the event variable given in the lambda handler
@@ -202,7 +124,6 @@ def lambda_handler(event, context):
     global EXECUTION_ROLE_NAME
     global AUDIT_ACCOUNT_ID
 
-    evaluations = []
     rule_parameters = json.loads(event.get("ruleParameters", "{}"))
     invoking_event = json.loads(event["invokingEvent"])
     logger.info("Received Event: %s", json.dumps(event, indent=2))
@@ -220,23 +141,10 @@ def lambda_handler(event, context):
     AUDIT_ACCOUNT_ID = valid_rule_parameters.get("AuditAccountID", "")
 
     aws_config_client = get_client("config", event)
-    aws_cloudtrail_client = get_client("cloudtrail", event)
 
-    evaluations, all_cloudtrail_resources_are_compliant = assess_cloudtrail_configurations(aws_cloudtrail_client, event)
-
-    if not evaluations:
-        compliance_type = "NON_COMPLIANT"
-        annotation = f"No trails found. Cloud Trail is not enabled."
-    elif not all_cloudtrail_resources_are_compliant:
-        compliance_type = "NON_COMPLIANT"
-        annotation = "Non-compliant resources found in scope."
-    elif not aws_config_is_enabled(aws_config_client):
-        compliance_type = "NON_COMPLIANT"
-        annotation = "AWS Config is NOT enabled."
-    else:
-        compliance_type = "COMPLIANT"
-        annotation = "All resources found are compliant and AWS Config is enabled."
+    compliance_type = "COMPLIANT"
+    annotation = "Logs in AWS are timestamped in UTC."
 
     logger.info(f"{compliance_type}: {annotation}")
-    evaluations.append(build_evaluation(AWS_ACCOUNT_ID, compliance_type, event, ACCOUNT_RESOURCE_TYPE, annotation))
+    evaluations = [build_evaluation(AWS_ACCOUNT_ID, compliance_type, event, ACCOUNT_RESOURCE_TYPE, annotation)]
     submit_evaluations(aws_config_client, event["resultToken"], evaluations)
