@@ -1397,6 +1397,8 @@ Resources:
     Type: AWS::Config::OrganizationConformancePack
     Properties:
       ConformancePackInputParameters:
+        - ParameterName: UpdateConformancePackTrigger
+          Parametervalue: 1
         - ParameterName: GCLambdaExecutionRoleName
           ParameterValue: !Sub "${AccelRolePrefix}GCLambdaExecutionRole"
         - ParameterName: GCLambdaExecutionRoleName2
