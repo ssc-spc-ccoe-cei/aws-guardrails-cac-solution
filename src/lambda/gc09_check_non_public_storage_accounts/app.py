@@ -25,7 +25,7 @@ def get_client(service, event):
     service -- the service name used for calling the boto.client()
     event -- the event variable given in the lambda handler
     """
-    if not ASSUME_ROLE_MODE or (AWS_ACCOUNT_ID == AUDIT_ACCOUNT_ID):
+    if not ASSUME_ROLE_MODE:
         return boto3.client(service)
     execution_role_arn = f"arn:aws:iam::{AWS_ACCOUNT_ID}:role/{EXECUTION_ROLE_NAME}"
     credentials = get_assume_role_credentials(execution_role_arn)

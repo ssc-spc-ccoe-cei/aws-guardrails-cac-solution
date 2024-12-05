@@ -267,6 +267,7 @@ Resources:
                     "resource-explorer-2:ListIndexes",
                     "resource-explorer-2:Search",
                     "s3:Get*",
+                    "s3:GetBucketPublicAccessBlock",
                     "s3:List*",
                     "sns:GetSubscriptionAttributes",
                     "sns:GetTopicAttributes",
@@ -284,7 +285,8 @@ Resources:
                 {
                   "Action": [
                     "s3:Get*",
-                    "s3:ListBucket"
+                    "s3:ListBucket",
+                    "s3:GetBucketPublicAccessBlock"
                   ],
                   "Resource": [
                     "arn:${AWS::Partition}:s3:::${ClientEvidenceBucket}/*",
@@ -297,7 +299,8 @@ Resources:
                 },
                 {
                   "Action": [
-                    "s3:ListAllMyBuckets"
+                    "s3:ListAllMyBuckets",
+                    "s3:GetBucketPublicAccessBlock"
                   ],
                   "Resource": "*",
                   "Effect": "Allow",
@@ -385,6 +388,7 @@ Resources:
                 "resource-explorer-2:ListIndexes",
                 "resource-explorer-2:Search",
                 "s3:Get*",
+                "s3:GetBucketPublicAccessBlock",
                 "s3:List*",
                 "sns:GetTopicAttributes",
                 "sns:ListTopics",
@@ -1104,6 +1108,7 @@ Resources:
               - "s3:GetObjectVersionForReplication"
               - "s3:GetObjectVersionTagging"
               - "s3:GetObjectVersionTorrent"
+              - "s3:GetBucketPublicAccessBlock"
               - "s3:ListBucket"
             Resource:
               - !Sub
@@ -1126,6 +1131,7 @@ Resources:
           - Sid: AllowListBuckets
             Action:
               - s3:ListAllMyBuckets
+              - s3:GetBucketPublicAccessBlock
             Resource: "*"
             Effect: Allow
       PolicyName: !Sub "${OrganizationName}evidence_bucket_access_policy"
@@ -1242,6 +1248,7 @@ Resources:
               - "s3:GetEncryptionConfiguration"
               - "s3:ListAllMyBuckets"
               - "s3:ListBucket"
+              - "s3:GetBucketPublicAccessBlock"
               - "sns:GetSubscriptionAttributes"
               - "sns:GetTopicAttributes"
               - "sns:ListSubscriptionsByTopic"
@@ -1397,8 +1404,6 @@ Resources:
     Type: AWS::Config::OrganizationConformancePack
     Properties:
       ConformancePackInputParameters:
-        - ParameterName: UpdateConformancePackTrigger
-          Parametervalue: 1
         - ParameterName: GCLambdaExecutionRoleName
           ParameterValue: !Sub "${AccelRolePrefix}GCLambdaExecutionRole"
         - ParameterName: GCLambdaExecutionRoleName2
