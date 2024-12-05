@@ -105,6 +105,20 @@ Resources:
         LogFormat: "JSON"
 
   ## GC10
+  GC10CheckCyberCenterSensorsLambda:
+    Condition: IsAuditAccount
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub "${OrganizationName}gc10_check_cyber_center_sensors"
+      Code: "../../src/lambda/gc10_check_cyber_center_sensors/build/GC10CheckCyberCenterSensorsLambda/"
+      Handler: app.lambda_handler
+      Role: !Sub "arn:aws:iam::${AuditAccountID}:role/${RolePrefix}default_assessment_role"
+      Runtime: !Ref PythonRuntime
+      Timeout: 90
+      LoggingConfig:
+        LogGroup: !Sub "${OrganizationName}gc_guardrails"
+        LogFormat: "JSON"
+
   GC10CheckSignedMOULambda:
     Condition: IsAuditAccount
     Type: AWS::Lambda::Function

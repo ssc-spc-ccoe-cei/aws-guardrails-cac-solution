@@ -38,7 +38,8 @@ Resources:
                 Resource: !Sub arn:aws:iam::*:role/OrganizationAccountAccessRole
               - Effect: Allow
                 Action:
-                  - "organizations:ListAccounts"
+                  - "organizations:Describe*"
+                  - "organizations:List*"
                 Resource:
                   - "*"
 
