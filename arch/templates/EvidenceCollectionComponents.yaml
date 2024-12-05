@@ -148,6 +148,7 @@ Resources:
               - Effect: Allow
                 Action:
                   - "s3:GetObject"
+                  - "s3:GetBucketPublicAccessBlock"
                 Resource: !Sub "arn:aws:s3:::gc-fedclient-${AWS::AccountId}-${AWS::Region}/*"
               - Effect: Allow
                 Action:
@@ -158,6 +159,7 @@ Resources:
                   - "s3:PutObject"
                   - "s3:PutObjectAcl"
                   - "s3:GetObjectTagging"
+                  - "s3:GetBucketPublicAccessBlock"
                   - "s3:PutObjectTagging"
                 Resource: !Sub "arn:aws:s3:::${DestBucketName}/*"
 
