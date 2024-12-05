@@ -163,6 +163,7 @@ Resources:
               - "s3:GetObjectVersionForReplication"
               - "s3:GetObjectVersionTagging"
               - "s3:GetObjectVersionTorrent"
+              - "s3:GetBucketPublicAccessBlock"
               - "s3:ListBucket"
             Resource:
               - !Sub "arn:aws:s3:::${EvidenceBucketName}"
