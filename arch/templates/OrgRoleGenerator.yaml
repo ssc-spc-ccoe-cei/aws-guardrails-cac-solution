@@ -510,6 +510,7 @@ Resources:
                                 "iam:GenerateCredentialReport",
                                 "iam:Get*",
                                 "iam:List*",
+                                "iam:Simulate*",
                                 "kinesis:DescribeStream",
                                 "kinesis:ListStreams",
                                 "memorydb:Describe*",
