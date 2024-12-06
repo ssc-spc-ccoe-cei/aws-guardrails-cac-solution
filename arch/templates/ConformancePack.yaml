@@ -71,11 +71,7 @@ Parameters:
   S3ProtectedBServiceLocationDocumentPath:
     Type: String
   # GC07
-  S3CertificateAuthorityAttestationPath:
-    Type: String
   S3CasCurrentlyInUsePath:
-    Type: String
-  S3CryptographicAlgorithmsAttestationPath:
     Type: String
   S3SecureNetworkTransmissionPolicyPath:
     Type: String
@@ -783,11 +779,6 @@ Resources:
       ConfigRuleName: gc07_check_certificate_authorities
       Description: Verify cryptographic algorithms and protocols are configured by the user in accordance with ITSP.40.111 and ITSP.40.062
       InputParameters:
-        s3ObjectPath:
-            Fn::If:
-              - s3CertificateAuthorityAttestationPath
-              - Ref: S3CertificateAuthorityAttestationPath
-              - Ref: AWS::NoValue
         S3CasCurrentlyInUsePath:
             Fn::If:
               - s3CasCurrentlyInUsePath
@@ -824,11 +815,6 @@ Resources:
       ConfigRuleName: gc07_check_cryptographic_algorithms
       Description: Verify cryptographic algorithms and protocols are configured by the user in accordance with ITSP.40.111 and ITSP.40.062
       InputParameters:
-        s3ObjectPath:
-            Fn::If:
-              - s3CryptographicAlgorithmsAttestationPath
-              - Ref: S3CryptographicAlgorithmsAttestationPath
-              - Ref: AWS::NoValue
         ExecutionRoleName:
           Fn::If:
             - GCLambdaExecutionRoleName2
@@ -1630,21 +1616,11 @@ Conditions:
           - ""
           - Ref: S3ProtectedBServiceLocationDocumentPath
   # GC07
-  s3CertificateAuthorityAttestationPath:
-    Fn::Not:
-      - Fn::Equals:
-          - ""
-          - Ref: S3CertificateAuthorityAttestationPath
   s3CasCurrentlyInUsePath:
     Fn::Not:
       - Fn::Equals:
           - ""
           - Ref: S3CasCurrentlyInUsePath
-  s3CryptographicAlgorithmsAttestationPath:
-    Fn::Not:
-      - Fn::Equals:
-          - ""
-          - Ref: S3CryptographicAlgorithmsAttestationPath
   s3SecureNetworkTransmissionPolicyPath:
     Fn::Not:
       - Fn::Equals:
