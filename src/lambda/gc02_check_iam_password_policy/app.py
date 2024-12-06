@@ -126,7 +126,7 @@ def build_evaluation(
 def assess_iam_password_policy():
     """Obtains the IAM Password Policy in the account and assesses it against the parameters"""
     compliance_status = "COMPLIANT"
-    compliance_annotation = ""
+    compliance_annotation = "Dependent on the compliance of Federated IdP"
     try:
         # get the current policy
         response = AWS_IAM_CLIENT.get_account_password_policy()
@@ -208,7 +208,7 @@ def lambda_handler(event, context):
     rule_parameters = {}
 
     PASSWORD_ASSESSMENT_POLICY = {
-        "MinimumPasswordLength": 14,
+        "MinimumPasswordLength": 12,
         "RequireSymbols": True,
         "RequireNumbers": True,
         "RequireUppercaseCharacters": True,
