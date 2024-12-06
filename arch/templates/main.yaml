@@ -1441,10 +1441,6 @@ Resources:
           ParameterValue: !Sub
             - "s3://${ClientEvidenceBucket}/gc-07/cas_currently_in_use.txt"
             - ClientEvidenceBucket: !If [ GenerateEvidenceBucketName, !GetAtt GenerateEvidenceBucketName.EvidenceBucketName, !Ref EvidenceBucketName ]
-        - ParameterName: S3CryptographicAlgorithmsAttestationPath
-          ParameterValue: !Sub
-            - "s3://${ClientEvidenceBucket}/gc-07/cryptographic_algorithms_attestation.pdf"
-            - ClientEvidenceBucket: !If [ GenerateEvidenceBucketName, !GetAtt GenerateEvidenceBucketName.EvidenceBucketName, !Ref EvidenceBucketName ]
         - ParameterName: S3SecureNetworkTransmissionPolicyPath
           ParameterValue: !Sub
             - "s3://${ClientEvidenceBucket}/gc-07/secure_network_transmission.pdf"

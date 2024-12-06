@@ -75,8 +75,6 @@ Parameters:
     Type: String
   S3CasCurrentlyInUsePath:
     Type: String
-  S3CryptographicAlgorithmsAttestationPath:
-    Type: String
   S3SecureNetworkTransmissionPolicyPath:
     Type: String
   # GC08
@@ -824,11 +822,6 @@ Resources:
       ConfigRuleName: gc07_check_cryptographic_algorithms
       Description: Verify cryptographic algorithms and protocols are configured by the user in accordance with ITSP.40.111 and ITSP.40.062
       InputParameters:
-        s3ObjectPath:
-            Fn::If:
-              - s3CryptographicAlgorithmsAttestationPath
-              - Ref: S3CryptographicAlgorithmsAttestationPath
-              - Ref: AWS::NoValue
         ExecutionRoleName:
           Fn::If:
             - GCLambdaExecutionRoleName2
@@ -1640,11 +1633,6 @@ Conditions:
       - Fn::Equals:
           - ""
           - Ref: S3CasCurrentlyInUsePath
-  s3CryptographicAlgorithmsAttestationPath:
-    Fn::Not:
-      - Fn::Equals:
-          - ""
-          - Ref: S3CryptographicAlgorithmsAttestationPath
   s3SecureNetworkTransmissionPolicyPath:
     Fn::Not:
       - Fn::Equals:
