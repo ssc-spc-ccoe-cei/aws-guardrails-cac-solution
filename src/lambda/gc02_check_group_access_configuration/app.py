@@ -1,4 +1,4 @@
-""" GC02 - Check IAM Password Policy
+""" GC02 - Check Group Access Configuration
     https://canada-ca.github.io/cloud-guardrails/EN/02_Management-Admin-Privileges.html
 """
 import json

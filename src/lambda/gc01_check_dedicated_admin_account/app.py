@@ -117,7 +117,7 @@ def fetch_users():
     try:
         while True:
             response = AWS_IAM_CLIENT.list_users(Marker=marker) if marker else AWS_IAM_CLIENT.list_users()
-            users = users + users.get("Users", [])
+            users = users + response.get("Users", [])
             if not marker:
                 break
     except botocore.exceptions.ClientError as ex:
@@ -180,7 +180,7 @@ def fetch_sso_instances():
             if not nextToken:
                 break
     except botocore.exceptions.ClientError as ex:
-        logger.info(ex)
+        logger.info(f"fetch_sso_instances exception: {ex}")
         ex.response["Error"]["Message"] = "InternalError"
         ex.response["Error"]["Code"] = "InternalError"
         raise ex
@@ -189,6 +189,7 @@ def fetch_sso_instances():
     
 def fetch_sso_users():
     instances = fetch_sso_instances()
+    logger.info(f"instances: {instances}")
     users_by_instance = {}
     for i in instances:
         if i.get("Status") != "Active":
@@ -398,8 +399,10 @@ def lambda_handler(event, context):
     AWS_IDENTITY_STORE_CLIENT = get_client("identitystore", event)
     AWS_S3_CLIENT = boto3.client("s3")
     
-    users = fetch_sso_users()
-    logger.info(users)
+    sso_users = fetch_sso_users()
+    users = fetch_users()
+    logger.info(f"sso users by instance: {sso_users}")
+    logger.info(f"iam users: {users}")
     
     # is this a scheduled invokation?
     # if is_scheduled_notification(invoking_event["messageType"]):
