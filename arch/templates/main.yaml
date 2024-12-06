@@ -266,6 +266,8 @@ Resources:
                     "rds:Describe*",
                     "resource-explorer-2:ListIndexes",
                     "resource-explorer-2:Search",
+                    "sso:ListInstances",
+                    "sso:ListUsers",
                     "s3:Get*",
                     "s3:GetBucketPublicAccessBlock",
                     "s3:List*",
@@ -1249,6 +1251,8 @@ Resources:
               - "s3:ListAllMyBuckets"
               - "s3:ListBucket"
               - "s3:GetBucketPublicAccessBlock"
+              - "sso:ListInstances"
+              - "sso:ListUsers"
               - "sns:GetSubscriptionAttributes"
               - "sns:GetTopicAttributes"
               - "sns:ListSubscriptionsByTopic"
