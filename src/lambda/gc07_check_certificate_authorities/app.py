@@ -18,12 +18,6 @@ def evaluate_parameters(rule_parameters):
     Keyword arguments:
     rule_parameters -- the Key/Value dictionary of the Config Rule parameters
     """
-    if "s3ObjectPath" not in rule_parameters:
-        logger.error('The parameter with "s3ObjectPath" as key must be defined.')
-        raise ValueError('The parameter with "s3ObjectPath" as key must be defined.')
-    if not rule_parameters["s3ObjectPath"]:
-        logger.error('The parameter "s3ObjectPath" must have a defined value.')
-        raise ValueError('The parameter "s3ObjectPath" must have a defined value.')
     if "S3CasCurrentlyInUsePath" not in rule_parameters:
         logger.error('The parameter with "S3CasCurrentlyInUsePath" as key must be defined.')
         raise ValueError('The parameter with "S3CasCurrentlyInUsePath" as key must be defined.')
@@ -148,7 +142,7 @@ def get_lines_from_s3_file(aws_s3_client, s3_file_path: str) -> list[str]:
     return response.get("Body").read().decode("utf-8").splitlines()
 
 
-def acm_list_all_certificates(acm_client, page_size: int = 50, interval_between_calls: float = 0.25) -> list[dict]:
+def acm_list_all_certificates(acm_client, page_size: int = 50, interval_between_calls: float = 0.1) -> list[dict]:
     """
     Get a list of all the AWS Certificate Manager Certificates
     https://boto3.amazonaws.com/v1/documentation/api/latest/reference/services/acm/paginator/ListCertificates.html
@@ -182,7 +176,7 @@ def acm_describe_certificate(acm_client, certificate_arn: str) -> dict | None:
 
 
 def assess_certificate_manager_enforcement(
-    certificate_descriptions: list[dict], cas_currently_in_use: list[str], attestation_file_exists: bool, event: dict
+    certificate_descriptions: list[dict], cas_currently_in_use: list[str], event: dict
 ) -> tuple[list, bool]:
     resource_type = "AWS::ACM::Certificate"
     evaluations = []
@@ -193,12 +187,8 @@ def assess_certificate_manager_enforcement(
         cert_issuer: str = cert_description.get("Issuer", "")
 
         if cert_issuer in cas_currently_in_use:
-            if attestation_file_exists:
-                annotation = "The certificate is issued by a current CA and the attestation file exists."
-                compliance_type = "COMPLIANT"
-            else:
-                annotation = "The certificate is issued by a current CA, but the attestation file does NOT exist."
-                compliance_type = "NON_COMPLIANT"
+            annotation = "The certificate is issued by a current CA and the attestation file exists."
+            compliance_type = "COMPLIANT"
         else:
             annotation = f"The certificate is NOT issued by a current CA ({cert_issuer})."
             compliance_type = "NON_COMPLIANT"
@@ -212,7 +202,7 @@ def assess_certificate_manager_enforcement(
 
 
 def submit_evaluations(
-    aws_config_client, result_token: str, evaluations: list[dict], interval_between_calls: float = 0.25
+    aws_config_client, result_token: str, evaluations: list[dict], interval_between_calls: float = 0.1
 ):
     max_evaluations_per_call = 100
     while evaluations:
@@ -240,7 +230,7 @@ def lambda_handler(event, context):
     global EXECUTION_ROLE_NAME
 
     page_size = 100
-    interval_between_api_calls = 0.25
+    interval_between_api_calls = 0.1
 
     rule_parameters = json.loads(event.get("ruleParameters", "{}"))
     invoking_event = json.loads(event.get("invokingEvent", "{}"))
@@ -277,31 +267,22 @@ def lambda_handler(event, context):
     cas_currently_in_use = get_lines_from_s3_file(aws_s3_client, cas_currently_in_use_file_path)
     logger.info("cas_currently_in_use from the file in s3: %s", cas_currently_in_use)
 
-    attestation_file_exists = check_s3_object_exists(aws_s3_client, valid_rule_parameters["s3ObjectPath"])
-    
     certificates_summaries = acm_list_all_certificates(aws_acm_client, page_size, interval_between_api_calls)
     certificates_descriptions = [
         acm_describe_certificate(aws_acm_client, x.get("CertificateArn", "")) for x in certificates_summaries
     ]
 
     evaluations, all_acm_resources_are_compliant = assess_certificate_manager_enforcement(
-        certificates_descriptions, cas_currently_in_use, attestation_file_exists, event
+        certificates_descriptions, cas_currently_in_use, event
     )
 
-    status = "COMPLIANT" if all_acm_resources_are_compliant and attestation_file_exists else "NON_COMPLIANT"
-    resources_annotation = (
-        "All resources found are compliant."
-        if all_acm_resources_are_compliant
-        else "Non-compliant resources found in scope."
-    )
-    file_annotation = (
-        "Certificate Authority Attestation file exists."
-        if attestation_file_exists
-        else "Certificate Authority Attestation file does NOT exist."
-    )
-    annotation = f"{resources_annotation} {file_annotation}"
+    if all_acm_resources_are_compliant:
+        compliance_type = "COMPLIANT"
+        annotation = "All resources found are compliant."
+    else:
+        compliance_type = "NON_COMPLIANT"
+        annotation = "Non-compliant resources found in scope."
 
-    logger.info(f"{status}: {annotation}")
-    evaluations.append(build_evaluation(AWS_ACCOUNT_ID, status, event, ACCOUNT_RESOURCE_TYPE, annotation))
-
+    logger.info(f"{compliance_type}: {annotation}")
+    evaluations.append(build_evaluation(AWS_ACCOUNT_ID, compliance_type, event, ACCOUNT_RESOURCE_TYPE, annotation))
     submit_evaluations(aws_config_client, event["resultToken"], evaluations, interval_between_api_calls)
