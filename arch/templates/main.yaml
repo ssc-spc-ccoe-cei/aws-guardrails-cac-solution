@@ -1433,10 +1433,6 @@ Resources:
           ParameterValue: !Sub
             - "s3://${ClientEvidenceBucket}/gc-05/service_location_protectedb.pdf"
             - ClientEvidenceBucket: !If [ GenerateEvidenceBucketName, !GetAtt GenerateEvidenceBucketName.EvidenceBucketName, !Ref EvidenceBucketName ]
-        - ParameterName: S3CertificateAuthorityAttestationPath
-          ParameterValue: !Sub
-            - "s3://${ClientEvidenceBucket}/gc-07/certificate_authority_attestation.pdf"
-            - ClientEvidenceBucket: !If [ GenerateEvidenceBucketName, !GetAtt GenerateEvidenceBucketName.EvidenceBucketName, !Ref EvidenceBucketName ]
         - ParameterName: S3CasCurrentlyInUsePath
           ParameterValue: !Sub
             - "s3://${ClientEvidenceBucket}/gc-07/cas_currently_in_use.txt"
