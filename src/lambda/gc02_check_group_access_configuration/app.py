@@ -178,8 +178,8 @@ def check_group_policies(group_name, admin_accounts, event):
     inline_policies = fetch_inline_group_policies(group_name)
     
     # Checks for the aws managed policy AdministratorAccess or an inline policy that gives the same access.
-    has_admin_policy = next((p for p in managed_policies if p.get("PolicyName", "") == "AdministratorAccess"), False) or next((p for p in inline_policies if policy_doc_gives_admin_access(p.get("PolicyDocument", "\{\}"))), False)
-    has_non_admin_policy = next((p for p in managed_policies if p.get("PolicyName", "") != "AdministratorAccess"), False) or next((p for p in inline_policies if not policy_doc_gives_admin_access(p.get("PolicyDocument", "\{\}"))), False)
+    has_admin_policy = next((True for p in managed_policies if p.get("PolicyName", "") == "AdministratorAccess"), False) or next((True for p in inline_policies if policy_doc_gives_admin_access(p.get("PolicyDocument", "\{\}"))), False)
+    has_non_admin_policy = next((True for p in managed_policies if p.get("PolicyName", "") != "AdministratorAccess"), False) or next((True for p in inline_policies if not policy_doc_gives_admin_access(p.get("PolicyDocument", "\{\}"))), False)
     
     # Does the group have admin policies and non admin policies?
     if has_admin_policy and has_non_admin_policy:
@@ -195,9 +195,9 @@ def check_group_policies(group_name, admin_accounts, event):
     # Is the group an admin group?
     if has_admin_policy:
         # yes, fetch group members and check against admin_accounts
-        group_members = fetch_group_members(group_name, event)
-        only_has_admins = next((m for m in group_members if m.get("UserName", "") not in admin_accounts), True)
-        if not only_has_admins:
+        group_members = fetch_group_members(group_name)
+        has_non_admin_member = next((m for m in group_members if m.get("UserName", "") not in admin_accounts), False)
+        if has_non_admin_member:
             return build_evaluation(
                 group_name,
                 "NON_COMPLIANT",
@@ -216,7 +216,7 @@ def check_group_policies(group_name, admin_accounts, event):
         annotation=annotation
     )
     
-def fetch_group_members(group_name, event):
+def fetch_group_members(group_name):
     members = []
     marker = None
     try:
@@ -239,7 +239,10 @@ def fetch_group_members(group_name, event):
 def policy_doc_gives_admin_access(policy_doc: str):
     document_dict = json.loads(policy_doc)
     statement = document_dict.get("Statement", [])
-    return len(statement) == 1 and statement[0].get("Effect", "") == "Allow" and statement[0].get("Action", "") == "*" and statement[0].get("Resource", "") == "*"
+    for statement_component in statement:
+        if statement_component.get("Effect", "") == "Allow" and statement_component.get("Action", "") == "*" and statement_component.get("Resource", "") == "*":
+            return True
+    return False
         
 def fetch_inline_group_policies(group_name):
     policies = []
@@ -361,6 +364,7 @@ def lambda_handler(event, context):
                 eval = check_group_policies(g.get("GroupName", ""), admin_accounts, event)
                 if eval.get("ComplianceType", "NON_COMPLIANT") == "NON_COMPLIANT":
                     is_compliant = False
+                evaluations.append(eval)
             
             if is_compliant:
                 evaluations.append(
