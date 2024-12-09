@@ -69,7 +69,7 @@ Resources:
             Effect: Allow
           - Sid: AllowIAM
             Action:
-              - "iam:ListRoles"
+              - "iam:List*"
             Resource: "*"
             Effect: Allow
       PolicyName: gc_setup_amresources_lambda_execution_role_policy
