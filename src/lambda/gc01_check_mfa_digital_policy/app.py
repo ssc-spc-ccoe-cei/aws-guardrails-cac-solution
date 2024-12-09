@@ -1,6 +1,7 @@
 """ GC01 - Check Federated Users MFA
     https://canada-ca.github.io/cloud-guardrails/EN/01_Protect-Root-Account.html
 """
+
 import json
 import logging
 
@@ -43,10 +44,7 @@ def get_assume_role_credentials(role_arn):
     """
     sts_client = boto3.client("sts")
     try:
-        assume_role_response = sts_client.assume_role(
-            RoleArn=role_arn,
-            RoleSessionName="configLambdaExecution"
-        )
+        assume_role_response = sts_client.assume_role(RoleArn=role_arn, RoleSessionName="configLambdaExecution")
         return assume_role_response["Credentials"]
     except botocore.exceptions.ClientError as ex:
         # Scrub error message for any internal account info leaks
@@ -73,6 +71,7 @@ def evaluate_parameters(rule_parameters):
     """
     return rule_parameters
 
+
 # This generate an evaluation for config
 def build_evaluation(
     resource_id,
@@ -96,10 +95,26 @@ def build_evaluation(
     eval_cc["ComplianceResourceType"] = resource_type
     eval_cc["ComplianceResourceId"] = resource_id
     eval_cc["ComplianceType"] = compliance_type
-    eval_cc["OrderingTimestamp"] = str(
-        json.loads(event["invokingEvent"])["notificationCreationTime"]
-    )
+    eval_cc["OrderingTimestamp"] = str(json.loads(event["invokingEvent"])["notificationCreationTime"])
     return eval_cc
+
+
+def account_has_federated_users(iam_client) -> bool:
+    response = iam_client.list_open_id_connect_providers()
+    if not response:
+        raise Exception("Request to list OIDC providers returned an invalid response")
+    providers = response.get("OpenIDConnectProviderList", [])
+    if providers:
+        return True
+
+    response = iam_client.list_saml_providers()
+    if not response:
+        raise Exception("Request to list SAML providers returned an invalid response")
+    providers = response.get("SAMLProviderList", [])
+    if providers:
+        return True
+
+    return False
 
 
 def lambda_handler(event, context):
@@ -110,7 +125,6 @@ def lambda_handler(event, context):
     """
     logger.debug("Received event: %s", event)
 
-    global AWS_CONFIG_CLIENT
     global AWS_ACCOUNT_ID
     global EXECUTION_ROLE_NAME
     global AUDIT_ACCOUNT_ID
@@ -138,22 +152,17 @@ def lambda_handler(event, context):
     else:
         AUDIT_ACCOUNT_ID = ""
 
-    AWS_CONFIG_CLIENT = get_client("config", event)
+    if not is_scheduled_notification(invoking_event["messageType"]):
+        return
 
-    # is this a scheduled invokation?
-    if is_scheduled_notification(invoking_event["messageType"]):
-        # yes, proceed
-        # Update AWS Config with the evaluation result
-        evaluations = [
-            build_evaluation(
-                AWS_ACCOUNT_ID,
-                "COMPLIANT",
-                event,
-                DEFAULT_RESOURCE_TYPE,
-                "Dependent on the compliance of Federated IdP"
-            )
-        ]
-        AWS_CONFIG_CLIENT.put_evaluations(
-            Evaluations=evaluations,
-            ResultToken=event["resultToken"]
-        )
+    aws_config_client = get_client("config", event)
+    aws_iam_client = get_client("iam", event)
+
+    annotation = (
+        "Dependent on the compliance of the Federated IdP."
+        if account_has_federated_users(aws_iam_client)
+        else "No federated IdP found."
+    )
+
+    evaluations = [build_evaluation(AWS_ACCOUNT_ID, "COMPLIANT", event, DEFAULT_RESOURCE_TYPE, annotation)]
+    aws_config_client.put_evaluations(Evaluations=evaluations, ResultToken=event["resultToken"])
