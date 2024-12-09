@@ -1429,10 +1429,6 @@ Resources:
           ParameterValue: !Sub
             - "s3://${ClientEvidenceBucket}/gc-02/account_management_plan.pdf"
             - ClientEvidenceBucket: !If [ GenerateEvidenceBucketName, !GetAtt GenerateEvidenceBucketName.EvidenceBucketName, !Ref EvidenceBucketName ]
-        - ParameterName: S3CustomRoleRationalizationDocumentPath
-          ParameterValue: !Sub
-            - "s3://${ClientEvidenceBucket}/gc-02/least_privilege_roles.pdf"
-            - ClientEvidenceBucket: !If [ GenerateEvidenceBucketName, !GetAtt GenerateEvidenceBucketName.EvidenceBucketName, !Ref EvidenceBucketName ]
         - ParameterName: S3RoleAssignmentReviewDocumentPath
           ParameterValue: !Sub
             - "s3://${ClientEvidenceBucket}/gc-02/access_reviews_privileged_roles.pdf"
@@ -1440,10 +1436,6 @@ Resources:
         - ParameterName: S3AdminAccountListPath
           ParameterValue: !Sub
             - "s3://${ClientEvidenceBucket}/gc-02/admin_accounts.txt"
-            - ClientEvidenceBucket: !If [ GenerateEvidenceBucketName, !GetAtt GenerateEvidenceBucketName.EvidenceBucketName, !Ref EvidenceBucketName ]
-        - ParameterName: S3ProtectedBServiceLocationDocumentPath
-          ParameterValue: !Sub
-            - "s3://${ClientEvidenceBucket}/gc-05/service_location_protectedb.pdf"
             - ClientEvidenceBucket: !If [ GenerateEvidenceBucketName, !GetAtt GenerateEvidenceBucketName.EvidenceBucketName, !Ref EvidenceBucketName ]
         - ParameterName: S3CasCurrentlyInUsePath
           ParameterValue: !Sub
