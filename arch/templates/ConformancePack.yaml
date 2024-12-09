@@ -54,8 +54,6 @@ Parameters:
   # GC02
   S3AccountManagementPlanPath:
     Type: String
-  S3CustomRoleRationalizationDocumentPath:
-    Type: String
   S3RoleAssignmentReviewDocumentPath:
     Type: String
   S3AdminAccountListPath:
@@ -72,9 +70,6 @@ Parameters:
     Type: String
   EnterpriseMonitoringIAMTrustedPrincipal:
     Default: "arn:aws:iam::939755092653:root"
-    Type: String
-  # GC05
-  S3ProtectedBServiceLocationDocumentPath:
     Type: String
   # GC07
   S3CasCurrentlyInUsePath:
@@ -390,42 +385,6 @@ Resources:
             - - "arn:aws:lambda:ca-central-1:"
               - Ref: AuditAccountID
               - !Sub ":function:${OrganizationName}gc02_check_account_mgmt_plan"
-        SourceDetails:
-          - EventSource: "aws.config"
-            MessageType: "ScheduledNotification"
-  GC02CheckLeastPrivilegedRolesConfigRule:
-    Type: "AWS::Config::ConfigRule"
-    Properties:
-      ConfigRuleName: gc02_check_least_privileged_roles
-      Description: Checks S3 bucket for the custom role rationalization document.
-      InputParameters:
-        s3ObjectPath:
-          Fn::If:
-            - s3CustomRoleRationalizationDocumentPath
-            - Ref: S3CustomRoleRationalizationDocumentPath
-            - Ref: AWS::NoValue
-        ExecutionRoleName:
-          Fn::If:
-            - GCLambdaExecutionRoleName
-            - Ref: GCLambdaExecutionRoleName
-            - Ref: AWS::NoValue
-        AuditAccountID:
-          Fn::If:
-            - auditAccountID
-            - Ref: AuditAccountID
-            - Ref: AWS::NoValue
-      Scope:
-        ComplianceResourceTypes:
-          - AWS::Account
-      MaximumExecutionFrequency: TwentyFour_Hours
-      Source:
-        Owner: CUSTOM_LAMBDA
-        SourceIdentifier:
-          Fn::Join:
-            - ""
-            - - "arn:aws:lambda:ca-central-1:"
-              - Ref: AuditAccountID
-              - !Sub ":function:${OrganizationName}gc02_check_least_privileged_roles"
         SourceDetails:
           - EventSource: "aws.config"
             MessageType: "ScheduledNotification"
@@ -767,11 +726,6 @@ Resources:
       ConfigRuleName: gc05_check_data_location
       Description: Confirms if the account has deployed resources to unauthorized regions.
       InputParameters:
-        s3ObjectPath:
-          Fn::If:
-            - s3ProtectedBServiceLocationDocumentPath
-            - Ref: S3ProtectedBServiceLocationDocumentPath
-            - Ref: AWS::NoValue
         ExecutionRoleName:
           Fn::If:
             - GCLambdaExecutionRoleName
@@ -1737,11 +1691,6 @@ Conditions:
       - Fn::Equals:
           - ""
           - Ref: S3AccountManagementPlanPath
-  s3CustomRoleRationalizationDocumentPath:
-    Fn::Not:
-      - Fn::Equals:
-          - ""
-          - Ref: S3CustomRoleRationalizationDocumentPath
   s3AdminAccountListPath:
     Fn::Not:
       - Fn::Equals:
@@ -1769,12 +1718,6 @@ Conditions:
       - Fn::Equals:
           - ""
           - Ref: EnterpriseMonitoringIAMTrustedPrincipal
-  # GC05
-  s3ProtectedBServiceLocationDocumentPath:
-    Fn::Not:
-      - Fn::Equals:
-          - ""
-          - Ref: S3ProtectedBServiceLocationDocumentPath
   # GC07
   s3CasCurrentlyInUsePath:
     Fn::Not:
