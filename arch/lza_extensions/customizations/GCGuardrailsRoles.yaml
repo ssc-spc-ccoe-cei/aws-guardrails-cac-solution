@@ -251,6 +251,7 @@ Resources:
               - "iam:ListAttachedRolePolicies"
               - "iam:ListMFADevices"
               - "iam:ListUsers"
+              - "iam:Simulate*"
             Resource: "*"
             Effect: Allow
           - Sid: AllowCloudWatchAlarmQueries
