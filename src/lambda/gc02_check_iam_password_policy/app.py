@@ -122,11 +122,28 @@ def build_evaluation(
     )
     return eval_cc
 
+def account_has_federated_users(iam_client) -> bool:
+    response = iam_client.list_open_id_connect_providers()
+    if not response:
+        raise Exception("Request to list OIDC providers returned an invalid response")
+    providers = response.get("OpenIDConnectProviderList", [])
+    if providers:
+        return True
+
+    response = iam_client.list_saml_providers()
+    if not response:
+        raise Exception("Request to list SAML providers returned an invalid response")
+    providers = response.get("SAMLProviderList", [])
+    if providers:
+        return True
+
+    return False
+
 
 def assess_iam_password_policy():
     """Obtains the IAM Password Policy in the account and assesses it against the parameters"""
     compliance_status = "COMPLIANT"
-    compliance_annotation = "Dependent on the compliance of Federated IdP"
+    compliance_annotation =  "Dependent on the compliance of Federated IdP" if account_has_federated_users(AWS_IAM_CLIENT) else ""
     try:
         # get the current policy
         response = AWS_IAM_CLIENT.get_account_password_policy()
