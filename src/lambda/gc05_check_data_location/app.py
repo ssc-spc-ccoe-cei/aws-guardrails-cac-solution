@@ -70,38 +70,6 @@ def evaluate_parameters(rule_parameters):
     """
     return rule_parameters
 
-def check_s3_object_exists(object_path):
-    """Check whether the S3 object exists.
-    Keyword arguments:
-    object_path -- the S3 object path
-    """
-    # parse the S3 path
-    match = re.match(r"s3:\/\/([^/]+)\/((?:[^/]*/)*.*)", object_path)
-    if match:
-        bucket_name = match.group(1)
-        key_name = match.group(2)
-    else:
-        logger.error("Unable to parse S3 object path %s", object_path)
-        raise ValueError(f"Unable to parse S3 object path {object_path}")
-    try:
-        # AWS_S3_CLIENT.head_object(Bucket='poc-gc-guardrails-sq2wa',
-        # Key='gc-01/attestation_letter.pdf')
-        AWS_S3_CLIENT.head_object(Bucket=bucket_name, Key=key_name)
-        # The object does exist.
-        return True
-    except botocore.exceptions.ClientError as err:
-        if err.response["Error"]["Code"] == "404":
-            # The object does not exist.
-            logger.info("Object %s not found in bucket %s", key_name, bucket_name)
-            return False
-        if err.response["Error"]["Code"] == "403":
-            # AccessDenied
-            logger.info("Access denied to bucket %s", bucket_name)
-            return False
-        # Something else has gone wrong.
-        logger.error("Error trying to find object %s in bucket %s", key_name, bucket_name)
-        raise ValueError(f"Error trying to find object {key_name} in bucket {bucket_name}") from err
-
 def get_enabled_regions():
     """Get the list of enabled regions
     Returns:
@@ -603,28 +571,6 @@ def lambda_handler(event, context):
             complianceStatus = 'COMPLIANT'
             complianceAnnotation = 'No resources found in unauthorized regions.'
             evaluations.append(build_evaluation(event['accountId'], complianceStatus, event, resource_type=DEFAULT_RESOURCE_TYPE, annotation=complianceAnnotation))
-        
-        # Checking for Protected B Service Location document
-        if AWS_ACCOUNT_ID == AUDIT_ACCOUNT_ID:
-            AWS_S3_CLIENT = get_client("s3", event)
-            attestation_compliance_value = "NOT_APPLICABLE"
-            attestation_custom_annotation = "Guardrail attestation file check only applicable in the Audit Account"
-            # check if object exists in S3
-            if check_s3_object_exists(valid_rule_parameters["s3ObjectPath"]):
-                attestation_compliance_value = "COMPLIANT"
-                attestation_custom_annotation = "Protected B Service Location document found"
-            else:
-                attestation_compliance_value = "NON_COMPLIANT"
-                attestation_custom_annotation = "Protected B Service Location document NOT found"
-            evaluations.append(
-                build_evaluation(
-                    event["accountId"],
-                    attestation_compliance_value,
-                    event,
-                    resource_type=DEFAULT_RESOURCE_TYPE,
-                    annotation=attestation_custom_annotation,
-                )
-            )
         
         number_of_evaluations = len(evaluations)
         if number_of_evaluations > 0:
