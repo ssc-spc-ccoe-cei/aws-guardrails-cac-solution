@@ -268,6 +268,11 @@ Resources:
                     "resource-explorer-2:Search",
                     "sso:ListInstances",
                     "sso:ListUsers",
+                    "sso:ListManagedPoliciesInPermissionSet",
+                    "sso:GetInlinePolicyForPermissionSet",
+                    "sso:ListCustomerManagedPolicyReferencesInPermissionSet",
+                    "sso:ListPermissionSetsProvisionedToAccount",
+                    "sso:ListAccountAssignments",
                     "s3:Get*",
                     "s3:List*",
                     "sns:GetSubscriptionAttributes",
@@ -1180,6 +1185,11 @@ Resources:
               - "iam:ListAttachedRolePolicies"
               - "iam:ListMFADevices"
               - "iam:ListUsers"
+              - "iam:ListUserPolicies"
+              - "iam:GetUserPolicy"
+              - "iam:ListAttachedUserPolicies"
+              - "iam:ListPolicies"
+              - "iam:GetPolicyVersion"
             Resource: "*"
             Effect: Allow
           - Sid: AllowCloudWatchAlarmQueries
@@ -1245,6 +1255,11 @@ Resources:
               - "s3:ListBucket"
               - "sso:ListInstances"
               - "sso:ListUsers"
+              - "sso:ListManagedPoliciesInPermissionSet"
+              - "sso:GetInlinePolicyForPermissionSet"
+              - "sso:ListCustomerManagedPolicyReferencesInPermissionSet"
+              - "sso:ListPermissionSetsProvisionedToAccount"
+              - "sso:ListAccountAssignments"
               - "sns:GetSubscriptionAttributes"
               - "sns:GetTopicAttributes"
               - "sns:ListSubscriptionsByTopic"
