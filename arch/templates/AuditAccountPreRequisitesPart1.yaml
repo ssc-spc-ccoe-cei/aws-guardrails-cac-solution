@@ -201,15 +201,9 @@ Resources:
             Effect: Allow
           - Sid: AllowIAMQueries
             Action:
-              - "iam:GenerateCredentialReport"
-              - "iam:GetAccountPasswordPolicy"
-              - "iam:GetCredentialReport"
-              - "iam:GetLoginProfile"
-              - "iam:GetRole"
-              - "iam:GetUser"
-              - "iam:ListAttachedRolePolicies"
-              - "iam:ListMFADevices"
-              - "iam:ListUsers"
+              - "iam:Generate*"
+              - "iam:Get*"
+              - "iam:List*"
               - "iam:Simulate*"
             Resource: "*"
             Effect: Allow
