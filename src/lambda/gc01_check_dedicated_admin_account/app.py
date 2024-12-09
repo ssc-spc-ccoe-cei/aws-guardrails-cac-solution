@@ -16,7 +16,7 @@ logger.setLevel(logging.INFO)
 # Set to True to get the lambda to assume the Role attached on the Config Service
 ASSUME_ROLE_MODE = True
 DEFAULT_RESOURCE_TYPE = "AWS::::Account"
-GROUP_RESOURCE_TYPE = "AWS::IAM::Group"
+USER_RESOURCE_TYPE = "AWS::IAM::User"
 
 
 # This gets the client after assuming the Config service role
@@ -189,19 +189,19 @@ def fetch_sso_instances():
     
 def fetch_sso_users():
     instances = fetch_sso_instances()
-    logger.info(f"instances: {instances}")
     users_by_instance = {}
     for i in instances:
         if i.get("Status") != "Active":
             continue
         
         instance_id = i.get("IdentityStoreId")
+        instance_arn = i.get("InstanceArn")
         users_by_instance[instance_id]
         nextToken = None
         try:
             while True:
                 response = AWS_IDENTITY_STORE_CLIENT.list_users(IdentityStoreId=instance_id, NextToken=nextToken) if nextToken else AWS_IDENTITY_STORE_CLIENT.list_users(IdentityStoreId=instance_id)
-                users_by_instance[instance_id] = users_by_instance[instance_id] + response.get("Users", [])
+                users_by_instance[instance_arn] = users_by_instance[instance_arn] + response.get("Users", [])
                 nextToken = response.get("NextToken")
                 if not nextToken:
                     break
@@ -210,149 +210,240 @@ def fetch_sso_users():
             ex.response["Error"]["Code"] = "InternalError"
             raise ex   
     return users_by_instance
-
-# def fetch_groups():
-#     groups = []
-#     marker = None
-#     try:
-#         while True:
-#             response = AWS_IAM_CLIENT.list_groups(Marker=marker) if marker else AWS_IAM_CLIENT.list_groups()
-#             groups = groups + response.get("Groups", [])
-#             marker = response.get("Marker")
-#             if not marker:
-#                 break
-#     except botocore.exceptions.ClientError as ex:
-#         ex.response["Error"]["Message"] = "InternalError"
-#         ex.response["Error"]["Code"] = "InternalError"
-#         raise ex
-    
-#     return groups
-
-# def check_group_policies(group_name, admin_accounts, event):
-#     # Checks all group policies to ensure that there is not mixture of admin and non-admin roles.
-    
-#     # Fetch aws managed and inline group policies
-#     managed_policies = fetch_aws_managed_group_policies(group_name)
-#     inline_policies = fetch_inline_group_policies(group_name)
-    
-#     # Checks for the aws managed policy AdministratorAccess or an inline policy that gives the same access.
-#     has_admin_policy = next((p for p in managed_policies if p.get("PolicyName", "") == "AdministratorAccess"), False) or next((p for p in inline_policies if policy_doc_gives_admin_access(p.get("PolicyDocument", "\{\}"))), False)
-#     has_non_admin_policy = next((p for p in managed_policies if p.get("PolicyName", "") != "AdministratorAccess"), False) or next((p for p in inline_policies if not policy_doc_gives_admin_access(p.get("PolicyDocument", "\{\}"))), False)
-    
-#     # Does the group have admin policies and non admin policies?
-#     if has_admin_policy and has_non_admin_policy:
-#         # yes, there is a mixture of admin and non-admin roles attached to the group. Return NON_COMPLIANT evaluation for group
-#         return build_evaluation(
-#             group_name,
-#             "NON_COMPLIANT",
-#             event,
-#             resource_type=GROUP_RESOURCE_TYPE,
-#             annotation=f"Group '{group_name}' has attached policies that contain both admin and non-admin roles."
-#         )
-    
-#     # Is the group an admin group?
-#     if has_admin_policy:
-#         # yes, fetch group members and check against admin_accounts
-#         group_members = fetch_group_members(group_name, event)
-#         only_has_admins = next((m for m in group_members if m.get("UserName", "") not in admin_accounts), True)
-#         if not only_has_admins:
-#             return build_evaluation(
-#                 group_name,
-#                 "NON_COMPLIANT",
-#                 event,
-#                 resource_type=GROUP_RESOURCE_TYPE,
-#                 annotation=f"Group '{group_name}' is an admin group that contains non-admin members."
-#             )
-            
-#     annotation = f"Group '{group_name}' has policies that only provides admin roles and only has admin members." if has_admin_policy else f"Group '{group_name}' has policies that only provides non-admin roles."
         
-#     return build_evaluation(
-#         group_name,
-#         "COMPLIANT",
-#         event,
-#         resource_type=GROUP_RESOURCE_TYPE,
-#         annotation=annotation
-#     )
-    
-# def fetch_group_members(group_name, event):
-#     members = []
-#     marker = None
-#     try:
-#         while True:
-#             response = AWS_IAM_CLIENT.get_group(GroupName=group_name, Marker=marker) if marker else AWS_IAM_CLIENT.get_group(GroupName=group_name)
-#             members = members + response.get("Users", [])
-#             marker = response.get("Marker")
-#             if not marker:
-#                 break
-#     except botocore.exceptions.ClientError as ex:
-#         if "NoSuchEntity" in ex.response['Error']['Code']:
-#             ex.response['Error']['Message'] = f"Unable to fetch information for group '{group_name}'. No such entity found."
-#         else:
-#             ex.response["Error"]["Message"] = "InternalError"
-#             ex.response["Error"]["Code"] = "InternalError"
-#         raise ex
-    
-#     return members
-        
-def policy_doc_gives_admin_access(policy_doc: str):
+def policy_doc_gives_admin_access(policy_doc: str) -> bool:
     document_dict = json.loads(policy_doc)
     statement = document_dict.get("Statement", [])
     return len(statement) == 1 and statement[0].get("Effect", "") == "Allow" and statement[0].get("Action", "") == "*" and statement[0].get("Resource", "") == "*"
         
-# def fetch_inline_group_policies(group_name):
-#     policies = []
-#     marker = None
-#     try:
-#         while True:
-#             response = AWS_IAM_CLIENT.list_group_policies(GroupName=group_name, Marker=marker) if marker else AWS_IAM_CLIENT.list_group_policies(GroupName=group_name)      
-#             policies = policies + response.get("PolicyNames", [])
-#             marker = response.get("Marker")
-#             if not marker:
-#                 break
-#     except botocore.exceptions.ClientError as ex:
-#         if "NoSuchEntity" in ex.response['Error']['Code']:
-#             ex.response['Error']['Message'] = f"Unable to fetch policies for group '{group_name}'. No such entity found."
-#         elif "InvalidInput" in ex.response['Error']['Code']:
-#             ex.response['Error']['Message'] = f"Invalid group name '{group_name}' or marker '{marker}' input received."
-#         else:
-#             ex.response["Error"]["Message"] = "InternalError"
-#             ex.response["Error"]["Code"] = "InternalError"
-#         raise ex
+def fetch_inline_user_policies(user_name):
+    policies = []
+    marker = None
+    try:
+        while True:
+            response = AWS_IAM_CLIENT.list_user_policies(UserName=user_name, Marker=marker) if marker else AWS_IAM_CLIENT.list_user_policies(UserName=user_name)      
+            policies = policies + response.get("PolicyNames", [])
+            marker = response.get("Marker")
+            if not marker:
+                break
+    except botocore.exceptions.ClientError as ex:
+        if "NoSuchEntity" in ex.response['Error']['Code']:
+            ex.response['Error']['Message'] = f"Unable to fetch policies for user '{user_name}'. No such entity found."
+        elif "InvalidInput" in ex.response['Error']['Code']:
+            ex.response['Error']['Message'] = f"Invalid username '{user_name}' or marker '{marker}' input received."
+        else:
+            ex.response["Error"]["Message"] = "InternalError"
+            ex.response["Error"]["Code"] = "InternalError"
+        raise ex
     
-#     try:
-#         for i in range(len(policies)):
-#             policies[i] = AWS_IAM_CLIENT.get_group_policy(group_name, policies[i])
-#     except botocore.exceptions.ClientError as ex:
-#         if "NoSuchEntity" in ex.response['Error']['Code']:
-#             ex.response['Error']['Message'] = "Unable to fetch inline policy information. No such entity found."
-#         elif "InvalidInput" in ex.response['Error']['Code']:
-#             ex.response['Error']['Message'] = "Failed to fetch inline policy information. Invalid input."
-#         else:
-#             ex.response["Error"]["Message"] = "InternalError"
-#             ex.response["Error"]["Code"] = "InternalError"
+    try:
+        for i in range(len(policies)):
+            policies[i] = AWS_IAM_CLIENT.get_user_policy(user_name, policies[i])
+    except botocore.exceptions.ClientError as ex:
+        if "NoSuchEntity" in ex.response['Error']['Code']:
+            ex.response['Error']['Message'] = "Unable to fetch inline policy information. No such entity found."
+        elif "InvalidInput" in ex.response['Error']['Code']:
+            ex.response['Error']['Message'] = "Failed to fetch inline policy information. Invalid input."
+        else:
+            ex.response["Error"]["Message"] = "InternalError"
+            ex.response["Error"]["Code"] = "InternalError"
         
-#     return policies
+    return policies
     
-# def fetch_aws_managed_group_policies(group_name):
-#     policies = []
-#     marker = None
-#     try:
-#         while True:
-#             response = AWS_IAM_CLIENT.list_attached_group_policies(GroupName=group_name, Marker=marker) if marker else AWS_IAM_CLIENT.list_attached_group_policies(GroupName=group_name)      
-#             policies = policies + response.get("AttachedPolicies", [])
-#             marker = response.get("Marker")
-#             if not marker:
-#                 break
-#         return policies
-#     except botocore.exceptions.ClientError as ex:
-#         if "NoSuchEntity" in ex.response['Error']['Code']:
-#             ex.response['Error']['Message'] = f"Unable to fetch policies for group '{group_name}'. No such entity found."
-#         elif "InvalidInput" in ex.response['Error']['Code']:
-#             ex.response['Error']['Message'] = f"Invalid group name '{group_name}' or marker '{marker}' input received."
-#         else:
-#             ex.response["Error"]["Message"] = "InternalError"
-#             ex.response["Error"]["Code"] = "InternalError"
-#         raise ex
+def fetch_aws_managed_user_policies(user_name):
+    policies = []
+    marker = None
+    try:
+        while True:
+            response = AWS_IAM_CLIENT.list_attached_user_policies(UserName=user_name, Marker=marker) if marker else AWS_IAM_CLIENT.list_attached_user_policies(UserName=user_name)      
+            policies = policies + response.get("AttachedPolicies", [])
+            marker = response.get("Marker")
+            if not marker:
+                break
+        return policies
+    except botocore.exceptions.ClientError as ex:
+        if "NoSuchEntity" in ex.response['Error']['Code']:
+            ex.response['Error']['Message'] = f"Unable to fetch policies for user '{user_name}'. No such entity found."
+        elif "InvalidInput" in ex.response['Error']['Code']:
+            ex.response['Error']['Message'] = f"Invalid user name '{user_name}' or marker '{marker}' input received."
+        else:
+            ex.response["Error"]["Message"] = "InternalError"
+            ex.response["Error"]["Code"] = "InternalError"
+        raise ex
+    
+def fetch_customer_managed_policy_documents_for_permission_set(customer_managed_policies):
+    policy_docs = []
+    try:
+        marker = None
+        while True:
+            response = AWS_IAM_CLIENT.list_policies(Scope="Local", Marker=marker) if marker else AWS_IAM_CLIENT.list_policies(Scope="Local")
+            policies = response.get("Policies")
+            for p in policies:
+                if p.get("PolicyName") in customer_managed_policies:
+                    p_doc_response = AWS_IAM_CLIENT.get_policy_version(p.get(PolicyArn="Arn"), VersionId=p.get("DefaultVersionId"))
+                    policy_docs.append(p_doc_response.get("PolicyVersion").get("Document"))
+            marker = response.get("Marker")
+            if not marker:
+                break
+    except botocore.exceptions.ClientError as ex:
+        ex.response["Error"]["Message"] = "InternalError"
+        ex.response["Error"]["Code"] = "InternalError"
+        raise ex
+
+    return policy_docs
+            
+def permission_set_has_admin_policies(instance_arn, permission_set_arn):
+    managed_policies = []
+    inline_policies = []
+    
+    next_token = None
+    try:
+        # Fetch all AWS Managed policies for the permission set and add them to the list of managed policies
+        while True:
+            response = AWS_SSO_ADMIN_CLIENT.list_managed_policies_in_permission_set(InstanceArn=instance_arn, NextToken=next_token, PermissionSetArn=permission_set_arn) if next_token else AWS_SSO_ADMIN_CLIENT.list_managed_policies_in_permission_set(InstanceArn=instance_arn, PermissionSetArn=permission_set_arn)
+            managed_policies = managed_policies + response.get("AttachedManagedPolicies")
+            next_token = response.get("NextToken")
+            if not next_token:
+                break
+        # Fetch the inline document for the permission set if any exists. If none exists the response will still be valid, just an empty policy doc.
+        response =  AWS_SSO_ADMIN_CLIENT.get_inline_policy_for_permission_set(InstanceArn=instance_arn, PermissionSetArn=permission_set_arn)
+        # If length is less than or equal to 1 then the policy doc is empty because there is no inline policy.The API specifies a min length of 1, but is a bit vague on what an empty policy doc would look like so we are covering the case of empty string 
+        if len(response.get("InlinePolicy")) > 1:
+            inline_policies.append({
+                "PolicyDocument": response.get("InlinePolicy")
+            })
+        # Fetch all customer managed policy references, convert the references into their policy document on the account, and add them to the list of inline policies.
+        while True:
+            response = AWS_SSO_ADMIN_CLIENT.list_customer_managed_policy_references_in_permission_set(InstanceArn=instance_arn, NextToken=next_token, PermissionSetArn=permission_set_arn) if next_token else AWS_SSO_ADMIN_CLIENT.list_customer_managed_policy_references_in_permission_set(InstanceArn=instance_arn, PermissionSetArn=permission_set_arn)
+            for policy_doc in fetch_customer_managed_policy_documents_for_permission_set([p.get("Name") for p in response.get("CustomerManagedPolicyReferences")]):
+                inline_policies.append({
+                    "PolicyDocument": policy_doc
+                })
+            next_token = response.get("NextToken")
+            if not next_token:
+                break
+        
+        return policies_grant_admin_access(managed_policies, inline_policies)
+    except botocore.exceptions.ClientError as ex:
+        ex.response["Error"]["Message"] = "InternalError"
+        ex.response["Error"]["Code"] = "InternalError"
+        raise ex
+    
+def get_admin_permission_sets_for_instance(instance_arn):
+    permission_sets = []
+    next_token = None
+    try:
+        while True:
+            response = AWS_SSO_ADMIN_CLIENT.list_permission_sets_provisioned_to_account(AccountId=AWS_ACCOUNT_ID,InstanceArn=instance_arn, NextToken = next_token) if next_token else AWS_SSO_ADMIN_CLIENT.list_permission_sets_provisioned_to_account(InstanceArn=instance_arn)
+            for p_set in response.get("PermissionSets"):
+                if permission_set_has_admin_policies(instance_arn, p_set):
+                    permission_sets.append(p_set)
+            next_token = response.get("NextToken")
+            if not next_token:
+                break
+    except botocore.exceptions.ClientError as ex:
+        ex.response["Error"]["Message"] = "InternalError"
+        ex.response["Error"]["Code"] = "InternalError"
+        raise ex
+    
+    return permission_sets
+  
+def user_assigned_to_permission_set(user_id, instance_arn, permission_set_arn):
+    try:
+        response = AWS_SSO_ADMIN_CLIENT.list_account_assignments(AccountId=AWS_ACCOUNT_ID, InstanceArn=instance_arn, PermissionSetArn=permission_set_arn)
+        for assignment in response.get("AccountAssignments"):
+            if assignment.get("PrincipalId") == user_id:
+                return True
+        return False
+    except botocore.exceptions.ClientError as ex:
+        ex.response["Error"]["Message"] = "InternalError"
+        ex.response["Error"]["Code"] = "InternalError"
+        raise ex  
+
+def check_users(iam_users, sso_users_by_instance, privileged_user_list, non_privileged_user_list, event):
+    evaluations = []
+    atleast_one_priveleged_user_has_admin_access = False   
+    no_non_privileged_user_has_priviled_access = True
+    
+    for u in iam_users:
+        user_name = u.get("UserName")
+        if user_name in privileged_user_list:
+            if atleast_one_priveleged_user_has_admin_access == True:
+                continue
+            
+            managed_policies = fetch_aws_managed_user_policies(user_name)
+            inline_policies = fetch_inline_user_policies(user_name)
+            
+            atleast_one_priveleged_user_has_admin_access = policies_grant_admin_access(managed_policies, inline_policies)
+            
+        elif user_name in non_privileged_user_list:
+            managed_policies = fetch_aws_managed_user_policies(user_name)
+            inline_policies = fetch_inline_user_policies(user_name)
+            if policies_grant_admin_access(managed_policies, inline_policies):
+                no_non_privileged_user_has_priviled_access = False
+                evaluations.append(
+                    build_evaluation(
+                        u.get("Arn"),
+                        "NON_COMPLIANT",
+                        event,
+                        USER_RESOURCE_TYPE,
+                        f"User '{user_name}' is a non-privileged user with privileged access. "
+                    )
+                )
+                
+    for instance_arn in sso_users_by_instance.keys():
+        admin_permssion_sets=get_admin_permission_sets_for_instance(instance_arn)
+        for user in sso_users_by_instance[instance_arn]:
+            user_name = user.get("UserName")
+            user_id = user.get("UserId")
+            if user_name in privileged_user_list:
+                if atleast_one_priveleged_user_has_admin_access == True:
+                    continue
+              
+                for p_arn in admin_permssion_sets:
+                    if user_assigned_to_permission_set(user_id, instance_arn, p_arn):
+                        atleast_one_priveleged_user_has_admin_access = True
+                        break
+                
+            elif user_name in non_privileged_user_list:
+                for p_arn in admin_permssion_sets:
+                    if user_assigned_to_permission_set(user_id, instance_arn, p_arn):
+                        no_non_privileged_user_has_priviled_access = False
+                        evaluations.append(
+                            build_evaluation(
+                                u.get("Arn"),
+                                "NON_COMPLIANT",
+                                event,
+                                USER_RESOURCE_TYPE,
+                                f"SSO user '{user_name}' is a non-privileged user with privileged access from permission set {p_arn}."
+                            )
+                        )
+    
+    if atleast_one_priveleged_user_has_admin_access and no_non_privileged_user_has_priviled_access:
+        evaluations.append(
+            build_evaluation(
+                AWS_ACCOUNT_ID,
+                "COMPLIANT",
+                event,
+                DEFAULT_RESOURCE_TYPE
+            )
+        )
+    else:
+        evaluations.append(
+            build_evaluation(
+                AWS_ACCOUNT_ID,
+                "NON_COMPLIANT",
+                event,
+                DEFAULT_RESOURCE_TYPE,
+                "There is either no privileged user with admin access or a non-privileged user with admin access in the account. Please see evaluation results for more information."
+            )
+        )
+    
+    return evaluations
+
+def policies_grant_admin_access(managed_policies, inline_policies):
+    return next((p for p in managed_policies if p.get("PolicyName", "") == "AdministratorAccess"), False) or next((p for p in inline_policies if policy_doc_gives_admin_access(p.get("PolicyDocument", "\{\}"))), False)
+    
 
 def lambda_handler(event, context):
     """This function is the main entry point for Lambda.
@@ -399,33 +490,32 @@ def lambda_handler(event, context):
     AWS_IDENTITY_STORE_CLIENT = get_client("identitystore", event)
     AWS_S3_CLIENT = boto3.client("s3")
     
-    sso_users = fetch_sso_users()
-    users = fetch_users()
-    logger.info(f"sso users by instance: {sso_users}")
-    logger.info(f"iam users: {users}")
-    
     # is this a scheduled invokation?
-    # if is_scheduled_notification(invoking_event["messageType"]):
+    if is_scheduled_notification(invoking_event["messageType"]):
         # yes, proceed
         
-        # priveleged_users_file_path = valid_rule_parameters.get("s3ObjectPath", "")
-        # if check_s3_object_exists(priveleged_users_file_path) == False:
-        #     evaluations.append(
-        #         build_evaluation(
-        #             event["accountId"],
-        #             "NON_COMPLIANT",
-        #             event,
-        #             resource_type=DEFAULT_RESOURCE_TYPE,
-        #             annotation="No AdminAccountsFilePath input provided.",
-        #         )
-        #     )
-        # else:     
-        #     is_compliant = True
-        #     priveleged_users = read_s3_object(priveleged_users_file_path).splitlines()
+        privileged_users_file_path = valid_rule_parameters.get("privilegedUsersFilePath", "")
+        non_privileged_users_file_path = valid_rule_parameters.get("privilegedUsersFilePath", "")
+        if check_s3_object_exists(privileged_users_file_path) == False or check_s3_object_exists(non_privileged_users_file_path):
+            evaluations.append(
+                build_evaluation(
+                    event["accountId"],
+                    "NON_COMPLIANT",
+                    event,
+                    resource_type=DEFAULT_RESOURCE_TYPE,
+                    annotation="No privileged or non_privileged user file path input provided.",
+                )
+            )
+        else:     
+            privileged_users_list = read_s3_object(privileged_users_file_path).splitlines()
+            non_privileged_users_file_path = read_s3_object(non_privileged_users_file_path).splitlines()
             
+            iam_users = fetch_users()
+            sso_users_by_instance = fetch_sso_users()
             
+            evaluations = evaluations + check_users(iam_users, sso_users_by_instance, privileged_users_list, non_privileged_users_file_path, event)
                 
-        # AWS_CONFIG_CLIENT.put_evaluations(
-        #     Evaluations=evaluations,
-        #     ResultToken=event["resultToken"]
-        # )
+        AWS_CONFIG_CLIENT.put_evaluations(
+            Evaluations=evaluations,
+            ResultToken=event["resultToken"]
+        )
