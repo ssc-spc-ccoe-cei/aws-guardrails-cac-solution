@@ -123,14 +123,14 @@ def is_guard_duty_enabled():
 def list_cloudtrails():
     """Fetches a list of all trails in the account"""
     try:
-        response = AWS_CLOUDTRAIL_CLIENT.list_trails()
-        trails = response.get("Trails")
-        next_token = response.get("NextToken")
-        while next_token != None:
-            response = AWS_CLOUDTRAIL_CLIENT.list_trails()
+        trails = []
+        next_token = None
+        while True:
+            response = AWS_CLOUDTRAIL_CLIENT.list_trails(NextToken=next_token) if next_token else AWS_CLOUDTRAIL_CLIENT.list_trails()
             trails = trails + response.get("Trails")
             next_token = response.get("NextToken")
-        return trails
+            if not next_token:
+                break
     except botocore.exceptions.ClientError as ex:
         if "UnsupportedOperationException" in ex.response['Error']['Code']:
             ex.response["Error"]["Message"] = "list_trails operation not supported by CloudTrails."
@@ -169,7 +169,7 @@ def trails_configured_for_iam_events(trails):
             logger.error("Error while trying to fetch cloudtrail configuration.")
             logger.error(ex)
             raise ex
-    return True  
+    return filtered_trails  
 
 def is_cloudtrail_enabled():
     """Checks if cloudtrail is enabled to watch for iam login events"""
@@ -251,7 +251,7 @@ def lambda_handler(event, context):
             )
             
         # Update AWS Config with the evaluation result
-        logging.info("AWES Config updating evaluations: %s", evaluations)
+        logging.info("AWS Config updating evaluations: %s", evaluations)
         AWS_CONFIG_CLIENT.put_evaluations(
             Evaluations=evaluations,
             ResultToken=event["resultToken"]
