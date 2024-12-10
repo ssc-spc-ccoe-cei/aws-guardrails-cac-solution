@@ -12,6 +12,7 @@ import boto3
 org_id = os.environ["ORG_ID"]
 assessment_name = os.environ["ASSESSMENT_NAME"]
 org_name = os.environ["ORG_NAME"]
+tenant_id = os.environ["TENANT_ID"]
 auditManagerClient = boto3.client("auditmanager")
 s3 = boto3.client("s3")
 
@@ -38,6 +39,7 @@ def lambda_handler(event, context):
         "compliance",
         "organizationId",
         "organizationName",
+        "tenantId",
     ]
     csv_io = io.StringIO()
     writer = csv.writer(csv_io)
@@ -72,6 +74,7 @@ def lambda_handler(event, context):
                                 "NOT_APPLICABLE",
                                 org_id,
                                 org_name,
+                                tenant_id,
                             ]
                         )
                     elif len(item["resourcesIncluded"]) > 1:
@@ -88,6 +91,7 @@ def lambda_handler(event, context):
                                     json.loads(sub_evidence["value"])["complianceType"],
                                     org_id,
                                     org_name,
+                                    tenant_id,
                                 ]
                             )
                     else:
@@ -104,6 +108,7 @@ def lambda_handler(event, context):
                                     "NOT_APPLICABLE",
                                     org_id,
                                     org_name,
+                                    tenant_id,
                                 ]
                             )
                         else:
@@ -119,6 +124,7 @@ def lambda_handler(event, context):
                                     json.loads(item["resourcesIncluded"][0]["value"])["complianceType"],
                                     org_id,
                                     org_name,
+                                    tenant_id,
                                 ]
                             )
                     for row in rows:
