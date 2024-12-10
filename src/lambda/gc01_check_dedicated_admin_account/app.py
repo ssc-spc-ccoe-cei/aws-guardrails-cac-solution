@@ -206,7 +206,7 @@ def fetch_sso_users():
         
         instance_id = i.get("IdentityStoreId")
         instance_arn = i.get("InstanceArn")
-        users_by_instance[instance_id] = []
+        users_by_instance[instance_arn] = []
         nextToken = None
         try:
             while True:
@@ -495,7 +495,7 @@ def check_users(iam_users, sso_users_by_instance, privileged_user_list, non_priv
                 non_privileged_user_with_admin_access.append(user_name)
                 
     for instance_arn in sso_users_by_instance.keys():
-        admin_permssion_sets_by_account=get_admin_permission_sets_for_instance_by_account(instance_arn)
+        admin_permission_sets_by_account=get_admin_permission_sets_for_instance_by_account(instance_arn)
         for user in sso_users_by_instance[instance_arn]:
             user_name = user.get("UserName")
             logger.info(f"Checking sso instance user f{user_name}")
@@ -504,15 +504,15 @@ def check_users(iam_users, sso_users_by_instance, privileged_user_list, non_priv
                 if at_least_one_privileged_user_has_admin_access == True:
                     continue
               
-                for a_id in admin_permssion_sets_by_account.keys():
-                    for p_arn in admin_permssion_sets_by_account[a_id]:
+                for a_id in admin_permission_sets_by_account.keys():
+                    for p_arn in admin_permission_sets_by_account[a_id]:
                         if user_assigned_to_permission_set(user_id, instance_arn, a_id, p_arn):
                             at_least_one_privileged_user_has_admin_access = True
                             break
                 
             elif user_name in non_privileged_user_list:
-                for a_id in admin_permssion_sets_by_account.keys():
-                    for p_arn in admin_permssion_sets_by_account[a_id]:
+                for a_id in admin_permission_sets_by_account.keys():
+                    for p_arn in admin_permission_sets_by_account[a_id]:
                         if user_assigned_to_permission_set(user_id, instance_arn, a_id, p_arn):
                             non_privileged_user_with_admin_access.append(user_name)
     
