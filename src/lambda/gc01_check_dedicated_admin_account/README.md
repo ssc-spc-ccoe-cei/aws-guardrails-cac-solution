@@ -1,12 +1,12 @@
 *This readme file was created by AWS Bedrock: anthropic.claude-v2*
 
-# ./src/lambda/gc02_check_access_config_groups/app.py
+# ./src/lambda/gc01_check_dedicated_admin_account/app.py
 
 ## Overview
 
-GC02 - Check Group Access Configurations
+GC01 - Check For Dedicated Admin Accounts
 
-Demonstrates that access configurations and policies are implemented for different classes of users (non-priveleged and priveleged users). Checks to ensure that users within groups consist entirely of either admin roles or non-admin roles and admin groups only have admin account members.
+Demonstrates that there are dedicated user accounts for administration.
 
 ## Functions
 

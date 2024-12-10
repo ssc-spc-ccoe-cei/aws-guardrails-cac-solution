@@ -4,6 +4,7 @@
 import json
 import logging
 import re
+import time
 
 import boto3
 import botocore
@@ -74,19 +75,19 @@ def evaluate_parameters(rule_parameters):
     Keyword arguments:
     rule_parameters -- the Key/Value dictionary of the rule parameters
     """
-    if "privilegedUsersFilePath" not in rule_parameters:
-        logger.error('The parameter with "privilegedUsersFilePath" as key must be defined.')
-        raise ValueError('The parameter with "privilegedUsersFilePath" as key must be defined.')
-    if not rule_parameters["privilegedUsersFilePath"]:
-        logger.error('The parameter "privilegedUsersFilePath" must have a defined value.')
-        raise ValueError('The parameter "privilegedUsersFilePath" must have a defined value.')
+    if "PrivilegedUsersFilePath" not in rule_parameters:
+        logger.error('The parameter with "PrivilegedUsersFilePath" as key must be defined.')
+        raise ValueError('The parameter with "PrivilegedUsersFilePath" as key must be defined.')
+    if not rule_parameters["PrivilegedUsersFilePath"]:
+        logger.error('The parameter "PrivilegedUsersFilePath" must have a defined value.')
+        raise ValueError('The parameter "PrivilegedUsersFilePath" must have a defined value.')
     
-    if "nonPrivilegedUsersFilePath" not in rule_parameters:
-        logger.error('The parameter with "nonPrivilegedUsersFilePath" as key must be defined.')
-        raise ValueError('The parameter with "nonPrivilegedUsersFilePath" as key must be defined.')
-    if not rule_parameters["nonPrivilegedUsersFilePath"]:
-        logger.error('The parameter "nonPrivilegedUsersFilePath" must have a defined value.')
-        raise ValueError('The parameter "nonPrivilegedUsersFilePath" must have a defined value.')
+    if "NonPrivilegedUsersFilePath" not in rule_parameters:
+        logger.error('The parameter with "NonPrivilegedUsersFilePath" as key must be defined.')
+        raise ValueError('The parameter with "NonPrivilegedUsersFilePath" as key must be defined.')
+    if not rule_parameters["NonPrivilegedUsersFilePath"]:
+        logger.error('The parameter "NonPrivilegedUsersFilePath" must have a defined value.')
+        raise ValueError('The parameter "NonPrivilegedUsersFilePath" must have a defined value.')
     
     return rule_parameters
 
@@ -222,18 +223,41 @@ def fetch_sso_users():
 def policy_doc_gives_admin_access(policy_doc: str) -> bool:
     document_dict = json.loads(policy_doc)
     statement = document_dict.get("Statement", [])
-    return len(statement) == 1 and statement[0].get("Effect", "") == "Allow" and statement[0].get("Action", "") == "*" and statement[0].get("Resource", "") == "*"
+    for statement_component in statement:
+        if statement_component.get("Effect", "") == "Allow" and statement_component.get("Action", "") == "*" and statement_component.get("Resource", "") == "*":
+            return True
+    return False
         
 def fetch_inline_user_policies(user_name):
     policies = []
     marker = None
     try:
+        # fetching policies directly attached to the user
         while True:
             response = AWS_IAM_CLIENT.list_user_policies(UserName=user_name, Marker=marker) if marker else AWS_IAM_CLIENT.list_user_policies(UserName=user_name)      
             policies = policies + response.get("PolicyNames", [])
             marker = response.get("Marker")
             if not marker:
                 break
+            
+        # fetching policies the user has access to through groups
+        groups = []
+        while True:
+            response = AWS_IAM_CLIENT.list_groups_for_user(UserName=user_name, Marker=marker) if marker else AWS_IAM_CLIENT.list_groups_for_user(UserName=user_name)
+            groups = groups + response.get("Groups", [])
+            for g in groups:
+                inner_marker = None
+                while True:
+                    response = AWS_IAM_CLIENT.list_group_policies(GroupName=g.get("GroupName"), Marker=inner_marker) if inner_marker else AWS_IAM_CLIENT.list_group_policies(GroupName=g.get("GroupName"))      
+                    policies = policies + response.get("PolicyNames", [])
+                    inner_marker = response.get("Marker")
+                    if not inner_marker:
+                        break
+            marker = response.get("Marker")
+            
+            if not marker:
+                break
+            
     except botocore.exceptions.ClientError as ex:
         if "NoSuchEntity" in ex.response['Error']['Code']:
             ex.response['Error']['Message'] = f"Unable to fetch policies for user '{user_name}'. No such entity found."
@@ -262,12 +286,32 @@ def fetch_aws_managed_user_policies(user_name):
     policies = []
     marker = None
     try:
+        # fetching policies directly attached to the user
         while True:
             response = AWS_IAM_CLIENT.list_attached_user_policies(UserName=user_name, Marker=marker) if marker else AWS_IAM_CLIENT.list_attached_user_policies(UserName=user_name)      
             policies = policies + response.get("AttachedPolicies", [])
             marker = response.get("Marker")
             if not marker:
                 break
+            
+        # fetching policies the user has access to through groups
+        groups = []
+        while True:
+            response = AWS_IAM_CLIENT.list_groups_for_user(UserName=user_name, Marker=marker) if marker else AWS_IAM_CLIENT.list_groups_for_user(UserName=user_name)
+            groups = groups + response.get("Groups", [])
+            for g in groups:
+                inner_marker = None
+                while True:
+                    response = AWS_IAM_CLIENT.list_attached_group_policies(GroupName=g.get("GroupName"), Marker=inner_marker) if inner_marker else AWS_IAM_CLIENT.list_attached_group_policies(GroupName=g.get("GroupName"))      
+                    policies = policies + response.get("AttachedPolicies", [])
+                    inner_marker = response.get("Marker")
+                    if not inner_marker:
+                        break
+            marker = response.get("Marker")
+            
+            if not marker:
+                break
+            
         return policies
     except botocore.exceptions.ClientError as ex:
         if "NoSuchEntity" in ex.response['Error']['Code']:
@@ -336,19 +380,72 @@ def permission_set_has_admin_policies(instance_arn, permission_set_arn):
         ex.response["Error"]["Message"] = "InternalError"
         ex.response["Error"]["Code"] = "InternalError"
         raise ex
+
+def get_organizations_mgmt_account_id():
+    """
+    This function returns the management account ID for the AWS Organizations
+    :return:
+    """
+    management_account_id = ""
+    i_retry_limit = 10
+    i_retries = 0
+    b_completed = False
+    b_retry = True
+    while (b_retry and (not b_completed)) and (i_retries < i_retry_limit):
+        try:
+            response = AWS_ORGANIZATIONS_CLIENT.describe_organization()
+            if response:
+                organization = response.get("Organization", None)
+                if organization:
+                    management_account_id = organization.get("MasterAccountId", "")
+                else:
+                    logger.error("Unable to read the Organization from the dict")
+            else:
+                logger.error("Invalid response.")
+            b_completed = True
+        except botocore.exceptions.ClientError as ex:
+            if "AccessDenied" in ex.response["Error"]["Code"]:
+                logger.error("ACCESS DENIED when trying to describe_organization")
+                management_account_id = "ERROR"
+                b_retry = False
+            elif "AWSOrganizationsNotInUse" in ex.response["Error"]["Code"]:
+                logger.error("AWS Organizations not in use")
+                management_account_id = "ERROR"
+                b_retry = False
+            elif "ServiceException" in ex.response["Error"]["Code"]:
+                logger.error("AWS Organizations Service Exception")
+                management_account_id = "ERROR"
+                b_retry = False
+            elif ("ConcurrentModification" in ex.response["Error"]["Code"]) or ("TooManyRequests" in ex.response["Error"]["Code"]):
+                logger.info("AWS Organizations API is throttling requests or going through a modification. Will retry.")
+                time.sleep(2)
+                if i_retries >= i_retry_limit:
+                    logger.error("Retry limit reached. Returning an error")
+                    management_account_id = "ERROR"
+                    b_retry = False
+                else:
+                    i_retries += 1
+        except ValueError:
+            logger.error("Unknown exception - get_organizations_mgmt_account_id")
+            management_account_id = "ERROR"
+    return management_account_id
     
-def get_admin_permission_sets_for_instance(instance_arn):
-    permission_sets = []
+def get_admin_permission_sets_for_instance_by_account(instance_arn):
+    permission_sets = {}
     next_token = None
     try:
-        while True:
-            response = AWS_SSO_ADMIN_CLIENT.list_permission_sets_provisioned_to_account(AccountId=AWS_ACCOUNT_ID,InstanceArn=instance_arn, NextToken = next_token) if next_token else AWS_SSO_ADMIN_CLIENT.list_permission_sets_provisioned_to_account(InstanceArn=instance_arn)
-            for p_set in response.get("PermissionSets"):
-                if permission_set_has_admin_policies(instance_arn, p_set):
-                    permission_sets.append(p_set)
-            next_token = response.get("NextToken")
-            if not next_token:
-                break
+        accounts = organizations_list_all_accounts()
+        for a in accounts:
+            account_id=a.get("Id")
+            permission_sets[account_id] = []
+            while True:
+                response = AWS_SSO_ADMIN_CLIENT.list_permission_sets_provisioned_to_account(AccountId=AWS_ACCOUNT_ID,InstanceArn=instance_arn, NextToken = next_token) if next_token else AWS_SSO_ADMIN_CLIENT.list_permission_sets_provisioned_to_account(InstanceArn=instance_arn)
+                for p_set in response.get("PermissionSets"):
+                    if permission_set_has_admin_policies(instance_arn, p_set):
+                        permission_sets[account_id].append(p_set)
+                next_token = response.get("NextToken")
+                if not next_token:
+                    break
     except botocore.exceptions.ClientError as ex:
         ex.response["Error"]["Message"] = "InternalError"
         ex.response["Error"]["Code"] = "InternalError"
@@ -356,9 +453,9 @@ def get_admin_permission_sets_for_instance(instance_arn):
     
     return permission_sets
   
-def user_assigned_to_permission_set(user_id, instance_arn, permission_set_arn):
+def user_assigned_to_permission_set(user_id, instance_arn, account_id, permission_set_arn):
     try:
-        response = AWS_SSO_ADMIN_CLIENT.list_account_assignments(AccountId=AWS_ACCOUNT_ID, InstanceArn=instance_arn, PermissionSetArn=permission_set_arn)
+        response = AWS_SSO_ADMIN_CLIENT.list_account_assignments(AccountId=account_id, InstanceArn=instance_arn, PermissionSetArn=permission_set_arn)
         for assignment in response.get("AccountAssignments"):
             if assignment.get("PrincipalId") == user_id:
                 return True
@@ -371,10 +468,11 @@ def user_assigned_to_permission_set(user_id, instance_arn, permission_set_arn):
 def check_users(iam_users, sso_users_by_instance, privileged_user_list, non_privileged_user_list, event):
     evaluations = []
     atleast_one_priveleged_user_has_admin_access = False   
-    no_non_privileged_user_has_priviled_access = True
+    non_privileged_user_with_admin_access = []
     
     for u in iam_users:
         user_name = u.get("UserName")
+        logger.info(f"Checking iam users: {user_name}")
         if user_name in privileged_user_list:
             if atleast_one_priveleged_user_has_admin_access == True:
                 continue
@@ -388,46 +486,31 @@ def check_users(iam_users, sso_users_by_instance, privileged_user_list, non_priv
             managed_policies = fetch_aws_managed_user_policies(user_name)
             inline_policies = fetch_inline_user_policies(user_name)
             if policies_grant_admin_access(managed_policies, inline_policies):
-                no_non_privileged_user_has_priviled_access = False
-                evaluations.append(
-                    build_evaluation(
-                        u.get("Arn"),
-                        "NON_COMPLIANT",
-                        event,
-                        USER_RESOURCE_TYPE,
-                        f"User '{user_name}' is a non-privileged user with privileged access. "
-                    )
-                )
+                non_privileged_user_with_admin_access.append(user_name)
                 
     for instance_arn in sso_users_by_instance.keys():
-        admin_permssion_sets=get_admin_permission_sets_for_instance(instance_arn)
+        admin_permssion_sets_by_account=get_admin_permission_sets_for_instance_by_account(instance_arn)
         for user in sso_users_by_instance[instance_arn]:
             user_name = user.get("UserName")
+            logger.info(f"Checking sso instance user f{user_name}")
             user_id = user.get("UserId")
             if user_name in privileged_user_list:
                 if atleast_one_priveleged_user_has_admin_access == True:
                     continue
               
-                for p_arn in admin_permssion_sets:
-                    if user_assigned_to_permission_set(user_id, instance_arn, p_arn):
-                        atleast_one_priveleged_user_has_admin_access = True
-                        break
+                for a_id in admin_permssion_sets_by_account.keys():
+                    for p_arn in admin_permssion_sets_by_account[a_id]:
+                        if user_assigned_to_permission_set(user_id, instance_arn, a_id, p_arn):
+                            atleast_one_priveleged_user_has_admin_access = True
+                            break
                 
             elif user_name in non_privileged_user_list:
-                for p_arn in admin_permssion_sets:
-                    if user_assigned_to_permission_set(user_id, instance_arn, p_arn):
-                        no_non_privileged_user_has_priviled_access = False
-                        evaluations.append(
-                            build_evaluation(
-                                u.get("Arn"),
-                                "NON_COMPLIANT",
-                                event,
-                                USER_RESOURCE_TYPE,
-                                f"SSO user '{user_name}' is a non-privileged user with privileged access from permission set {p_arn}."
-                            )
-                        )
+                for a_id in admin_permssion_sets_by_account.keys():
+                    for p_arn in admin_permssion_sets_by_account[a_id]:
+                        if user_assigned_to_permission_set(user_id, instance_arn, a_id, p_arn):
+                            non_privileged_user_with_admin_access.append(user_name)
     
-    if atleast_one_priveleged_user_has_admin_access and no_non_privileged_user_has_priviled_access:
+    if atleast_one_priveleged_user_has_admin_access and len(non_privileged_user_with_admin_access) == 0:
         evaluations.append(
             build_evaluation(
                 AWS_ACCOUNT_ID,
@@ -437,20 +520,37 @@ def check_users(iam_users, sso_users_by_instance, privileged_user_list, non_priv
             )
         )
     else:
+        failed_check_strings = [
+            "no privileged user with admin access was found" if not atleast_one_priveleged_user_has_admin_access else None,
+            f"non_privileged users {non_privileged_user_with_admin_access} have admin access" if len(non_privileged_user_with_admin_access) > 0 else None
+            ]
+        annotation = " and ".join([e for e in failed_check_strings if e is not None]).capitalize()
         evaluations.append(
             build_evaluation(
                 AWS_ACCOUNT_ID,
                 "NON_COMPLIANT",
                 event,
                 DEFAULT_RESOURCE_TYPE,
-                "There is either no privileged user with admin access or a non-privileged user with admin access in the account. Please see evaluation results for more information."
+                annotation
             )
         )
     
     return evaluations
 
+def organizations_list_all_accounts(interval_between_calls: float = 0.1) -> list[dict]:
+    """
+    https://boto3.amazonaws.com/v1/documentation/api/latest/reference/services/organizations/paginator/ListAccounts.html
+    """
+    resources: list[dict] = []
+    paginator = AWS_ORGANIZATIONS_CLIENT.get_paginator("list_accounts")
+    page_iterator = paginator.paginate()
+    for page in page_iterator:
+        resources.extend(page.get("Accounts", []))
+        time.sleep(interval_between_calls)
+    return resources
+
 def policies_grant_admin_access(managed_policies, inline_policies):
-    return next((p for p in managed_policies if p.get("PolicyName", "") == "AdministratorAccess"), False) or next((p for p in inline_policies if policy_doc_gives_admin_access(p.get("PolicyDocument", "\{\}"))), False)
+    return next((True for p in managed_policies if p.get("PolicyName", "") == "AdministratorAccess"), False) or next((True for p in inline_policies if policy_doc_gives_admin_access(p.get("PolicyDocument", '{}'))), False)
     
 
 def lambda_handler(event, context):
@@ -460,11 +560,12 @@ def lambda_handler(event, context):
     context -- the context variable given in the lambda handler
     """
     global AWS_CONFIG_CLIENT
-    global AWS_IAM_CLIENT
     global AWS_ACCOUNT_ID
+    global AWS_IAM_CLIENT
+    global AWS_IDENTITY_STORE_CLIENT
+    global AWS_ORGANIZATIONS_CLIENT
     global AWS_S3_CLIENT
     global AWS_SSO_ADMIN_CLIENT
-    global AWS_IDENTITY_STORE_CLIENT
     global EXECUTION_ROLE_NAME
     global AUDIT_ACCOUNT_ID
 
@@ -497,33 +598,35 @@ def lambda_handler(event, context):
     AWS_SSO_ADMIN_CLIENT = get_client("sso-admin", event)
     AWS_IDENTITY_STORE_CLIENT = get_client("identitystore", event)
     AWS_S3_CLIENT = boto3.client("s3")
+    AWS_ORGANIZATIONS_CLIENT = get_client("organizations", event)
     
     # is this a scheduled invokation?
     if is_scheduled_notification(invoking_event["messageType"]):
-        # yes, proceed
-        
-        privileged_users_file_path = valid_rule_parameters.get("privilegedUsersFilePath", "")
-        non_privileged_users_file_path = valid_rule_parameters.get("nonPrivilegedUsersFilePath", "")
-        if check_s3_object_exists(privileged_users_file_path) == False or check_s3_object_exists(non_privileged_users_file_path):
-            evaluations.append(
-                build_evaluation(
-                    event["accountId"],
-                    "NON_COMPLIANT",
-                    event,
-                    resource_type=DEFAULT_RESOURCE_TYPE,
-                    annotation="No privileged or non_privileged user file path input provided.",
+        if AWS_ACCOUNT_ID == get_organizations_mgmt_account_id():
+            # yes, proceed
+            privileged_users_file_path = valid_rule_parameters.get("PrivilegedUsersFilePath", "")
+            non_privileged_users_file_path = valid_rule_parameters.get("NonPrivilegedUsersFilePath", "")
+            if check_s3_object_exists(privileged_users_file_path) == False or check_s3_object_exists(non_privileged_users_file_path) == False:
+                evaluations.append(
+                    build_evaluation(
+                        event["accountId"],
+                        "NON_COMPLIANT",
+                        event,
+                        resource_type=DEFAULT_RESOURCE_TYPE,
+                        annotation="No privileged or non_privileged user file path input provided.",
+                    )
                 )
-            )
-        else:     
-            privileged_users_list = read_s3_object(privileged_users_file_path).splitlines()
-            non_privileged_users_file_path = read_s3_object(non_privileged_users_file_path).splitlines()
-            
-            iam_users = fetch_users()
-            sso_users_by_instance = fetch_sso_users()
-            
-            evaluations = evaluations + check_users(iam_users, sso_users_by_instance, privileged_users_list, non_privileged_users_file_path, event)
+            else:     
+                privileged_users_list = read_s3_object(privileged_users_file_path).splitlines()
+                non_privileged_users_file_path = read_s3_object(non_privileged_users_file_path).splitlines()
                 
-        AWS_CONFIG_CLIENT.put_evaluations(
-            Evaluations=evaluations,
-            ResultToken=event["resultToken"]
-        )
+                iam_users = fetch_users()
+                sso_users_by_instance = fetch_sso_users()
+                
+                evaluations = evaluations + check_users(iam_users, sso_users_by_instance, privileged_users_list, non_privileged_users_file_path, event)
+
+            logger.info(f"Updating evaluations: {evaluations}")        
+            AWS_CONFIG_CLIENT.put_evaluations(
+                Evaluations=evaluations,
+                ResultToken=event["resultToken"]
+            )
