@@ -86,6 +86,7 @@ def apply_lambda_permissions():
         f"{organization_name}gc03_check_endpoint_access_config": ["GC03CheckEndpointAccessConfigLambda"],
         f"{organization_name}gc03_check_iam_cloudwatch_alarms": ["GC03CheckIAMCloudWatchAlarmsLambda"],
         f"{organization_name}gc03_check_trusted_devices_admin_access": ["GC03CheckTrustedDevicesAdminAccessLambda"],
+        f"{organization_name}gc04_check_alerts_flag_misuse": ["GC04CheckAlertsFlagMisuseLambda"],
         f"{organization_name}gc04_check_enterprise_monitoring": ["GC04CheckEnterpriseMonitoringLambda"],
         f"{organization_name}gc05_check_data_location": ["GC05CheckDataLocationLambda"],
         f"{organization_name}gc06_check_encryption_at_rest_part1": ["GC06CheckEncryptionAtRestPart1Lambda"],

@@ -719,6 +719,42 @@ Resources:
         SourceDetails:
           - EventSource: "aws.config"
             MessageType: "ScheduledNotification"
+  GC04CheckAlertsFlagMisuseConfigRule:
+    Type: "AWS::Config::ConfigRule"
+    Properties:
+      ConfigRuleName: gc04_check_alerts_flag_misuse
+      Description: Confirms that alerts to authorized personnel have been implemented to flag misuse, suspicious sign-in attempts, or when changes are made to the cloud broker account.
+      InputParameters:
+        IAM_Role_Name:
+          Fn::If:
+            - enterpriseMonitoringIAMRoleName
+            - Ref: EnterpriseMonitoringIAMRoleName
+            - Ref: AWS::NoValue
+        ExecutionRoleName:
+          Fn::If:
+            - GCLambdaExecutionRoleName
+            - Ref: GCLambdaExecutionRoleName
+            - Ref: AWS::NoValue
+        AuditAccountID:
+          Fn::If:
+            - auditAccountID
+            - Ref: AuditAccountID
+            - Ref: AWS::NoValue
+      Scope:
+        ComplianceResourceTypes:
+          - AWS::Account
+      MaximumExecutionFrequency: TwentyFour_Hours
+      Source:
+        Owner: CUSTOM_LAMBDA
+        SourceIdentifier:
+          Fn::Join:
+            - ""
+            - - "arn:aws:lambda:ca-central-1:"
+              - Ref: AuditAccountID
+              - !Sub ":function:${OrganizationName}gc04_check_alerts_flag_misuse"
+        SourceDetails:
+          - EventSource: "aws.config"
+            MessageType: "ScheduledNotification"
   # GC05
   GC05CheckDataLocationConfigRule:
     Type: "AWS::Config::ConfigRule"
