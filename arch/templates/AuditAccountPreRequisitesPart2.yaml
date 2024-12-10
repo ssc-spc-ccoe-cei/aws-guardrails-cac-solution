@@ -71,17 +71,6 @@ Resources:
       Runtime: !Ref PythonRuntime
       Timeout: 180
 
-  GC02CheckLeastPrivilegedRolesLambda:
-    Condition: IsAuditAccount
-    Type: AWS::Lambda::Function
-    Properties:
-      FunctionName: !Sub "${OrganizationName}gc02_check_least_privileged_roles"
-      Code: "../../src/lambda/gc02_check_least_privileged_roles/build/GC02CheckLeastPrivilegedRolesLambda/"
-      Handler: app.lambda_handler
-      Role: !Sub "arn:aws:iam::${AuditAccountID}:role/${RolePrefix}default_assessment_role"
-      Runtime: !Ref PythonRuntime
-      Timeout: 180
-
   GC02CheckPrivilegedRolesReviewLambda:
     Condition: IsAuditAccount
     Type: AWS::Lambda::Function
