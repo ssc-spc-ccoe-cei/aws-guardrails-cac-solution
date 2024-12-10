@@ -127,6 +127,7 @@ def fetch_users():
         while True:
             response = AWS_IAM_CLIENT.list_users(Marker=marker) if marker else AWS_IAM_CLIENT.list_users()
             users = users + response.get("Users", [])
+            marker = response.get("Marker")
             if not marker:
                 break
     except botocore.exceptions.ClientError as ex:
@@ -205,7 +206,7 @@ def fetch_sso_users():
         
         instance_id = i.get("IdentityStoreId")
         instance_arn = i.get("InstanceArn")
-        users_by_instance[instance_id]
+        users_by_instance[instance_id] = []
         nextToken = None
         try:
             while True:
@@ -455,10 +456,15 @@ def get_admin_permission_sets_for_instance_by_account(instance_arn):
   
 def user_assigned_to_permission_set(user_id, instance_arn, account_id, permission_set_arn):
     try:
-        response = AWS_SSO_ADMIN_CLIENT.list_account_assignments(AccountId=account_id, InstanceArn=instance_arn, PermissionSetArn=permission_set_arn)
-        for assignment in response.get("AccountAssignments"):
-            if assignment.get("PrincipalId") == user_id:
-                return True
+        next_token = None
+        while True:
+            response = AWS_SSO_ADMIN_CLIENT.list_account_assignments(AccountId=account_id, InstanceArn=instance_arn, PermissionSetArn=permission_set_arn, NextToken=next_token) if next_token else AWS_SSO_ADMIN_CLIENT.list_account_assignments(AccountId=account_id, InstanceArn=instance_arn, PermissionSetArn=permission_set_arn)
+            for assignment in response.get("AccountAssignments"):
+                if assignment.get("PrincipalId") == user_id:
+                    return True
+            next_token = response.get("NextToken")
+            if not next_token:
+                break
         return False
     except botocore.exceptions.ClientError as ex:
         ex.response["Error"]["Message"] = "InternalError"
@@ -467,20 +473,20 @@ def user_assigned_to_permission_set(user_id, instance_arn, account_id, permissio
 
 def check_users(iam_users, sso_users_by_instance, privileged_user_list, non_privileged_user_list, event):
     evaluations = []
-    atleast_one_priveleged_user_has_admin_access = False   
+    at_least_one_privileged_user_has_admin_access = False   
     non_privileged_user_with_admin_access = []
     
     for u in iam_users:
         user_name = u.get("UserName")
         logger.info(f"Checking iam users: {user_name}")
         if user_name in privileged_user_list:
-            if atleast_one_priveleged_user_has_admin_access == True:
+            if at_least_one_privileged_user_has_admin_access == True:
                 continue
             
             managed_policies = fetch_aws_managed_user_policies(user_name)
             inline_policies = fetch_inline_user_policies(user_name)
             
-            atleast_one_priveleged_user_has_admin_access = policies_grant_admin_access(managed_policies, inline_policies)
+            at_least_one_privileged_user_has_admin_access = policies_grant_admin_access(managed_policies, inline_policies)
             
         elif user_name in non_privileged_user_list:
             managed_policies = fetch_aws_managed_user_policies(user_name)
@@ -495,13 +501,13 @@ def check_users(iam_users, sso_users_by_instance, privileged_user_list, non_priv
             logger.info(f"Checking sso instance user f{user_name}")
             user_id = user.get("UserId")
             if user_name in privileged_user_list:
-                if atleast_one_priveleged_user_has_admin_access == True:
+                if at_least_one_privileged_user_has_admin_access == True:
                     continue
               
                 for a_id in admin_permssion_sets_by_account.keys():
                     for p_arn in admin_permssion_sets_by_account[a_id]:
                         if user_assigned_to_permission_set(user_id, instance_arn, a_id, p_arn):
-                            atleast_one_priveleged_user_has_admin_access = True
+                            at_least_one_privileged_user_has_admin_access = True
                             break
                 
             elif user_name in non_privileged_user_list:
@@ -510,7 +516,7 @@ def check_users(iam_users, sso_users_by_instance, privileged_user_list, non_priv
                         if user_assigned_to_permission_set(user_id, instance_arn, a_id, p_arn):
                             non_privileged_user_with_admin_access.append(user_name)
     
-    if atleast_one_priveleged_user_has_admin_access and len(non_privileged_user_with_admin_access) == 0:
+    if at_least_one_privileged_user_has_admin_access and len(non_privileged_user_with_admin_access) == 0:
         evaluations.append(
             build_evaluation(
                 AWS_ACCOUNT_ID,
@@ -521,7 +527,7 @@ def check_users(iam_users, sso_users_by_instance, privileged_user_list, non_priv
         )
     else:
         failed_check_strings = [
-            "no privileged user with admin access was found" if not atleast_one_priveleged_user_has_admin_access else None,
+            "no privileged user with admin access was found" if not at_least_one_privileged_user_has_admin_access else None,
             f"non_privileged users {non_privileged_user_with_admin_access} have admin access" if len(non_privileged_user_with_admin_access) > 0 else None
             ]
         annotation = " and ".join([e for e in failed_check_strings if e is not None]).capitalize()
