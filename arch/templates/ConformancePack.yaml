@@ -52,10 +52,8 @@ Parameters:
     Default: "False"
     Type: String
   PrivilegedUsersFilePath:
-    Default: ""
     Type: String
   NonPrivilegedUsersFilePath:
-    Default: ""
     Type: String
   # GC02
   S3AccountManagementPlanPath:
