@@ -54,6 +54,10 @@ Parameters:
   # GC02
   S3AccountManagementPlanPath:
     Type: String
+  S3RoleAssignmentReviewDocumentPath:
+    Type: String
+  S3AdminAccountListPath:
+    Type: String
   GC03AlarmList:
     Default: "AWS-IAM-Authentication-From-Unapproved-IP,AWS-SSO-Authentication-From-Unapproved-IP,AWS-Console-SignIn-Without-MFA"
     Type: String
@@ -66,9 +70,6 @@ Parameters:
     Type: String
   EnterpriseMonitoringIAMTrustedPrincipal:
     Default: "arn:aws:iam::939755092653:root"
-    Type: String
-  # GC05
-  S3ProtectedBServiceLocationDocumentPath:
     Type: String
   # GC07
   S3CasCurrentlyInUsePath:
@@ -308,43 +309,6 @@ Resources:
         SourceDetails:
           - EventSource: "aws.config"
             MessageType: "ScheduledNotification"
-  # GC02
-  GC02CheckAccountManagementPlanConfigRule:
-    Type: "AWS::Config::ConfigRule"
-    Properties:
-      ConfigRuleName: gc02_check_account_mgmt_plan
-      Description: Checks S3 bucket for the account management plan document
-      InputParameters:
-        s3ObjectPath:
-          Fn::If:
-            - s3AccountManagementPlanPath
-            - Ref: S3AccountManagementPlanPath
-            - Ref: AWS::NoValue
-        ExecutionRoleName:
-          Fn::If:
-            - GCLambdaExecutionRoleName
-            - Ref: GCLambdaExecutionRoleName
-            - Ref: AWS::NoValue
-        AuditAccountID:
-          Fn::If:
-            - auditAccountID
-            - Ref: AuditAccountID
-            - Ref: AWS::NoValue
-      Scope:
-        ComplianceResourceTypes:
-          - AWS::Account
-      MaximumExecutionFrequency: TwentyFour_Hours
-      Source:
-        Owner: CUSTOM_LAMBDA
-        SourceIdentifier:
-          Fn::Join:
-            - ""
-            - - "arn:aws:lambda:ca-central-1:"
-              - Ref: AuditAccountID
-              - !Sub ":function:${OrganizationName}gc02_check_account_mgmt_plan"
-        SourceDetails:
-          - EventSource: "aws.config"
-            MessageType: "ScheduledNotification"
   GC01CheckMFAIAMUsersConfigRule:
     Type: "AWS::Config::ConfigRule"
     Properties:
@@ -384,6 +348,146 @@ Resources:
             - - "arn:aws:lambda:ca-central-1:"
               - Ref: AuditAccountID
               - !Sub ":function:${OrganizationName}gc01_check_iam_users_mfa"
+        SourceDetails:
+          - EventSource: "aws.config"
+            MessageType: "ScheduledNotification"
+  # GC02
+  GC02CheckAccountManagementPlanConfigRule:
+    Type: "AWS::Config::ConfigRule"
+    Properties:
+      ConfigRuleName: gc02_check_account_mgmt_plan
+      Description: Checks S3 bucket for the account management plan document
+      InputParameters:
+        s3ObjectPath:
+          Fn::If:
+            - s3AccountManagementPlanPath
+            - Ref: S3AccountManagementPlanPath
+            - Ref: AWS::NoValue
+        ExecutionRoleName:
+          Fn::If:
+            - GCLambdaExecutionRoleName
+            - Ref: GCLambdaExecutionRoleName
+            - Ref: AWS::NoValue
+        AuditAccountID:
+          Fn::If:
+            - auditAccountID
+            - Ref: AuditAccountID
+            - Ref: AWS::NoValue
+      Scope:
+        ComplianceResourceTypes:
+          - AWS::Account
+      MaximumExecutionFrequency: TwentyFour_Hours
+      Source:
+        Owner: CUSTOM_LAMBDA
+        SourceIdentifier:
+          Fn::Join:
+            - ""
+            - - "arn:aws:lambda:ca-central-1:"
+              - Ref: AuditAccountID
+              - !Sub ":function:${OrganizationName}gc02_check_account_mgmt_plan"
+        SourceDetails:
+          - EventSource: "aws.config"
+            MessageType: "ScheduledNotification"
+  GC02CheckPrivilegedRolesReviewConfigRule:
+    Type: "AWS::Config::ConfigRule"
+    Properties:
+      ConfigRuleName: gc02_check_privileged_roles_review
+      Description: Checks S3 bucket for the role assignment review verification document.
+      InputParameters:
+        s3ObjectPath:
+          Fn::If:
+            - s3RoleAssignmentReviewDocumentPath
+            - Ref: S3RoleAssignmentReviewDocumentPath
+            - Ref: AWS::NoValue
+        ExecutionRoleName:
+          Fn::If:
+            - GCLambdaExecutionRoleName
+            - Ref: GCLambdaExecutionRoleName
+            - Ref: AWS::NoValue
+        AuditAccountID:
+          Fn::If:
+            - auditAccountID
+            - Ref: AuditAccountID
+            - Ref: AWS::NoValue
+      Scope:
+        ComplianceResourceTypes:
+          - AWS::Account
+      MaximumExecutionFrequency: TwentyFour_Hours
+      Source:
+        Owner: CUSTOM_LAMBDA
+        SourceIdentifier:
+          Fn::Join:
+            - ""
+            - - "arn:aws:lambda:ca-central-1:"
+              - Ref: AuditAccountID
+              - !Sub ":function:${OrganizationName}gc02_check_privileged_roles_review"
+        SourceDetails:
+          - EventSource: "aws.config"
+            MessageType: "ScheduledNotification"
+  GC02CheckGroupAccessConfigurationConfigRule:
+    Type: "AWS::Config::ConfigRule"
+    Properties:
+      ConfigRuleName: gc02_check_group_access_configuration
+      Description: Checks that access configurations and policies are implemented for different classes of users.
+      InputParameters:
+        s3ObjectPath:
+          Fn::If:
+            - s3AdminAccountListPath
+            - Ref: S3AdminAccountListPath
+            - Ref: AWS::NoValue
+        ExecutionRoleName:
+          Fn::If:
+            - GCLambdaExecutionRoleName
+            - Ref: GCLambdaExecutionRoleName
+            - Ref: AWS::NoValue
+        AuditAccountID:
+          Fn::If:
+            - auditAccountID
+            - Ref: AuditAccountID
+            - Ref: AWS::NoValue
+      Scope:
+        ComplianceResourceTypes:
+          - AWS::Account
+      MaximumExecutionFrequency: TwentyFour_Hours
+      Source:
+        Owner: CUSTOM_LAMBDA
+        SourceIdentifier:
+          Fn::Join:
+            - ""
+            - - "arn:aws:lambda:ca-central-1:"
+              - Ref: AuditAccountID
+              - !Sub ":function:${OrganizationName}gc02_check_group_access_configuration"
+        SourceDetails:
+          - EventSource: "aws.config"
+            MessageType: "ScheduledNotification"
+  GC02CheckPasswordProtectionMechanismsLambda:
+    Type: "AWS::Config::ConfigRule"
+    Properties:
+      ConfigRuleName: gc02_check_password_protection_mechanisms
+      Description: Checks S3 bucket for the account management plan document
+      InputParameters:
+        ExecutionRoleName:
+          Fn::If:
+            - GCLambdaExecutionRoleName
+            - Ref: GCLambdaExecutionRoleName
+            - Ref: AWS::NoValue
+        AuditAccountID:
+          Fn::If:
+            - auditAccountID
+            - Ref: AuditAccountID
+            - Ref: AWS::NoValue
+      Scope:
+        ComplianceResourceTypes:
+          - AWS::Account
+      MaximumExecutionFrequency: TwentyFour_Hours
+      Source:
+        Owner: CUSTOM_LAMBDA
+        SourceIdentifier:
+          Fn::Join:
+            - ""
+            - - "arn:aws:lambda:ca-central-1:"
+              - Ref: AuditAccountID
+              - !Sub ":function:${OrganizationName}gc02_check_password_protection_mechanisms"
         SourceDetails:
           - EventSource: "aws.config"
             MessageType: "ScheduledNotification"
@@ -622,11 +726,6 @@ Resources:
       ConfigRuleName: gc05_check_data_location
       Description: Confirms if the account has deployed resources to unauthorized regions.
       InputParameters:
-        s3ObjectPath:
-          Fn::If:
-            - s3ProtectedBServiceLocationDocumentPath
-            - Ref: S3ProtectedBServiceLocationDocumentPath
-            - Ref: AWS::NoValue
         ExecutionRoleName:
           Fn::If:
             - GCLambdaExecutionRoleName
@@ -1592,6 +1691,16 @@ Conditions:
       - Fn::Equals:
           - ""
           - Ref: S3AccountManagementPlanPath
+  s3AdminAccountListPath:
+    Fn::Not:
+      - Fn::Equals:
+        - ""
+        - Ref: S3AdminAccountListPath
+  s3RoleAssignmentReviewDocumentPath:
+    Fn::Not:
+      - Fn::Equals:
+          - ""
+          - Ref: S3RoleAssignmentReviewDocumentPath
   # GC03
   s3VpnIpRangesPath:
     Fn::Not:
@@ -1609,12 +1718,6 @@ Conditions:
       - Fn::Equals:
           - ""
           - Ref: EnterpriseMonitoringIAMTrustedPrincipal
-  # GC05
-  s3ProtectedBServiceLocationDocumentPath:
-    Fn::Not:
-      - Fn::Equals:
-          - ""
-          - Ref: S3ProtectedBServiceLocationDocumentPath
   # GC07
   s3CasCurrentlyInUsePath:
     Fn::Not:

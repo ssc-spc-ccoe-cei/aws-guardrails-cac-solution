@@ -1,9 +1,9 @@
-""" GC01 - Check Monitoring And Logging
-    https://github.com/canada-ca/cloud-guardrails/blob/master/EN/01_Protect-user-accounts-and-identities.md
+""" GC02 - Check Privileged Roles Review
+    https://canada-ca.github.io/cloud-guardrails/EN/02_Management-Admin-Privileges.html
 """
 import json
 import logging
-import time
+import re
 
 import boto3
 import botocore
@@ -14,7 +14,7 @@ logger.setLevel(logging.INFO)
 
 # Set to True to get the lambda to assume the Role attached on the Config Service
 ASSUME_ROLE_MODE = True
-DEFAULT_RESOURCE_TYPE = "AWS::CloudTrail::Trail"
+DEFAULT_RESOURCE_TYPE = "AWS::::Account"
 
 
 # This gets the client after assuming the Config service role
@@ -25,7 +25,7 @@ def get_client(service, event):
     service -- the service name used for calling the boto.client()
     event -- the event variable given in the lambda handler
     """
-    if not ASSUME_ROLE_MODE:
+    if not ASSUME_ROLE_MODE or (AWS_ACCOUNT_ID == AUDIT_ACCOUNT_ID):
         return boto3.client(service)
     execution_role_arn = f"arn:aws:iam::{AWS_ACCOUNT_ID}:role/{EXECUTION_ROLE_NAME}"
     credentials = get_assume_role_credentials(execution_role_arn)
@@ -38,7 +38,7 @@ def get_client(service, event):
 
 
 def get_assume_role_credentials(role_arn):
-    """Returns the temporary credentials from ASSUME_ROLE_MODE role.
+    """Gets the temporary credentials using STS service of the AWS account
     Keyword arguments:
     role_arn -- the ARN of the role to assume
     """
@@ -59,75 +59,60 @@ def get_assume_role_credentials(role_arn):
         raise ex
 
 
+# Check whether the message is a ScheduledNotification or not.
 def is_scheduled_notification(message_type):
-    """Check whether the message is a ScheduledNotification or not.
+    """Checks whether the message is a ScheduledNotification or not.
     Keyword arguments:
-    message_type -- the message type
+    message_type -- the message type of the Lambda function
     """
     return message_type == "ScheduledNotification"
 
 
 def evaluate_parameters(rule_parameters):
-    """Evaluate the rule parameters dictionary.
+    """Evaluate the rule parameters dictionary validity. Raise a ValueError for invalid parameters.
     Keyword arguments:
-    rule_parameters -- the Key/Value dictionary of the Config rule parameters
+    rule_parameters -- the Key/Value dictionary of the Config Rules parameters
     """
+    if "s3ObjectPath" not in rule_parameters:
+        logger.error('The parameter with "s3ObjectPath" as key must be defined.')
+        raise ValueError('The parameter with "s3ObjectPath" as key must be defined.')
+    if not rule_parameters["s3ObjectPath"]:
+        logger.error('The parameter "s3ObjectPath" must have a defined value.')
+        raise ValueError('The parameter "s3ObjectPath" must have a defined value.')
     return rule_parameters
 
-def list_cloud_trails() -> list[dict]:
-    """Fetches a list of all trails in the account"""
-    try:
-        trails = []
-        next_token = None
-        while True:
-            response = AWS_CLOUDTRAIL_CLIENT.list_trails() if not next_token else AWS_CLOUDTRAIL_CLIENT.list_trails(NextToken=next_token)
-            trails = trails + response.get("Trails", [])
-            next_token = response.get("NextToken")
-            if not next_token:
-                break
-        return trails
-    except botocore.exceptions.ClientError as ex:
-        if "UnsupportedOperation" in ex.response['Error']['Code']:
-            ex.response["Error"]["Message"] = "list_trails operation not supported by CloudTrails."
-        elif "OperationNotPermitted" in ex.response['Error']['Code']:
-            ex.response["Error"]["Message"] = "list_trails operation not permitted."
-        else:
-            ex.response["Error"]["Message"] = "InternalError"
-            ex.response["Error"]["Code"] = "InternalError"
-        raise ex
 
-def check_trail_status(trails, event):
-    """Checks the status of the fetched trails"""    
-    evaluations = []
-    for t in trails:
-        try:
-            trail_arn = t.get("TrailARN")
-            status = AWS_CLOUDTRAIL_CLIENT.get_trail_status(Name=trail_arn)
-            if status.get("IsLogging", False):
-                evaluations.append(
-                    build_evaluation(
-                        trail_arn,
-                        "COMPLIANT",
-                        event,
-                        resource_type=DEFAULT_RESOURCE_TYPE,
-                        annotation="CloudTrail is logging"
-                    )
-                )
-            else:
-                evaluations.append(
-                    build_evaluation(
-                        trail_arn,
-                        "NON_COMPLIANT",
-                        event,
-                        resource_type=DEFAULT_RESOURCE_TYPE,
-                        annotation="CloudTrail is not logging"
-                    )
-                )
-        except botocore.exceptions.ClientError as ex:
-            logger.error("Error while trying to fetch cloudtrail status.")
-            logger.error(ex)
-            raise ex
-    return evaluations
+def check_s3_object_exists(object_path):
+    """Check whether the S3 object exists or not.
+    Keyword arguments:
+    object_path -- the S3 object path
+    """
+    # parse the S3 path
+    match = re.match(r"s3:\/\/([^/]+)\/((?:[^/]*/)*.*)", object_path)
+    if match:
+        bucket_name = match.group(1)
+        key_name = match.group(2)
+    else:
+        raise ValueError("No match for S3 path")
+    try:
+        AWS_S3_CLIENT.head_object(Bucket=bucket_name, Key=key_name)
+    except botocore.exceptions.ClientError as err:
+        if err.response["Error"]["Code"] == "404":
+            # The object does not exist.
+            logger.info("Object %s not found in bucket %s", key_name, bucket_name)
+            return False
+        elif err.response["Error"]["Code"] == "403":
+            # AccessDenied
+            logger.info("Access denied to bucket %s", bucket_name)
+            return False
+        else:
+            # Something else has gone wrong.
+            logger.error("Error trying to find object %s in bucket %s", key_name, bucket_name)
+            raise ValueError(f"Error trying to find object {key_name} in bucket {bucket_name}") from err
+    else:
+        # The object does exist.
+        return True
+
 
 # This generate an evaluation for config
 def build_evaluation(
@@ -157,16 +142,15 @@ def build_evaluation(
     )
     return eval_cc
 
+
 def lambda_handler(event, context):
-    """This function is the main entry point for Lambda.
+    """Lambda handler to check CloudTrail trails are logging.
     Keyword arguments:
     event -- the event variable given in the lambda handler
     context -- the context variable given in the lambda handler
     """
-    logger.debug("Received event: %s", event)
-
     global AWS_CONFIG_CLIENT
-    global AWS_CLOUDTRAIL_CLIENT
+    global AWS_S3_CLIENT
     global AWS_ACCOUNT_ID
     global EXECUTION_ROLE_NAME
     global AUDIT_ACCOUNT_ID
@@ -194,34 +178,38 @@ def lambda_handler(event, context):
     else:
         AUDIT_ACCOUNT_ID = ""
 
-    AWS_CONFIG_CLIENT = get_client("config", event)
-    AWS_CLOUDTRAIL_CLIENT = get_client("cloudtrail", event)
+    compliance_value = "NOT_APPLICABLE"
+    custom_annotation = "Guardrail only applicable in the Audit Account"
 
-    # is this a scheduled invocation?
+    # is this a scheduled invokation?
     if is_scheduled_notification(invoking_event["messageType"]):
-        # yes, proceed with checking CloudTrails
-        # fetch all CloudTrails
-        logger.info("Monitoring and logging check in account %s", AWS_ACCOUNT_ID)
-        trails = list_cloud_trails()
-        
-        # does the account have any CloudTrails?
-        if len(trails) > 0:
-            # yes, check the status of all the trails and get evaluations results
-            evaluations = evaluations + check_trail_status(trails, event)
-        else:
-            # no, add NON_COMPLIANT results to evaluations
+        # yes, proceed
+        # is this being executed against the Audit Account -
+        # (this check only applies to the audit account)
+        if AWS_ACCOUNT_ID == AUDIT_ACCOUNT_ID:
+            # yes, we're in the Audit account
+            AWS_CONFIG_CLIENT = get_client("config", event)
+            AWS_S3_CLIENT = get_client("s3", event)
+            # check if object exists in S3
+            if check_s3_object_exists(valid_rule_parameters["s3ObjectPath"]):
+                compliance_value = "COMPLIANT"
+                custom_annotation = "Account management plan document found"
+            else:
+                compliance_value = "NON_COMPLIANT"
+                custom_annotation = "Account management plan document NOT found"
+            # Update AWS Config with the evaluation result
             evaluations.append(
                 build_evaluation(
                     event["accountId"],
-                    "NON_COMPLIANT",
+                    compliance_value,
                     event,
-                    resource_type="AWS::::Account",
-                    annotation="No CloudTrails found in account",
+                    resource_type=DEFAULT_RESOURCE_TYPE,
+                    annotation=custom_annotation,
                 )
             )
-            
-        # Update AWS Config with the evaluation results
-        AWS_CONFIG_CLIENT.put_evaluations(
-            Evaluations=evaluations,
-            ResultToken=event["resultToken"]
-        )
+            AWS_CONFIG_CLIENT.put_evaluations(
+                Evaluations=evaluations,
+                ResultToken=event["resultToken"]
+            )
+        else:
+            logger.info("Account management plan document not checked in account %s - not the Audit account", AWS_ACCOUNT_ID)
