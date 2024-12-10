@@ -51,6 +51,12 @@ Parameters:
   PasswordPolicyHardExpiry:
     Default: "False"
     Type: String
+  PrivilegedUsersFilePath:
+    Default: ""
+    Type: String
+  NonPrivilegedUsersFilePath:
+    Default: ""
+    Type: String
   # GC02
   S3AccountManagementPlanPath:
     Type: String
@@ -309,6 +315,49 @@ Resources:
         SourceDetails:
           - EventSource: "aws.config"
             MessageType: "ScheduledNotification"
+            
+  GC01CheckDedicatedAdminAccount:
+    Type: "AWS::Config::ConfigRule"
+    Properties:
+      ConfigRuleName: gc01_check_dedicated_admin_account
+      Description: Checks that there are dedicated user accounts for administration.
+      InputParameters:
+        PrivilegedUsersFilePath:
+          Fn::If:
+            - privilegedUsersFilePath
+            - Ref: PrivilegedUsersFilePath
+            - Ref: AWS::NoValue
+        NonPrivilegedUsersFilePath:
+          Fn::If:
+            - nonPrivilegedUsersFilePath
+            - Ref: NonPrivilegedUsersFilePath
+            - Ref: AWS::NoValue
+        ExecutionRoleName:
+          Fn::If:
+            - GCLambdaExecutionRoleName
+            - Ref: GCLambdaExecutionRoleName
+            - Ref: AWS::NoValue
+        AuditAccountID:
+          Fn::If:
+            - auditAccountID
+            - Ref: AuditAccountID
+            - Ref: AWS::NoValue
+      Scope:
+        ComplianceResourceTypes:
+          - AWS::Account
+      MaximumExecutionFrequency: TwentyFour_Hours
+      Source:
+        Owner: CUSTOM_LAMBDA
+        SourceIdentifier:
+          Fn::Join:
+            - ""
+            - - "arn:aws:lambda:ca-central-1:"
+              - Ref: AuditAccountID
+              - !Sub ":function:${OrganizationName}gc01_check_dedicated_admin_account"
+        SourceDetails:
+          - EventSource: "aws.config"
+            MessageType: "ScheduledNotification"
+
   GC01CheckMFAIAMUsersConfigRule:
     Type: "AWS::Config::ConfigRule"
     Properties:
@@ -1753,6 +1802,16 @@ Conditions:
       - Fn::Equals:
           - ""
           - Ref: PasswordPolicyHardExpiry
+  privilegedUsersFilePath:
+    Fn::Not:
+      - Fn::Equals:
+          - ""
+          - Ref: PrivilegedUsersFilePath
+  nonPrivilegedUsersFilePath:
+    Fn::Not:
+      - Fn::Equals:
+          - ""
+          - Ref: NonPrivilegedUsersFilePath
   # GC02
   s3AccountManagementPlanPath:
     Fn::Not:
