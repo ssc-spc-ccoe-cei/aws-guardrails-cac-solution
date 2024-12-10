@@ -16,10 +16,12 @@ Parameters:
     Description: Execution arn name to be used when applying policy to the destination bucket.
   OrganizationName:
     Type: String
-    Description: Name of the organziation.
+    Description: Name of the organization.
   OrganizationId:
     Type: String
     Description: Organization id to be passed down from the root.yaml file.
+  TenantId:
+    Type: String
   AssessmentName:
     Type: String
     Default: "GC Guardrails Assessment"
@@ -177,6 +179,7 @@ Resources:
           ORG_ID: !Ref OrganizationId
           ASSESSMENT_NAME: !Ref AssessmentName
           ORG_NAME: !Ref OrganizationName
+          TENANT_ID: !Ref TenantId
       Runtime: python3.9
       Timeout: 360
 

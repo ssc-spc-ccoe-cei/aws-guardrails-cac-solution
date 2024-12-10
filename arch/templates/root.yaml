@@ -16,6 +16,9 @@ Parameters:
     Type: String
     Default: "*ORG_ID*"
     Description: Primary identifier for metadata of registered org
+  TenantId:
+    Type: String
+    Default: "*TENANT_ID*"
   InvokeUpdate:
     Type: String
     Default: "17d78b5e-9745-41e4-a926-9fd9f660bf23"
@@ -239,6 +242,7 @@ Resources:
         ExecutionName: !Ref ExecutionName
         OrganizationId: !Ref OrganizationId
         OrganizationName: !Ref OrganizationName
+        TenantId: !Ref TenantId
         RolePrefix: !Ref RolePrefix
         AccelRolePrefix: !Ref AccelRolePrefix
         AcceleratorRole: !Ref AcceleratorRole
