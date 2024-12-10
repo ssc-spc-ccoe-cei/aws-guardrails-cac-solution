@@ -1196,6 +1196,9 @@ Resources:
               - "iam:GetUserPolicy"
               - "iam:ListAttachedUserPolicies"
               - "iam:ListPolicies"
+              - "iam:ListGroupsForUser"
+              - "iam:ListAttachedGroupPolicies"
+              - "iam:ListGroupPolicies"
               - "iam:GetPolicyVersion"
             Resource: "*"
             Effect: Allow
