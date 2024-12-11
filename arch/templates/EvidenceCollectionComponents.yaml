@@ -22,6 +22,8 @@ Parameters:
     Description: Organization id to be passed down from the root.yaml file.
   TenantId:
     Type: String
+  DeployVersion:
+    Type: String
   AssessmentName:
     Type: String
     Default: "GC Guardrails Assessment"
@@ -180,6 +182,7 @@ Resources:
           ASSESSMENT_NAME: !Ref AssessmentName
           ORG_NAME: !Ref OrganizationName
           TENANT_ID: !Ref TenantId
+          CAC_VERSION: !Ref DeployVersion
       Runtime: python3.9
       Timeout: 360
 

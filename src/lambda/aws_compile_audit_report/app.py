@@ -9,8 +9,9 @@ import os
 
 import boto3
 
-org_id = os.environ["ORG_ID"]
 assessment_name = os.environ["ASSESSMENT_NAME"]
+cac_version = os.environ["CAC_VERSION"]
+org_id = os.environ["ORG_ID"]
 org_name = os.environ["ORG_NAME"]
 tenant_id = os.environ["TENANT_ID"]
 auditManagerClient = boto3.client("auditmanager")
@@ -40,6 +41,7 @@ def lambda_handler(event, context):
         "organizationId",
         "organizationName",
         "tenantId",
+        "cacVersion",
     ]
     csv_io = io.StringIO()
     writer = csv.writer(csv_io)
@@ -75,6 +77,7 @@ def lambda_handler(event, context):
                                 org_id,
                                 org_name,
                                 tenant_id,
+                                cac_version,
                             ]
                         )
                     elif len(item["resourcesIncluded"]) > 1:
@@ -92,6 +95,7 @@ def lambda_handler(event, context):
                                     org_id,
                                     org_name,
                                     tenant_id,
+                                    cac_version,
                                 ]
                             )
                     else:
@@ -109,6 +113,7 @@ def lambda_handler(event, context):
                                     org_id,
                                     org_name,
                                     tenant_id,
+                                    cac_version,
                                 ]
                             )
                         else:
@@ -125,6 +130,7 @@ def lambda_handler(event, context):
                                     org_id,
                                     org_name,
                                     tenant_id,
+                                    cac_version,
                                 ]
                             )
                     for row in rows:

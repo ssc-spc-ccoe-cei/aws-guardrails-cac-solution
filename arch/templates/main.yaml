@@ -1607,6 +1607,8 @@ Resources:
       Parameters:
         - ParameterKey: AuditAccountID
           ParameterValue: !Ref AuditAccountID
+        - ParameterKey: DeployVersion
+          ParameterValue: !Ref DeployVersion
         - ParameterKey: DestBucketName
           ParameterValue: !Ref DestBucketName
         - ParameterKey: ExecutionName
