@@ -251,8 +251,22 @@ def ip_is_within_ranges(ip_addr: str, ip_cidr_ranges: list[str]) -> bool:
     return False
 
 
-def account_has_federated_entra_id_users() -> bool:
-    return True
+def account_has_federated_users(iam_client) -> bool:
+    response = iam_client.list_open_id_connect_providers()
+    if not response:
+        raise Exception("Request to list OIDC providers returned an invalid response")
+    providers = response.get("OpenIDConnectProviderList", [])
+    if providers:
+        return True
+
+    response = iam_client.list_saml_providers()
+    if not response:
+        raise Exception("Request to list SAML providers returned an invalid response")
+    providers = response.get("SAMLProviderList", [])
+    if providers:
+        return True
+
+    return False
 
 
 def lambda_handler(event, context):
@@ -292,10 +306,13 @@ def lambda_handler(event, context):
     AWS_S3_CLIENT = boto3.client("s3")
     AWS_CLOUDTRAIL_CLIENT = get_client("cloudtrail", event)
     AWS_ORGANIZATIONS_CLIENT = get_client("organizations", event)
+    aws_iam_client = get_client("iam", event)
 
     if AWS_ACCOUNT_ID != get_organizations_mgmt_account_id():
         # We're not in the Management Account
-        logger.info("Cloud Trail events not checked in account %s as this is not the Management Account", AWS_ACCOUNT_ID)
+        logger.info(
+            "Cloud Trail events not checked in account %s as this is not the Management Account", AWS_ACCOUNT_ID
+        )
         return
 
     file_param_name = "s3ObjectPath"
@@ -328,18 +345,18 @@ def lambda_handler(event, context):
         ct_event = json.loads(lookup_event.get("CloudTrailEvent", "{}"))
 
         if not ip_is_within_ranges(ct_event["sourceIPAddress"], vpn_ip_ranges):
-            annotation = f"Cloud Trail Event '{ct_event.get("EventId", "")}' has a source IP address OUTSIDE of the allowed ranges."
+            annotation = f"Cloud Trail Event '{ct_event.get("eventID", "")}' has a source IP address OUTSIDE of the allowed ranges."
         else:
             num_compliant_rules = num_compliant_rules + 1
-            annotation = f"Cloud Trail Event '{ct_event.get("EventId", "")}' has a source IP address inside of the allowed ranges."
-            if account_has_federated_entra_id_users():
+            annotation = f"Cloud Trail Event '{ct_event.get("eventID", "")}' has a source IP address inside of the allowed ranges."
+            if account_has_federated_users(aws_iam_client):
                 annotation = f"{annotation} Dependent on the compliance of the Federated IdP."
         logger.info(annotation)
 
     if len(cloud_trail_events) == num_compliant_rules:
-        annotation = "All Cloud Trail Events are within the allowed source IP address ranges or are dependant on the federated identity provider."
-        if account_has_federated_entra_id_users():
-            annotation = f"{annotation} Dependent on the compliance of the Federated IdP."
+        annotation = "All Cloud Trail Events are within the allowed source IP address ranges."
+        if account_has_federated_users(aws_iam_client):
+            annotation = f"All Cloud Trail Events are within the allowed source IP address ranges or are dependant on the federated identity provider."
         evaluations.append(build_evaluation(AWS_ACCOUNT_ID, "COMPLIANT", event, DEFAULT_RESOURCE_TYPE, annotation))
     else:
         annotation = "NOT all Cloud Trail Events are within the allowed source IP address ranges."
