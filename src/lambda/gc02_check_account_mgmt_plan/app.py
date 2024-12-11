@@ -56,5 +56,6 @@ def lambda_handler(event, context):
         compliance_type = "NON_COMPLIANT"
         annotation = "Account management plan document NOT found"
 
+    logger.info(f"{compliance_type}: {annotation}")
     evaluations.append(build_evaluation(aws_account_id, compliance_type, event, annotation=annotation))
     submit_evaluations(aws_config_client, event["resultToken"], evaluations)
