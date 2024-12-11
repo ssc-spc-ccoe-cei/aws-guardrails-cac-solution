@@ -60,6 +60,7 @@ update-ss5: build-code package-code ss5
 update-ss6: build-code package-code ss6
 update-ss7: build-code package-code ss7
 update-ss8: build-code package-code ss8
+update-layers: build-layers package-code
 destroy: cleans3buckets destroy-stack
 lint: lint-cfn
 test: test-stack
@@ -105,17 +106,22 @@ mb:
 
 
 update-params:
-	$(info --- Updating Parametes File: Pipeline Bucket ---)
+	$(info --- Updating Parameters File: Pipeline Bucket ---)
 	@tmp=$(mktemp)
 	@jq 'map(if .ParameterKey == "PipelineBucket" then . + {"ParameterValue" : "$(PIPELINE_BUCKET)" } else . end)' ./arch/params/$(ENV_NAME).json > "$tmp" && mv "$tmp" ./arch/params/$(ENV_NAME).json
 
 
 build-code:
-	$(info --- Starting Buid Stage ---)
+	$(info --- Starting Build Stage ---)
 	$(info --- Cleaning & Rebuild Project Lambdas ---)
 	if $(CLOUD_SHELL); then echo "Build skipped in CloudShell"; else $(CODEBUILD_SRC_DIR)/tools/samclean.sh -p $(CODEBUILD_SRC_DIR)/src/; fi ;
 	if $(CLOUD_SHELL); then echo "Build skipped in CloudShell"; else $(CODEBUILD_SRC_DIR)/tools/buildsam.sh -p $(CODEBUILD_SRC_DIR)/src/; fi ;
-	
+
+build-layers:
+	$(info --- Starting Build Layers Stage ---)
+	$(info --- Cleaning & Rebuild Lambda Layers ---)
+	if $(CLOUD_SHELL); then echo "Build skipped in CloudShell"; else $(CODEBUILD_SRC_DIR)/tools/samclean.sh -p $(CODEBUILD_SRC_DIR)/src/layer/; fi ;
+	if $(CLOUD_SHELL); then echo "Build skipped in CloudShell"; else $(CODEBUILD_SRC_DIR)/tools/buildsam.sh -p $(CODEBUILD_SRC_DIR)/src/layer/; fi ;
 
 package-code:
 	$(info --- Packaging Lambdas Code & CFN Templates ---)
@@ -127,7 +133,7 @@ package-code:
 		-g $(GIT_VERSION)
 
 setup-admin-delegate:
-	$(info --- Making $(AUDIT_ACCOUNT) the delgated admin for the organization ---)
+	$(info --- Making $(AUDIT_ACCOUNT) the delegated admin for the organization ---)
 	@aws organizations enable-aws-service-access --service-principal=config.amazonaws.com
 	@aws organizations register-delegated-administrator \
 		--service-principal config.amazonaws.com \
