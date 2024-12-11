@@ -1,4 +1,4 @@
-""" GC02 - Check IAM Password Policy
+""" GC02 - Check Group Access Configuration
     https://canada-ca.github.io/cloud-guardrails/EN/02_Management-Admin-Privileges.html
 """
 import json
@@ -178,8 +178,8 @@ def check_group_policies(group_name, admin_accounts, event):
     inline_policies = fetch_inline_group_policies(group_name)
     
     # Checks for the aws managed policy AdministratorAccess or an inline policy that gives the same access.
-    has_admin_policy = next((True for p in managed_policies if p.get("PolicyName", "") == "AdministratorAccess"), False) or next((True for p in inline_policies if policy_doc_gives_admin_access(p.get("PolicyDocument", "\{\}"))), False)
-    has_non_admin_policy = next((True for p in managed_policies if p.get("PolicyName", "") != "AdministratorAccess"), False) or next((True for p in inline_policies if not policy_doc_gives_admin_access(p.get("PolicyDocument", "\{\}"))), False)
+    has_admin_policy = next((True for p in managed_policies if p.get("PolicyName", "") == "AdministratorAccess"), False) or next((True for p in inline_policies if policy_doc_gives_admin_access(p.get("PolicyDocument", "{}"))), False)
+    has_non_admin_policy = next((True for p in managed_policies if p.get("PolicyName", "") != "AdministratorAccess"), False) or next((True for p in inline_policies if not policy_doc_gives_admin_access(p.get("PolicyDocument", "{}"))), False)
     
     # Does the group have admin policies and non admin policies?
     if has_admin_policy and has_non_admin_policy:

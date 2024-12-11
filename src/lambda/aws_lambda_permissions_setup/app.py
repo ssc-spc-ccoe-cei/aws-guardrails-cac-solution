@@ -72,6 +72,7 @@ def apply_lambda_permissions():
     lambda_functions = {
         f"{organization_name}gc01_check_alerts_flag_misuse": ["GC01CheckAlertsFlagMisuseLambda"],
         f"{organization_name}gc01_check_attestation_letter": ["GC01CheckAttestationLetterLambda"],
+        f"{organization_name}gc01_check_dedicated_admin_account": ["GC01CheckDedicatedAdminAccountLambda"],
         f"{organization_name}gc01_check_federated_users_mfa": ["GC01CheckFederatedUsersMFALambda"],
         f"{organization_name}gc01_check_iam_users_mfa": ["GC01CheckIAMUsersMFALambda"],
         f"{organization_name}gc01_check_mfa_digital_policy": ["GC01CheckMFADigitalPolicy"],
@@ -81,7 +82,6 @@ def apply_lambda_permissions():
         f"{organization_name}gc02_check_password_protection_mechanisms": ["GC02CheckPasswordProtectionMechanismsLambda"],
         f"{organization_name}gc02_check_iam_password_policy": ["GC02CheckIAMPasswordPolicyLambda"],
         f"{organization_name}gc02_check_group_access_configuration": ["GC02CheckGroupAccessConfigurationLambda"],
-        f"{organization_name}gc02_check_least_privileged_roles": ["GC02CheckLeastPrivilegedRolesLambda"],
         f"{organization_name}gc02_check_privileged_roles_review": ["GC02CheckPrivilegedRolesReviewLambda"],
         f"{organization_name}gc03_check_endpoint_access_config": ["GC03CheckEndpointAccessConfigLambda"],
         f"{organization_name}gc03_check_iam_cloudwatch_alarms": ["GC03CheckIAMCloudWatchAlarmsLambda"],

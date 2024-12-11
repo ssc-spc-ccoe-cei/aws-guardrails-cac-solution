@@ -37,6 +37,17 @@ Resources:
       Runtime: !Ref PythonRuntime
       Timeout: 180
 
+  GC01CheckDedicatedAdminAccountLambda:
+    Condition: IsAuditAccount
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub "${OrganizationName}gc01_check_dedicated_admin_account"
+      Code: "../../src/lambda/gc01_check_dedicated_admin_account/build/GC01CheckDedicatedAdminAccountLambda/"
+      Handler: app.lambda_handler
+      Role: !Sub "arn:aws:iam::${AuditAccountID}:role/${RolePrefix}default_assessment_role"
+      Runtime: !Ref PythonRuntime
+      Timeout: 180
+
   ## GC02
   GC02CheckIAMPasswordPolicyLambda:
     Condition: IsAuditAccount
@@ -55,17 +66,6 @@ Resources:
     Properties:
       FunctionName: !Sub "${OrganizationName}gc02_check_group_access_configuration"
       Code: "../../src/lambda/gc02_check_group_access_configuration/build/GC02CheckGroupAccessConfigurationLambda/"
-      Handler: app.lambda_handler
-      Role: !Sub "arn:aws:iam::${AuditAccountID}:role/${RolePrefix}default_assessment_role"
-      Runtime: !Ref PythonRuntime
-      Timeout: 180
-
-  GC02CheckLeastPrivilegedRolesLambda:
-    Condition: IsAuditAccount
-    Type: AWS::Lambda::Function
-    Properties:
-      FunctionName: !Sub "${OrganizationName}gc02_check_least_privileged_roles"
-      Code: "../../src/lambda/gc02_check_least_privileged_roles/build/GC02CheckLeastPrivilegedRolesLambda/"
       Handler: app.lambda_handler
       Role: !Sub "arn:aws:iam::${AuditAccountID}:role/${RolePrefix}default_assessment_role"
       Runtime: !Ref PythonRuntime

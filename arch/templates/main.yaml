@@ -266,6 +266,8 @@ Resources:
                     "rds:Describe*",
                     "resource-explorer-2:ListIndexes",
                     "resource-explorer-2:Search",
+                    "sso:List*",
+                    "sso:GetInlinePolicyForPermissionSet",
                     "s3:Get*",
                     "s3:GetBucketPublicAccessBlock",
                     "s3:List*",
@@ -1179,6 +1181,14 @@ Resources:
               - "iam:Get*"
               - "iam:List*"
               - "iam:Simulate*"
+              - "iam:ListUserPolicies"
+              - "iam:GetUserPolicy"
+              - "iam:ListAttachedUserPolicies"
+              - "iam:ListPolicies"
+              - "iam:ListGroupsForUser"
+              - "iam:ListAttachedGroupPolicies"
+              - "iam:ListGroupPolicies"
+              - "iam:GetPolicyVersion"
             Resource: "*"
             Effect: Allow
           - Sid: AllowCloudWatchAlarmQueries
@@ -1243,6 +1253,13 @@ Resources:
               - "s3:ListAllMyBuckets"
               - "s3:ListBucket"
               - "s3:GetBucketPublicAccessBlock"
+              - "sso:ListInstances"
+              - "sso:ListUsers"
+              - "sso:ListManagedPoliciesInPermissionSet"
+              - "sso:GetInlinePolicyForPermissionSet"
+              - "sso:ListCustomerManagedPolicyReferencesInPermissionSet"
+              - "sso:ListPermissionSetsProvisionedToAccount"
+              - "sso:ListAccountAssignments"
               - "sns:GetSubscriptionAttributes"
               - "sns:GetTopicAttributes"
               - "sns:ListSubscriptionsByTopic"
@@ -1489,6 +1506,14 @@ Resources:
         - ParameterName: S3VpnIpRangesPath
           ParameterValue: !Sub
             - "s3://${ClientEvidenceBucket}/gc-03/vpn_ip_ranges.txt"
+            - ClientEvidenceBucket: !If [ GenerateEvidenceBucketName, !GetAtt GenerateEvidenceBucketName.EvidenceBucketName, !Ref EvidenceBucketName ]
+        - ParameterName: PrivilegedUsersFilePath
+          ParameterValue: !Sub
+            - "s3://${ClientEvidenceBucket}/gc-01/privileged_users.txt"
+            - ClientEvidenceBucket: !If [ GenerateEvidenceBucketName, !GetAtt GenerateEvidenceBucketName.EvidenceBucketName, !Ref EvidenceBucketName ]
+        - ParameterName: NonPrivilegedUsersFilePath
+          ParameterValue: !Sub
+            - "s3://${ClientEvidenceBucket}/gc-01/non_privileged_users.txt"
             - ClientEvidenceBucket: !If [ GenerateEvidenceBucketName, !GetAtt GenerateEvidenceBucketName.EvidenceBucketName, !Ref EvidenceBucketName ]
       OrganizationConformancePackName: !Sub "${OrganizationName}-GC-CP-Guardrails"
       TemplateS3Uri: !Sub s3://${PipelineBucket}/${DeployVersion}/ConformancePack.yaml
