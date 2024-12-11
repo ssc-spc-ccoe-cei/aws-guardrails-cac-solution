@@ -104,6 +104,20 @@ Resources:
         LogGroup: !Sub "${OrganizationName}gc_guardrails"
         LogFormat: "JSON"
 
+  GC09CheckNonPublicStorageAccountsLambda:
+    Condition: IsAuditAccount
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub "${OrganizationName}gc09_check_non_public_storage_accounts"
+      Code: "../../src/lambda/gc09_check_non_public_storage_accounts/build/GC09CheckNonPublicStorageAccountsLambda/"
+      Handler: app.lambda_handler
+      Role: !Sub "arn:aws:iam::${AuditAccountID}:role/${RolePrefix}default_assessment_role"
+      Runtime: !Ref PythonRuntime
+      Timeout: 90
+      LoggingConfig:
+        LogGroup: !Sub "${OrganizationName}gc_guardrails"
+        LogFormat: "JSON"
+
   ## GC10
   GC10CheckCyberCenterSensorsLambda:
     Condition: IsAuditAccount

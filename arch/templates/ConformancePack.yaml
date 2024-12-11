@@ -1157,6 +1157,38 @@ Resources:
         SourceDetails:
           - EventSource: "aws.config"
             MessageType: "ScheduledNotification"
+  
+  GC09CheckNonPublicStorageAccountsConfigRule:
+    Type: "AWS::Config::ConfigRule"
+    Properties:
+      ConfigRuleName: gc09_check_non_public_storage_accounts
+      Description: Checks all s3 buckets to ensure they are not exposed to the public.
+      InputParameters:
+        ExecutionRoleName:
+          Fn::If:
+            - GCLambdaExecutionRoleName
+            - Ref: GCLambdaExecutionRoleName
+            - Ref: AWS::NoValue
+        AuditAccountID:
+          Fn::If:
+            - auditAccountID
+            - Ref: AuditAccountID
+            - Ref: AWS::NoValue
+      Scope:
+        ComplianceResourceTypes:
+          - AWS::Account
+      MaximumExecutionFrequency: TwentyFour_Hours
+      Source:
+        Owner: CUSTOM_LAMBDA
+        SourceIdentifier:
+          Fn::Join:
+            - ""
+            - - "arn:aws:lambda:ca-central-1:"
+              - Ref: AuditAccountID
+              - !Sub ":function:${OrganizationName}gc09_check_non_public_storage_accounts"
+        SourceDetails:
+          - EventSource: "aws.config"
+            MessageType: "ScheduledNotification"
   # GC10
   GC10CheckCyberCenterSensorsConfigRule:
     Type: "AWS::Config::ConfigRule"
