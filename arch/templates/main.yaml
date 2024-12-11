@@ -212,7 +212,7 @@ Resources:
     Type: Custom::InvokeCustomLambda
     Condition: DeployRoles
     Properties:
-      Version: 31
+      Version: 32
       ServiceToken: !GetAtt CreateRoleLambda.Arn
       TrustPrincipal: !Sub arn:${AWS::Partition}:iam::${AuditAccountID}:root
       SwitchRole: !Ref AcceleratorRole
@@ -339,7 +339,7 @@ Resources:
     Type: Custom::InvokeCustomLambda
     Condition: DeployRoles
     Properties:
-      Version: 31
+      Version: 32
       ServiceToken: !GetAtt CreateRoleLambda.Arn
       TrustPrincipal: !Sub arn:${AWS::Partition}:iam::${AuditAccountID}:root
       SwitchRole: !Ref AcceleratorRole
@@ -1177,15 +1177,9 @@ Resources:
         Statement:
           - Sid: AllowIAMQueries
             Action:
-              - "iam:GenerateCredentialReport"
-              - "iam:GetAccountPasswordPolicy"
-              - "iam:GetCredentialReport"
-              - "iam:GetLoginProfile"
-              - "iam:GetRole"
-              - "iam:GetUser"
-              - "iam:ListAttachedRolePolicies"
-              - "iam:ListMFADevices"
-              - "iam:ListUsers"
+              - "iam:Generate*"
+              - "iam:Get*"
+              - "iam:List*"
               - "iam:Simulate*"
               - "iam:ListUserPolicies"
               - "iam:GetUserPolicy"

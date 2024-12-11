@@ -94,8 +94,22 @@ def build_evaluation(resource_id, compliance_type, event, resource_type=DEFAULT_
     return eval_cc
 
 
-def account_has_federated_entra_id_users() -> bool:
-    return True
+def account_has_federated_users(iam_client) -> bool:
+    response = iam_client.list_open_id_connect_providers()
+    if not response:
+        raise Exception("Request to list OIDC providers returned an invalid response")
+    providers = response.get("OpenIDConnectProviderList", [])
+    if providers:
+        return True
+
+    response = iam_client.list_saml_providers()
+    if not response:
+        raise Exception("Request to list SAML providers returned an invalid response")
+    providers = response.get("SAMLProviderList", [])
+    if providers:
+        return True
+
+    return False
 
 
 def lambda_handler(event, context):
@@ -126,9 +140,10 @@ def lambda_handler(event, context):
     # parse parameters
     AWS_ACCOUNT_ID = event["accountId"]
     AWS_CONFIG_CLIENT = get_client("config", event)
+    aws_iam_client = get_client("iam", event)
 
     annotation = "Configuration for devices and policies are implemented."
-    if account_has_federated_entra_id_users():
+    if account_has_federated_users(aws_iam_client):
         annotation = f"{annotation} Dependent on the compliance of the Federated IdP."
     evaluations.append(build_evaluation(AWS_ACCOUNT_ID, "COMPLIANT", event, DEFAULT_RESOURCE_TYPE, annotation))
     logger.info(annotation)
