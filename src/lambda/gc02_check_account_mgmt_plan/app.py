@@ -1,6 +1,7 @@
 """ GC02 - Check Account Management Plan
     https://canada-ca.github.io/cloud-guardrails/EN/02_Management-Admin-Privileges.html
 """
+
 import json
 import logging
 
@@ -16,6 +17,7 @@ logger.setLevel(logging.INFO)
 ASSUME_ROLE_MODE = True
 DEFAULT_RESOURCE_TYPE = "AWS::::Account"
 
+
 def evaluate_parameters(rule_parameters):
     """Evaluate the rule parameters dictionary validity. Raise a ValueError for invalid parameters.
     Keyword arguments:
@@ -28,6 +30,7 @@ def evaluate_parameters(rule_parameters):
         logger.error('The parameter "s3ObjectPath" must have a defined value.')
         raise ValueError('The parameter "s3ObjectPath" must have a defined value.')
     return rule_parameters
+
 
 def lambda_handler(event, context):
     """Lambda handler to check CloudTrail trails are logging.
@@ -67,12 +70,12 @@ def lambda_handler(event, context):
     compliance_value = "NOT_APPLICABLE"
     custom_annotation = "Guardrail only applicable in the Audit Account"
 
-    # is this a scheduled invokation?
+    # is this a scheduled invocation?
     if is_scheduled_notification(invoking_event["messageType"]):
         # yes, proceed
         # is this being executed against the Audit Account -
         # (this check only applies to the audit account)
-        if AWS_ACCOUNT_ID == AUDIT_ACCOUNT_ID:
+        if AWS_ACCOUNT_ID == AUDIT_ACCOUNT_ID: 
             # yes, we're in the Audit account
             AWS_CONFIG_CLIENT = get_client("config", event, ASSUME_ROLE_MODE, AWS_ACCOUNT_ID)
             AWS_S3_CLIENT = get_client("s3", event, ASSUME_ROLE_MODE, AWS_ACCOUNT_ID)
@@ -93,9 +96,8 @@ def lambda_handler(event, context):
                     annotation=custom_annotation,
                 )
             )
-            AWS_CONFIG_CLIENT.put_evaluations(
-                Evaluations=evaluations,
-                ResultToken=event["resultToken"]
-            )
+            AWS_CONFIG_CLIENT.put_evaluations(Evaluations=evaluations, ResultToken=event["resultToken"])
         else:
-            logger.info("Account management plan document not checked in account %s - not the Audit account", AWS_ACCOUNT_ID)
+            logger.info(
+                "Account management plan document not checked in account %s - not the Audit account", AWS_ACCOUNT_ID
+            )

@@ -30,9 +30,8 @@ Parameters:
     Description: The Accelerator role prefix for privileged access
   PythonRuntime:
     Type: String
-    Default: 'python3.12'
-    Description:
-      The python runtime to use for the compliance dashboard
+    Default: "python3.12"
+    Description: The python runtime to use for the compliance dashboard
 
 Conditions:
   GenerateEvidenceBucketName: !Equals
@@ -50,7 +49,7 @@ Resources:
     Condition: IsAuditAccount
     Type: AWS::Lambda::LayerVersion
     Properties:
-      CompatibleRuntimes: 
+      CompatibleRuntimes:
         - python3.12
       Content: "../../src/layer/cloud_guardrails/build/CloudGuardrailsCommonLayer/"
 
@@ -141,7 +140,11 @@ Resources:
       EvidenceBucketName:
         !If [GenerateEvidenceBucketName, AWS::NoValue, !Ref EvidenceBucketName]
       AWSConfigBucketName:
-        !If [GenerateAWSConfigConformsBucketName, AWS::NoValue, !Ref AWSConfigConformsBucketName]
+        !If [
+          GenerateAWSConfigConformsBucketName,
+          AWS::NoValue,
+          !Ref AWSConfigConformsBucketName,
+        ]
       StaticWebSiteURL: "http://localhost:8000"
     DependsOn:
       - BucketsSetupLambda
@@ -441,4 +444,4 @@ Outputs:
     Value:
       Ref: CloudGuardrailsCommonLayer
     Export:
-      Name: !Sub "${StackName}-CloudGuardrailsCommonLayerARN" 
+      Name: !Sub "${StackName}-CloudGuardrailsCommonLayerARN"
