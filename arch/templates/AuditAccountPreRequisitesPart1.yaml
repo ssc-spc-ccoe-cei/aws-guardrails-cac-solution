@@ -440,8 +440,7 @@ Resources:
 
 Outputs:
   CloudGuardrailsCommonLayerARN:
-    Condition: IsAuditAccount
     Description: The ARN of the Lambda Layer created for common guardrail code.
-    Value: !GetAtt CloudGuardrailsCommonLayer.LayerVersionArn
+    Value: !If [IsAuditAccount, !GetAtt CloudGuardrailsCommonLayer.LayerVersionArn, "N/A"]
     Export:
-      Name: !Sub "${AWS::StackName}-CloudGuardrailsCommonLayerARN"
+      Name: CloudGuardrailsCommonLayerARN

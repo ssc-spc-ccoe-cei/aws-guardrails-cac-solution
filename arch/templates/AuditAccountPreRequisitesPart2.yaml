@@ -2,6 +2,12 @@ AWSTemplateFormatVersion: 2010-09-09
 Description: Configures AWS Config and AWS Audit Manager for multi-account management.
 
 Parameters:
+  CloudGuardrailsCommonLayerArn:
+    Type: String
+    Default: "N/A"
+  CloudGuardrailsCommonLayerArn2:
+    Type: String
+    Default: "N/A"
   OrganizationName:
     Type: String
     Default: ""
@@ -15,9 +21,8 @@ Parameters:
     Description: prefix for roles created by this template
   PythonRuntime:
     Type: String
-    Default: 'python3.12'
-    Description:
-      The python runtime to use for the compliance dashboard
+    Default: "python3.12"
+    Description: The python runtime to use for the compliance dashboard
 
 Conditions:
   IsAuditAccount: !Equals
@@ -81,3 +86,20 @@ Resources:
       Role: !Sub "arn:aws:iam::${AuditAccountID}:role/${RolePrefix}default_assessment_role"
       Runtime: !Ref PythonRuntime
       Timeout: 180
+
+Outputs:
+  CloudGuardrailsCommonLayerARN:
+    Description: The ARN of the Lambda Layer created for common guardrail code.
+    Value: !Ref CloudGuardrailsCommonLayerArn
+    Export:
+      Name: Part2TestA-CloudGuardrailsCommonLayerARN
+  CloudGuardrailsCommonLayerArn2:
+    Description: The ARN of the Lambda Layer created for common guardrail code.
+    Value: !Ref CloudGuardrailsCommonLayerArn2
+    Export:
+      Name: Part2TestB-CloudGuardrailsCommonLayerARN
+  CloudGuardrailsCommonLayerArn3:
+    Description: The ARN of the Lambda Layer created for common guardrail code.
+    Value: !ImportValue CloudGuardrailsCommonLayerARN
+    Export:
+      Name: Part2TestC-CloudGuardrailsCommonLayerARN
