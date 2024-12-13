@@ -39,6 +39,8 @@ Resources:
       Role: !Sub "arn:aws:iam::${AuditAccountID}:role/${RolePrefix}default_assessment_role"
       Runtime: !Ref PythonRuntime
       Timeout: 90
+      Layers:
+        - !Ref CloudGuardrailsCommonLayerArn
       LoggingConfig:
         LogGroup: !Sub "${OrganizationName}gc_guardrails"
         LogFormat: "JSON"
@@ -53,6 +55,8 @@ Resources:
       Role: !Sub "arn:aws:iam::${AuditAccountID}:role/${RolePrefix}default_assessment_role"
       Runtime: !Ref PythonRuntime
       Timeout: 90
+      Layers:
+        - !Ref CloudGuardrailsCommonLayerArn
       LoggingConfig:
         LogGroup: !Sub "${OrganizationName}gc_guardrails"
         LogFormat: "JSON"
@@ -68,6 +72,8 @@ Resources:
       Role: !Sub "arn:aws:iam::${AuditAccountID}:role/${RolePrefix}default_assessment_role"
       Runtime: !Ref PythonRuntime
       Timeout: 900
+      Layers:
+        - !Ref CloudGuardrailsCommonLayerArn
       LoggingConfig:
         LogGroup: !Sub "${OrganizationName}gc_guardrails"
         LogFormat: "JSON"
