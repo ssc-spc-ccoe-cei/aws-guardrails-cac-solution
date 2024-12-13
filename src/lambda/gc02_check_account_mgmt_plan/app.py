@@ -17,6 +17,8 @@ logger.setLevel(logging.INFO)
 
 def lambda_handler(event, context):
     """
+    This function is the main entry point for Lambda.
+
     Keyword arguments:
 
     event -- the event variable given in the lambda handler
@@ -25,12 +27,14 @@ def lambda_handler(event, context):
     """
     logger.info("Received Event: %s", json.dumps(event, indent=2))
 
+    invoking_event = json.loads(event["invokingEvent"])
     rule_parameters = json.loads(event.get("ruleParameters", "{}"))
-    valid_rule_parameters = check_required_parameters(rule_parameters, ["s3ObjectPath"], logger)
+    valid_rule_parameters = check_required_parameters(rule_parameters, ["s3ObjectPath"])
     execution_role_name = valid_rule_parameters.get("ExecutionRoleName", "AWSA-GCLambdaExecutionRole")
     audit_account_id = valid_rule_parameters.get("AuditAccountID", "")
-    invoking_event = json.loads(event["invokingEvent"])
     aws_account_id = event["accountId"]
+    is_not_audit_account = aws_account_id != audit_account_id
+
     evaluations = []
 
     compliance_type = "NOT_APPLICABLE"
@@ -40,14 +44,14 @@ def lambda_handler(event, context):
         logger.error("Skipping assessments as this is not a scheduled invocation")
         return
 
-    if aws_account_id != audit_account_id:
+    if is_not_audit_account:
         logger.info(
             "Account management plan document not checked in account %s - not the Audit account", aws_account_id
         )
         return
 
-    aws_config_client = get_client("config", aws_account_id, execution_role_name)
-    aws_s3_client = get_client("s3", aws_account_id, execution_role_name)
+    aws_config_client = get_client("config")
+    aws_s3_client = get_client("s3")
 
     if check_s3_object_exists(aws_s3_client, valid_rule_parameters["s3ObjectPath"]):
         compliance_type = "COMPLIANT"
