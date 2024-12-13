@@ -176,7 +176,6 @@ Conditions:
   GenerateAWSConfigConformsBucketName:
     !Equals [!Ref AWSConfigConformsBucketName, ""]
   DeployRoles: !Equals [!Ref DeployRoles, "true"]
-  IsAuditAccount: !Equals [!Ref AWS::AccountId, !Ref AuditAccountID]
 
 Resources:
   ##################################################
@@ -626,8 +625,28 @@ Resources:
   ##################################################
   # Part 2 - Audit Account Pre-requisites
   ##################################################
+  CloudGuardrailsCommonLayer:
+    Type: AWS::Lambda::LayerVersion
+    Properties:
+      LayerName: CloudGuardrailsCommonLayer
+      CompatibleRuntimes:
+        - python3.12
+      Content: "../../src/layer/cloud_guardrails/build/CloudGuardrailsCommonLayer/"
+
+  CloudGuardrailsCommonLayerPermissions:
+    Type: AWS::Lambda::LayerVersionPermission
+    DependsOn:
+      - CloudGuardrailsCommonLayer
+    Properties:
+      Action: lambda:GetLayerVersion
+      LayerVersionArn: !Ref CloudGuardrailsCommonLayer
+      Principal: !Ref AuditAccountID
+
   AuditAccountPreRequisitesPart1:
     Type: AWS::CloudFormation::StackSet
+    DependsOn:
+      - CloudGuardrailsCommonLayer
+      - CloudGuardrailsCommonLayerPermissions
     Properties:
       AutoDeployment:
         Enabled: true
@@ -644,6 +663,8 @@ Resources:
         RegionOrder:
           - ca-central-1
       Parameters:
+        - ParameterKey: CloudGuardrailsCommonLayerArn
+          ParameterValue: !Ref CloudGuardrailsCommonLayer
         - ParameterKey: OrganizationName
           ParameterValue: !Ref OrganizationName
         - ParameterKey: AuditAccountID
@@ -700,22 +721,7 @@ Resources:
           - ca-central-1
       Parameters:
         - ParameterKey: CloudGuardrailsCommonLayerArn
-          ParameterValue:
-            !If [
-              IsAuditAccount,
-              !GetAtt [
-                AuditAccountPreRequisitesPart1,
-                Outputs.CloudGuardrailsCommonLayerARN,
-              ],
-              "N/A1",
-            ]
-        - ParameterKey: CloudGuardrailsCommonLayerArn2
-          ParameterValue:
-            !If [
-              IsAuditAccount,
-              !ImportValue CloudGuardrailsCommonLayerARN,
-              "N/A2",
-            ]
+          ParameterValue: !Ref CloudGuardrailsCommonLayer
         - ParameterKey: OrganizationName
           ParameterValue: !Ref OrganizationName
         - ParameterKey: AuditAccountID
@@ -755,6 +761,8 @@ Resources:
         RegionOrder:
           - ca-central-1
       Parameters:
+        - ParameterKey: CloudGuardrailsCommonLayerArn
+          ParameterValue: !Ref CloudGuardrailsCommonLayer
         - ParameterKey: OrganizationName
           ParameterValue: !Ref OrganizationName
         - ParameterKey: AuditAccountID
@@ -794,6 +802,8 @@ Resources:
         RegionOrder:
           - ca-central-1
       Parameters:
+        - ParameterKey: CloudGuardrailsCommonLayerArn
+          ParameterValue: !Ref CloudGuardrailsCommonLayer
         - ParameterKey: OrganizationName
           ParameterValue: !Ref OrganizationName
         - ParameterKey: AuditAccountID
@@ -834,6 +844,8 @@ Resources:
         RegionOrder:
           - ca-central-1
       Parameters:
+        - ParameterKey: CloudGuardrailsCommonLayerArn
+          ParameterValue: !Ref CloudGuardrailsCommonLayer
         - ParameterKey: OrganizationName
           ParameterValue: !Ref OrganizationName
         - ParameterKey: AuditAccountID
@@ -873,6 +885,8 @@ Resources:
         RegionOrder:
           - ca-central-1
       Parameters:
+        - ParameterKey: CloudGuardrailsCommonLayerArn
+          ParameterValue: !Ref CloudGuardrailsCommonLayer
         - ParameterKey: OrganizationName
           ParameterValue: !Ref OrganizationName
         - ParameterKey: AuditAccountID
@@ -912,6 +926,8 @@ Resources:
         RegionOrder:
           - ca-central-1
       Parameters:
+        - ParameterKey: CloudGuardrailsCommonLayerArn
+          ParameterValue: !Ref CloudGuardrailsCommonLayer
         - ParameterKey: OrganizationName
           ParameterValue: !Ref OrganizationName
         - ParameterKey: AuditAccountID
@@ -951,6 +967,8 @@ Resources:
         RegionOrder:
           - ca-central-1
       Parameters:
+        - ParameterKey: CloudGuardrailsCommonLayerArn
+          ParameterValue: !Ref CloudGuardrailsCommonLayer
         - ParameterKey: OrganizationName
           ParameterValue: !Ref OrganizationName
         - ParameterKey: AuditAccountID
@@ -997,6 +1015,8 @@ Resources:
         RegionOrder:
           - ca-central-1
       Parameters:
+        - ParameterKey: CloudGuardrailsCommonLayerArn
+          ParameterValue: !Ref CloudGuardrailsCommonLayer
         - ParameterKey: OrganizationName
           ParameterValue: !Ref OrganizationName
         - ParameterKey: AuditAccountID

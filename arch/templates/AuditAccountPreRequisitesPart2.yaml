@@ -4,10 +4,6 @@ Description: Configures AWS Config and AWS Audit Manager for multi-account manag
 Parameters:
   CloudGuardrailsCommonLayerArn:
     Type: String
-    Default: "N/A"
-  CloudGuardrailsCommonLayerArn2:
-    Type: String
-    Default: "N/A"
   OrganizationName:
     Type: String
     Default: ""
@@ -41,6 +37,9 @@ Resources:
       Role: !Sub "arn:aws:iam::${AuditAccountID}:role/${RolePrefix}default_assessment_role"
       Runtime: !Ref PythonRuntime
       Timeout: 180
+      LoggingConfig:
+        LogGroup: !Sub "${OrganizationName}gc_guardrails"
+        LogFormat: "JSON"
 
   GC01CheckDedicatedAdminAccountLambda:
     Condition: IsAuditAccount
@@ -52,6 +51,9 @@ Resources:
       Role: !Sub "arn:aws:iam::${AuditAccountID}:role/${RolePrefix}default_assessment_role"
       Runtime: !Ref PythonRuntime
       Timeout: 180
+      LoggingConfig:
+        LogGroup: !Sub "${OrganizationName}gc_guardrails"
+        LogFormat: "JSON"
 
   ## GC02
   GC02CheckIAMPasswordPolicyLambda:
@@ -64,6 +66,11 @@ Resources:
       Role: !Sub "arn:aws:iam::${AuditAccountID}:role/${RolePrefix}default_assessment_role"
       Runtime: !Ref PythonRuntime
       Timeout: 180
+      Layers:
+        - !Ref CloudGuardrailsCommonLayerArn
+      LoggingConfig:
+        LogGroup: !Sub "${OrganizationName}gc_guardrails"
+        LogFormat: "JSON"
 
   GC02CheckGroupAccessConfigurationLambda:
     Condition: IsAuditAccount
@@ -75,6 +82,9 @@ Resources:
       Role: !Sub "arn:aws:iam::${AuditAccountID}:role/${RolePrefix}default_assessment_role"
       Runtime: !Ref PythonRuntime
       Timeout: 180
+      LoggingConfig:
+        LogGroup: !Sub "${OrganizationName}gc_guardrails"
+        LogFormat: "JSON"
 
   GC02CheckPrivilegedRolesReviewLambda:
     Condition: IsAuditAccount
@@ -86,20 +96,6 @@ Resources:
       Role: !Sub "arn:aws:iam::${AuditAccountID}:role/${RolePrefix}default_assessment_role"
       Runtime: !Ref PythonRuntime
       Timeout: 180
-
-Outputs:
-  CloudGuardrailsCommonLayerARN:
-    Description: The ARN of the Lambda Layer created for common guardrail code.
-    Value: !Ref CloudGuardrailsCommonLayerArn
-    Export:
-      Name: Part2TestA-CloudGuardrailsCommonLayerARN
-  CloudGuardrailsCommonLayerArn2:
-    Description: The ARN of the Lambda Layer created for common guardrail code.
-    Value: !Ref CloudGuardrailsCommonLayerArn2
-    Export:
-      Name: Part2TestB-CloudGuardrailsCommonLayerARN
-  CloudGuardrailsCommonLayerArn3:
-    Description: The ARN of the Lambda Layer created for common guardrail code.
-    Value: !ImportValue CloudGuardrailsCommonLayerARN
-    Export:
-      Name: Part2TestC-CloudGuardrailsCommonLayerARN
+      LoggingConfig:
+        LogGroup: !Sub "${OrganizationName}gc_guardrails"
+        LogFormat: "JSON"

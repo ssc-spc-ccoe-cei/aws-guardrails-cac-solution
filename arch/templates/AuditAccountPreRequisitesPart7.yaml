@@ -2,6 +2,8 @@ AWSTemplateFormatVersion: 2010-09-09
 Description: Deploys custom AWS Lambda functions to support assessment of GC Guardrails.
 
 Parameters:
+  CloudGuardrailsCommonLayerArn:
+    Type: String
   OrganizationName:
     Type: String
     Default: ""

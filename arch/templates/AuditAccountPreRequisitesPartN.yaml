@@ -2,6 +2,8 @@ AWSTemplateFormatVersion: 2010-09-09
 Description: Configures AWS Config and AWS Audit Manager for multi-account management.
 
 Parameters:
+  CloudGuardrailsCommonLayerArn:
+    Type: String
   OrganizationName:
     Type: String
     Default: ""
