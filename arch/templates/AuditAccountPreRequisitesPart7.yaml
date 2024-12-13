@@ -19,9 +19,8 @@ Parameters:
       The prefix to apply to generated role names, in ASEA this is generally ASEA- for lza this could be cdk-accel etc
   PythonRuntime:
     Type: String
-    Default: 'python3.12'
-    Description:
-      The python runtime to use for the compliance dashboard
+    Default: "python3.12"
+    Description: The python runtime to use for the compliance dashboard
 
 Conditions:
   IsAuditAccount: !Equals

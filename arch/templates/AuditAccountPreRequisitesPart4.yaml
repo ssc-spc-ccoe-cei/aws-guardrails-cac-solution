@@ -190,7 +190,7 @@ Resources:
       LoggingConfig:
         LogGroup: !Sub "${OrganizationName}gc_guardrails"
         LogFormat: "JSON"
-        
+
   GC01CheckMFADigitalPolicy:
     Condition: IsAuditAccount
     Type: AWS::Lambda::Function
