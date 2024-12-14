@@ -19,6 +19,7 @@ Metadata:
           - RolePrefix
           - RootOUID
           - SecurityOUID
+          - TenantId
       - Label:
           default: Optional Parameters
         Parameters:
@@ -33,6 +34,8 @@ Metadata:
         default: The name of the organization
       OrganizationId:
         default: The ID of the organization
+      TenantId:
+        default: The ID of the tenant
       ExecutionName:
         default: Execution name of the IAM role that is passed to GC permission's
       RootOUID:
@@ -81,6 +84,10 @@ Parameters:
     Type: String
     Description: >-
       Organization Id provided by root.yaml.
+  TenantId:
+    Type: String
+    Description: >-
+      Tenant Id provided by root.yaml.
   ExecutionName:
     Type: String
     Description: >-
@@ -1600,14 +1607,18 @@ Resources:
       Parameters:
         - ParameterKey: AuditAccountID
           ParameterValue: !Ref AuditAccountID
+        - ParameterKey: DeployVersion
+          ParameterValue: !Ref DeployVersion
         - ParameterKey: DestBucketName
           ParameterValue: !Ref DestBucketName
-        - ParameterKey: OrganizationId
-          ParameterValue: !Ref OrganizationId
         - ParameterKey: ExecutionName
           ParameterValue: !Ref ExecutionName
+        - ParameterKey: OrganizationId
+          ParameterValue: !Ref OrganizationId
         - ParameterKey: OrganizationName
           ParameterValue: !Ref OrganizationName
+        - ParameterKey: TenantId
+          ParameterValue: !Ref TenantId
       PermissionModel: SERVICE_MANAGED
       StackInstancesGroup:
         - DeploymentTargets:
