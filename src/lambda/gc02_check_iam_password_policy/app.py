@@ -144,6 +144,10 @@ def lambda_handler(event, context):
     """
     logger.info("Received Event: %s", json.dumps(event, indent=2))
 
+    invoking_event = json.loads(event["invokingEvent"])
+    if not is_scheduled_notification(invoking_event["messageType"]):
+        return
+
     password_assessment_policy = {
         "MinimumPasswordLength": 12,
         "RequireSymbols": True,
@@ -157,7 +161,6 @@ def lambda_handler(event, context):
         "HardExpiry": False,
     }
 
-    invoking_event = json.loads(event["invokingEvent"])
     rule_parameters = json.loads(event.get("ruleParameters", "{}"))
     valid_rule_parameters = evaluate_parameters(rule_parameters, password_assessment_policy)
     execution_role_name = valid_rule_parameters.get("ExecutionRoleName", "AWSA-GCLambdaExecutionRole")
@@ -166,9 +169,6 @@ def lambda_handler(event, context):
     is_not_audit_account = aws_account_id != audit_account_id
 
     evaluations = []
-
-    if not is_scheduled_notification(invoking_event["messageType"]):
-        return
 
     aws_config_client = get_client("config", aws_account_id, execution_role_name, is_not_audit_account)
     aws_iam_client = get_client("iam", aws_account_id, execution_role_name, is_not_audit_account)

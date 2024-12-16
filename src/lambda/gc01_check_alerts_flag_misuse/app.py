@@ -115,6 +115,10 @@ def lambda_handler(event, context):
     logger.info("Received Event: %s", json.dumps(event, indent=2))
 
     invoking_event = json.loads(event["invokingEvent"])
+    if not is_scheduled_notification(invoking_event["messageType"]):
+        logger.error("Skipping assessments as this is not a scheduled invocation")
+        return
+
     rule_parameters = json.loads(event.get("ruleParameters", "{}"))
     valid_rule_parameters = check_required_parameters(rule_parameters, [])
     execution_role_name = valid_rule_parameters.get("ExecutionRoleName", "AWSA-GCLambdaExecutionRole")
@@ -122,10 +126,6 @@ def lambda_handler(event, context):
     aws_account_id = event["accountId"]
     is_not_audit_account = aws_account_id != audit_account_id
     evaluations = []
-
-    if not is_scheduled_notification(invoking_event["messageType"]):
-        logger.error("Skipping assessments as this is not a scheduled invocation")
-        return
 
     aws_config_client = get_client("config", aws_account_id, execution_role_name, is_not_audit_account)
     aws_s3_client = get_client("s3")
