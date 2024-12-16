@@ -256,7 +256,7 @@ def get_permission_sets_for_group(instance_arn, group_id):
     next_token = None
     try:
         while True:
-            response = AWS_SSO_ADMIN_CLIENT.list_account_assignments_for_principal(nstanceArn=instance_arn, PrincipalId=group_id, PrincipalType="GROUP", NextToken = next_token) if next_token else AWS_SSO_ADMIN_CLIENT.list_account_assignments_for_principal(InstanceArn=instance_arn, PrincipalId=group_id, PrincipalType="GROUP")
+            response = AWS_SSO_ADMIN_CLIENT.list_account_assignments_for_principal(InstanceArn=instance_arn, PrincipalId=group_id, PrincipalType="GROUP", NextToken = next_token) if next_token else AWS_SSO_ADMIN_CLIENT.list_account_assignments_for_principal(InstanceArn=instance_arn, PrincipalId=group_id, PrincipalType="GROUP")
             
             for acc_assignment in response.get("PermissionSets"):
                 p_set_arn = acc_assignment.get("PermissionSetArn")
