@@ -16,9 +16,8 @@ Parameters:
     Description: Role name prefix
   PythonRuntime:
     Type: String
-    Default: 'python3.12'
-    Description:
-      The python runtime to use for the compliance dashboard
+    Default: "python3.12"
+    Description: The python runtime to use for the compliance dashboard
 
 Conditions:
   IsAuditAccount: !Equals
@@ -113,7 +112,7 @@ Resources:
         Variables:
           OrganizationName:
             Ref: OrganizationName
-  
+
   CronTriggerLambdaPermissions:
     Condition: IsAuditAccount
     Type: AWS::Events::Rule

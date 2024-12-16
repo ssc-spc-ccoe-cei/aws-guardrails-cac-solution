@@ -155,27 +155,27 @@ Parameters:
     Default: "CloudBrokering"
   GC04EnterpriseMonitoringIAMTrustedPrincipal:
     Type: String
-    Default: "arn:aws:iam::939755092653:root"        
+    Default: "arn:aws:iam::939755092653:root"
   DeployRoles:
     Type: String
     Default: false
     AllowedValues: [true, false]
   InvokeUpdate:
     Type: String
-    Default: '17d78b5e-9745-41e4-a926-9fd9f660bf23'
+    Default: "17d78b5e-9745-41e4-a926-9fd9f660bf23"
   DeployVersion:
     Type: String
     Default: 1.0.0
   PythonRuntime:
     Type: String
-    Default: 'python3.12'
-    Description:
-      The python runtime to use for the compliance dashboard
+    Default: "python3.12"
+    Description: The python runtime to use for the compliance dashboard
 
 Conditions:
-  GenerateEvidenceBucketName: !Equals [ !Ref EvidenceBucketName, "" ]
-  GenerateAWSConfigConformsBucketName: !Equals [ !Ref AWSConfigConformsBucketName, "" ]
-  DeployRoles: !Equals [ !Ref DeployRoles, "true" ]
+  GenerateEvidenceBucketName: !Equals [!Ref EvidenceBucketName, ""]
+  GenerateAWSConfigConformsBucketName:
+    !Equals [!Ref AWSConfigConformsBucketName, ""]
+  DeployRoles: !Equals [!Ref DeployRoles, "true"]
 
 Resources:
   ##################################################
@@ -599,19 +599,29 @@ Resources:
     Properties:
       Description: Name of the Evidence Bucket
       # unique ssm param key
-      Name: '/gc_guardrails/s3/evidence_bucket'
+      Name: "/gc_guardrails/s3/evidence_bucket"
       Type: String
-      Value: !If [ GenerateEvidenceBucketName, !GetAtt GenerateEvidenceBucketName.EvidenceBucketName, !Ref EvidenceBucketName ]
+      Value:
+        !If [
+          GenerateEvidenceBucketName,
+          !GetAtt GenerateEvidenceBucketName.EvidenceBucketName,
+          !Ref EvidenceBucketName,
+        ]
 
   AWSConfigBucketSSMParam:
     Type: AWS::SSM::Parameter
     Properties:
       Description: Name of the AWS Config Bucket
       # unique ssm param key
-      Name: '/gc_guardrails/s3/aws_config_bucket'
+      Name: "/gc_guardrails/s3/aws_config_bucket"
       Type: String
-      Value: !If [ GenerateAWSConfigConformsBucketName, !GetAtt GenerateEvidenceBucketName.AWSConfigBucketName, !Ref AWSConfigConformsBucketName ]
-  
+      Value:
+        !If [
+          GenerateAWSConfigConformsBucketName,
+          !GetAtt GenerateEvidenceBucketName.AWSConfigBucketName,
+          !Ref AWSConfigConformsBucketName,
+        ]
+
   ##################################################
   # Part 2 - Audit Account Pre-requisites
   ##################################################
@@ -638,9 +648,19 @@ Resources:
         - ParameterKey: AuditAccountID
           ParameterValue: !Ref AuditAccountID
         - ParameterKey: EvidenceBucketName
-          ParameterValue: !If [ GenerateEvidenceBucketName, !GetAtt GenerateEvidenceBucketName.EvidenceBucketName, !Ref EvidenceBucketName ]
+          ParameterValue:
+            !If [
+              GenerateEvidenceBucketName,
+              !GetAtt GenerateEvidenceBucketName.EvidenceBucketName,
+              !Ref EvidenceBucketName,
+            ]
         - ParameterKey: AWSConfigConformsBucketName
-          ParameterValue: !If [ GenerateAWSConfigConformsBucketName, !GetAtt GenerateEvidenceBucketName.AWSConfigBucketName, !Ref AWSConfigConformsBucketName ]
+          ParameterValue:
+            !If [
+              GenerateAWSConfigConformsBucketName,
+              !GetAtt GenerateEvidenceBucketName.AWSConfigBucketName,
+              !Ref AWSConfigConformsBucketName,
+            ]
         - ParameterKey: RolePrefix
           ParameterValue: !Ref RolePrefix
         - ParameterKey: AccelRolePrefix
@@ -985,22 +1005,21 @@ Resources:
       - AuditAccountPreRequisitesPartN
     Type: AWS::IAM::Role
     Properties:
-      AssumeRolePolicyDocument:
-        !Sub | 
-          {
-              "Version": "2012-10-17",
-              "Statement": [
-                  {
-                      "Effect": "Allow",
-                      "Principal": {
-                          "AWS": [
-                              "arn:${AWS::Partition}:sts::${AuditAccountID}:root"
-                          ]
-                      },
-                      "Action": "sts:AssumeRole"
-                  }
-              ]
-          }
+      AssumeRolePolicyDocument: !Sub |
+        {
+            "Version": "2012-10-17",
+            "Statement": [
+                {
+                    "Effect": "Allow",
+                    "Principal": {
+                        "AWS": [
+                            "arn:${AWS::Partition}:sts::${AuditAccountID}:root"
+                        ]
+                    },
+                    "Action": "sts:AssumeRole"
+                }
+            ]
+        }
       Description: "GC Guardrails - Assessment Role"
       ManagedPolicyArns:
         - !Sub arn:${AWS::Partition}:iam::aws:policy/service-role/AWSConfigRulesExecutionRole
@@ -1016,22 +1035,21 @@ Resources:
       - AuditAccountPreRequisitesPartN
     Type: AWS::IAM::Role
     Properties:
-      AssumeRolePolicyDocument:
-        !Sub | 
-          {
-              "Version": "2012-10-17",
-              "Statement": [
-                  {
-                      "Effect": "Allow",
-                      "Principal": {
-                          "AWS": [
-                              "arn:${AWS::Partition}:sts::${AuditAccountID}:root"
-                          ]
-                      },
-                      "Action": "sts:AssumeRole"
-                  }
-              ]
-          }
+      AssumeRolePolicyDocument: !Sub |
+        {
+            "Version": "2012-10-17",
+            "Statement": [
+                {
+                    "Effect": "Allow",
+                    "Principal": {
+                        "AWS": [
+                            "arn:${AWS::Partition}:sts::${AuditAccountID}:root"
+                        ]
+                    },
+                    "Action": "sts:AssumeRole"
+                }
+            ]
+        }
       Description: "GC Guardrails - Assessment Role 2"
       ManagedPolicyArns:
         - !Sub arn:${AWS::Partition}:iam::aws:policy/service-role/AWSConfigRulesExecutionRole
@@ -1375,7 +1393,7 @@ Resources:
               - "cloudfront:Describe*"
               - "cloudfront:Get*"
               - "cloudfront:List*"
-            Resource: 
+            Resource:
               - "*"
             Effect: Allow
       PolicyName: !Sub "${OrganizationName}GCLambdaExecutionRoleCloudFrontPolicy"
@@ -1396,7 +1414,7 @@ Resources:
               - "acm:Describe*"
               - "acm:Get*"
               - "acm:List*"
-            Resource: 
+            Resource:
               - "*"
             Effect: Allow
       PolicyName: !Sub "${OrganizationName}GCLambdaExecutionRoleAcmPolicy"
@@ -1445,83 +1463,183 @@ Resources:
         - ParameterName: S3AttestationLetterPath
           ParameterValue: !Sub
             - "s3://${ClientEvidenceBucket}/gc-01/attestation_letter.pdf"
-            - ClientEvidenceBucket: !If [ GenerateEvidenceBucketName, !GetAtt GenerateEvidenceBucketName.EvidenceBucketName, !Ref EvidenceBucketName ]
+            - ClientEvidenceBucket:
+                !If [
+                  GenerateEvidenceBucketName,
+                  !GetAtt GenerateEvidenceBucketName.EvidenceBucketName,
+                  !Ref EvidenceBucketName,
+                ]
         - ParameterName: RuleNamingConventionFilePath
           ParameterValue: !Sub
             - "s3://${ClientEvidenceBucket}/gc-01/rule_naming_convention.txt"
-            - ClientEvidenceBucket: !If [ GenerateEvidenceBucketName, !GetAtt GenerateEvidenceBucketName.EvidenceBucketName, !Ref EvidenceBucketName ]
+            - ClientEvidenceBucket:
+                !If [
+                  GenerateEvidenceBucketName,
+                  !GetAtt GenerateEvidenceBucketName.EvidenceBucketName,
+                  !Ref EvidenceBucketName,
+                ]
         - ParameterName: S3AccountManagementPlanPath
           ParameterValue: !Sub
             - "s3://${ClientEvidenceBucket}/gc-02/account_management_plan.pdf"
-            - ClientEvidenceBucket: !If [ GenerateEvidenceBucketName, !GetAtt GenerateEvidenceBucketName.EvidenceBucketName, !Ref EvidenceBucketName ]
+            - ClientEvidenceBucket:
+                !If [
+                  GenerateEvidenceBucketName,
+                  !GetAtt GenerateEvidenceBucketName.EvidenceBucketName,
+                  !Ref EvidenceBucketName,
+                ]
         - ParameterName: S3RoleAssignmentReviewDocumentPath
           ParameterValue: !Sub
             - "s3://${ClientEvidenceBucket}/gc-02/access_reviews_privileged_roles.pdf"
-            - ClientEvidenceBucket: !If [ GenerateEvidenceBucketName, !GetAtt GenerateEvidenceBucketName.EvidenceBucketName, !Ref EvidenceBucketName ]
+            - ClientEvidenceBucket:
+                !If [
+                  GenerateEvidenceBucketName,
+                  !GetAtt GenerateEvidenceBucketName.EvidenceBucketName,
+                  !Ref EvidenceBucketName,
+                ]
         - ParameterName: S3AdminAccountListPath
           ParameterValue: !Sub
             - "s3://${ClientEvidenceBucket}/gc-02/admin_accounts.txt"
-            - ClientEvidenceBucket: !If [ GenerateEvidenceBucketName, !GetAtt GenerateEvidenceBucketName.EvidenceBucketName, !Ref EvidenceBucketName ]
+            - ClientEvidenceBucket:
+                !If [
+                  GenerateEvidenceBucketName,
+                  !GetAtt GenerateEvidenceBucketName.EvidenceBucketName,
+                  !Ref EvidenceBucketName,
+                ]
         - ParameterName: S3CasCurrentlyInUsePath
           ParameterValue: !Sub
             - "s3://${ClientEvidenceBucket}/gc-07/cas_currently_in_use.txt"
-            - ClientEvidenceBucket: !If [ GenerateEvidenceBucketName, !GetAtt GenerateEvidenceBucketName.EvidenceBucketName, !Ref EvidenceBucketName ]
+            - ClientEvidenceBucket:
+                !If [
+                  GenerateEvidenceBucketName,
+                  !GetAtt GenerateEvidenceBucketName.EvidenceBucketName,
+                  !Ref EvidenceBucketName,
+                ]
         - ParameterName: S3SecureNetworkTransmissionPolicyPath
           ParameterValue: !Sub
             - "s3://${ClientEvidenceBucket}/gc-07/secure_network_transmission.pdf"
-            - ClientEvidenceBucket: !If [ GenerateEvidenceBucketName, !GetAtt GenerateEvidenceBucketName.EvidenceBucketName, !Ref EvidenceBucketName ]
+            - ClientEvidenceBucket:
+                !If [
+                  GenerateEvidenceBucketName,
+                  !GetAtt GenerateEvidenceBucketName.EvidenceBucketName,
+                  !Ref EvidenceBucketName,
+                ]
         - ParameterName: S3TargetNetworkArchitecturePath
           ParameterValue: !Sub
             - "s3://${ClientEvidenceBucket}/gc-08/target_network_architecture.pdf"
-            - ClientEvidenceBucket: !If [ GenerateEvidenceBucketName, !GetAtt GenerateEvidenceBucketName.EvidenceBucketName, !Ref EvidenceBucketName ]
+            - ClientEvidenceBucket:
+                !If [
+                  GenerateEvidenceBucketName,
+                  !GetAtt GenerateEvidenceBucketName.EvidenceBucketName,
+                  !Ref EvidenceBucketName,
+                ]
         - ParameterName: S3TargetCloudDeploymentGuideDocumentPath
           ParameterValue: !Sub
             - "s3://${ClientEvidenceBucket}/gc-08/cloud_deployment_guide.pdf"
-            - ClientEvidenceBucket: !If [ GenerateEvidenceBucketName, !GetAtt GenerateEvidenceBucketName.EvidenceBucketName, !Ref EvidenceBucketName ]
+            - ClientEvidenceBucket:
+                !If [
+                  GenerateEvidenceBucketName,
+                  !GetAtt GenerateEvidenceBucketName.EvidenceBucketName,
+                  !Ref EvidenceBucketName,
+                ]
         - ParameterName: S3TargetCloudSegmentationDesignDocumentPath
           ParameterValue: !Sub
             - "s3://${ClientEvidenceBucket}/gc-08/cloud_segmentation_design.pdf"
-            - ClientEvidenceBucket: !If [ GenerateEvidenceBucketName, !GetAtt GenerateEvidenceBucketName.EvidenceBucketName, !Ref EvidenceBucketName ]
+            - ClientEvidenceBucket:
+                !If [
+                  GenerateEvidenceBucketName,
+                  !GetAtt GenerateEvidenceBucketName.EvidenceBucketName,
+                  !Ref EvidenceBucketName,
+                ]
         - ParameterName: S3NetworkArchitectureDocumentPath
           ParameterValue: !Sub
             - "s3://${ClientEvidenceBucket}/gc-09/network_security_architecture.pdf"
-            - ClientEvidenceBucket: !If [ GenerateEvidenceBucketName, !GetAtt GenerateEvidenceBucketName.EvidenceBucketName, !Ref EvidenceBucketName ]
+            - ClientEvidenceBucket:
+                !If [
+                  GenerateEvidenceBucketName,
+                  !GetAtt GenerateEvidenceBucketName.EvidenceBucketName,
+                  !Ref EvidenceBucketName,
+                ]
         - ParameterName: S3LogBucketsPath
           ParameterValue: !Sub
             - "s3://${ClientEvidenceBucket}/gc-10/log_buckets.txt"
-            - ClientEvidenceBucket: !If [ GenerateEvidenceBucketName, !GetAtt GenerateEvidenceBucketName.EvidenceBucketName, !Ref EvidenceBucketName ]
+            - ClientEvidenceBucket:
+                !If [
+                  GenerateEvidenceBucketName,
+                  !GetAtt GenerateEvidenceBucketName.EvidenceBucketName,
+                  !Ref EvidenceBucketName,
+                ]
         - ParameterName: S3SignedMOUDocumentPath
           ParameterValue: !Sub
             - "s3://${ClientEvidenceBucket}/gc-10/signed_mou.pdf"
-            - ClientEvidenceBucket: !If [ GenerateEvidenceBucketName, !GetAtt GenerateEvidenceBucketName.EvidenceBucketName, !Ref EvidenceBucketName ]
+            - ClientEvidenceBucket:
+                !If [
+                  GenerateEvidenceBucketName,
+                  !GetAtt GenerateEvidenceBucketName.EvidenceBucketName,
+                  !Ref EvidenceBucketName,
+                ]
         - ParameterName: S3MonitoringUseCasesPath
           ParameterValue: !Sub
             - "s3://${ClientEvidenceBucket}/gc-11/monitoring_usecases.pdf"
-            - ClientEvidenceBucket: !If [ GenerateEvidenceBucketName, !GetAtt GenerateEvidenceBucketName.EvidenceBucketName, !Ref EvidenceBucketName ]
+            - ClientEvidenceBucket:
+                !If [
+                  GenerateEvidenceBucketName,
+                  !GetAtt GenerateEvidenceBucketName.EvidenceBucketName,
+                  !Ref EvidenceBucketName,
+                ]
         - ParameterName: S3AccountManagementProcedurePath
           ParameterValue: !Sub
             - "s3://${ClientEvidenceBucket}/gc-13/emergency_account_management_procedures.pdf"
-            - ClientEvidenceBucket: !If [ GenerateEvidenceBucketName, !GetAtt GenerateEvidenceBucketName.EvidenceBucketName, !Ref EvidenceBucketName ]
+            - ClientEvidenceBucket:
+                !If [
+                  GenerateEvidenceBucketName,
+                  !GetAtt GenerateEvidenceBucketName.EvidenceBucketName,
+                  !Ref EvidenceBucketName,
+                ]
         - ParameterName: S3AccountMgmtApprovalsPath
           ParameterValue: !Sub
             - "s3://${ClientEvidenceBucket}/gc-13/emergency_account_management_approvals.pdf"
-            - ClientEvidenceBucket: !If [ GenerateEvidenceBucketName, !GetAtt GenerateEvidenceBucketName.EvidenceBucketName, !Ref EvidenceBucketName ]
+            - ClientEvidenceBucket:
+                !If [
+                  GenerateEvidenceBucketName,
+                  !GetAtt GenerateEvidenceBucketName.EvidenceBucketName,
+                  !Ref EvidenceBucketName,
+                ]
         - ParameterName: S3EmergencyAccountAlertsRuleNamesPath
           ParameterValue: !Sub
             - "s3://${ClientEvidenceBucket}/gc-13/rule_names.txt"
-            - ClientEvidenceBucket: !If [ GenerateEvidenceBucketName, !GetAtt GenerateEvidenceBucketName.EvidenceBucketName, !Ref EvidenceBucketName ]
+            - ClientEvidenceBucket:
+                !If [
+                  GenerateEvidenceBucketName,
+                  !GetAtt GenerateEvidenceBucketName.EvidenceBucketName,
+                  !Ref EvidenceBucketName,
+                ]
         - ParameterName: S3VpnIpRangesPath
           ParameterValue: !Sub
             - "s3://${ClientEvidenceBucket}/gc-03/vpn_ip_ranges.txt"
-            - ClientEvidenceBucket: !If [ GenerateEvidenceBucketName, !GetAtt GenerateEvidenceBucketName.EvidenceBucketName, !Ref EvidenceBucketName ]
+            - ClientEvidenceBucket:
+                !If [
+                  GenerateEvidenceBucketName,
+                  !GetAtt GenerateEvidenceBucketName.EvidenceBucketName,
+                  !Ref EvidenceBucketName,
+                ]
         - ParameterName: PrivilegedUsersFilePath
           ParameterValue: !Sub
             - "s3://${ClientEvidenceBucket}/gc-01/privileged_users.txt"
-            - ClientEvidenceBucket: !If [ GenerateEvidenceBucketName, !GetAtt GenerateEvidenceBucketName.EvidenceBucketName, !Ref EvidenceBucketName ]
+            - ClientEvidenceBucket:
+                !If [
+                  GenerateEvidenceBucketName,
+                  !GetAtt GenerateEvidenceBucketName.EvidenceBucketName,
+                  !Ref EvidenceBucketName,
+                ]
         - ParameterName: NonPrivilegedUsersFilePath
           ParameterValue: !Sub
             - "s3://${ClientEvidenceBucket}/gc-01/non_privileged_users.txt"
-            - ClientEvidenceBucket: !If [ GenerateEvidenceBucketName, !GetAtt GenerateEvidenceBucketName.EvidenceBucketName, !Ref EvidenceBucketName ]
+            - ClientEvidenceBucket:
+                !If [
+                  GenerateEvidenceBucketName,
+                  !GetAtt GenerateEvidenceBucketName.EvidenceBucketName,
+                  !Ref EvidenceBucketName,
+                ]
       OrganizationConformancePackName: !Sub "${OrganizationName}-GC-CP-Guardrails"
       TemplateS3Uri: !Sub s3://${PipelineBucket}/${DeployVersion}/ConformancePack.yaml
 
@@ -1564,7 +1682,12 @@ Resources:
         - ParameterKey: AuditAccountID
           ParameterValue: !Ref AuditAccountID
         - ParameterKey: EvidenceBucketName
-          ParameterValue: !If [ GenerateEvidenceBucketName, !GetAtt GenerateEvidenceBucketName.EvidenceBucketName, !Ref EvidenceBucketName ]
+          ParameterValue:
+            !If [
+              GenerateEvidenceBucketName,
+              !GetAtt GenerateEvidenceBucketName.EvidenceBucketName,
+              !Ref EvidenceBucketName,
+            ]
         - ParameterKey: AdditionalAssessmentAdminRoleARN
           ParameterValue: !Ref AdditionalAssessmentAdminRoleARN
         - ParameterKey: RolePrefix
@@ -1640,9 +1763,9 @@ Resources:
     Type: AWS::CloudFormation::StackSet
     Properties:
       TemplateURL: !Sub https://${PipelineBucket}.s3.${AWS::Region}.amazonaws.com/${DeployVersion}/OrgRoleGenerator.yaml
-#      AutoDeployment:
-#        Enabled: true
-#        RetainStacksOnAccountRemoval: true
+      #      AutoDeployment:
+      #        Enabled: true
+      #        RetainStacksOnAccountRemoval: true
       Capabilities:
         - CAPABILITY_IAM
         - CAPABILITY_NAMED_IAM
@@ -1661,9 +1784,19 @@ Resources:
         - ParameterKey: AuditAccountID
           ParameterValue: !Ref AuditAccountID
         - ParameterKey: ClientEvidenceBucket
-          ParameterValue: !If [ GenerateEvidenceBucketName, !GetAtt GenerateEvidenceBucketName.EvidenceBucketName, !Ref EvidenceBucketName ]
+          ParameterValue:
+            !If [
+              GenerateEvidenceBucketName,
+              !GetAtt GenerateEvidenceBucketName.EvidenceBucketName,
+              !Ref EvidenceBucketName,
+            ]
         - ParameterKey: AWSConfigConformsBucketName
-          ParameterValue: !If [ GenerateAWSConfigConformsBucketName, !GetAtt GenerateEvidenceBucketName.AWSConfigBucketName, !Ref AWSConfigConformsBucketName ]
+          ParameterValue:
+            !If [
+              GenerateAWSConfigConformsBucketName,
+              !GetAtt GenerateEvidenceBucketName.AWSConfigBucketName,
+              !Ref AWSConfigConformsBucketName,
+            ]
         - ParameterKey: AccelRolePrefix
           ParameterValue: !Ref AccelRolePrefix
         - ParameterKey: RolePrefix
@@ -1682,4 +1815,9 @@ Resources:
 Outputs:
   ClientEvidenceBucket:
     Description: Amazon S3 bucket where evidence documents should be uploaded to
-    Value: !If [ GenerateEvidenceBucketName, !GetAtt GenerateEvidenceBucketName.EvidenceBucketName, !Ref EvidenceBucketName ]
+    Value:
+      !If [
+        GenerateEvidenceBucketName,
+        !GetAtt GenerateEvidenceBucketName.EvidenceBucketName,
+        !Ref EvidenceBucketName,
+      ]

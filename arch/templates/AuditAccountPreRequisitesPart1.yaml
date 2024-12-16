@@ -30,9 +30,8 @@ Parameters:
     Description: The Accelerator role prefix for privileged access
   PythonRuntime:
     Type: String
-    Default: 'python3.12'
-    Description:
-      The python runtime to use for the compliance dashboard
+    Default: "python3.12"
+    Description: The python runtime to use for the compliance dashboard
 
 Conditions:
   GenerateEvidenceBucketName: !Equals
@@ -46,6 +45,14 @@ Conditions:
     - !Ref AuditAccountID
 
 Resources:
+  CloudGuardrailsCommonLayer:
+    Type: AWS::Lambda::LayerVersion
+    Properties:
+      LayerName: CloudGuardrailsCommonLayerPart1
+      CompatibleRuntimes:
+        - python3.12
+      Content: "../../src/layer/cloud_guardrails/build/CloudGuardrailsCommonLayer/"
+
   BucketSetupLambdaExecutionRolePolicy:
     Condition: IsAuditAccount
     Type: AWS::IAM::Policy
@@ -133,7 +140,11 @@ Resources:
       EvidenceBucketName:
         !If [GenerateEvidenceBucketName, AWS::NoValue, !Ref EvidenceBucketName]
       AWSConfigBucketName:
-        !If [GenerateAWSConfigConformsBucketName, AWS::NoValue, !Ref AWSConfigConformsBucketName]
+        !If [
+          GenerateAWSConfigConformsBucketName,
+          AWS::NoValue,
+          !Ref AWSConfigConformsBucketName,
+        ]
       StaticWebSiteURL: "http://localhost:8000"
     DependsOn:
       - BucketsSetupLambda
@@ -392,6 +403,8 @@ Resources:
       Role: !GetAtt GCDefaultLambdaExecutionRole.Arn
       Runtime: !Ref PythonRuntime
       Timeout: 90
+      Layers:
+        - !Ref CloudGuardrailsCommonLayer
       LoggingConfig:
         LogGroup: !Sub "${OrganizationName}gc_guardrails"
         LogFormat: "JSON"
@@ -407,6 +420,8 @@ Resources:
       Role: !GetAtt GCDefaultLambdaExecutionRole.Arn
       Runtime: !Ref PythonRuntime
       Timeout: 90
+      Layers:
+        - !Ref CloudGuardrailsCommonLayer
       LoggingConfig:
         LogGroup: !Sub "${OrganizationName}gc_guardrails"
         LogFormat: "JSON"
@@ -421,6 +436,8 @@ Resources:
       Role: !GetAtt GCDefaultLambdaExecutionRole.Arn
       Runtime: !Ref PythonRuntime
       Timeout: 90
+      Layers:
+        - !Ref CloudGuardrailsCommonLayer
       LoggingConfig:
         LogGroup: !Sub "${OrganizationName}gc_guardrails"
         LogFormat: "JSON"
