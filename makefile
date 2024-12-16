@@ -60,7 +60,8 @@ update-ss5: build-code package-code ss5
 update-ss6: build-code package-code ss6
 update-ss7: build-code package-code ss7
 update-ss8: build-code package-code ss8
-update-layers: build-layers package-code
+# Note: For some reason the update to ss1 does not update the layers, run a deploy-stack to update the layers for ss1
+update-layers: build-layers package-code ss1 ss2 ss3 ss4 ss5 ss6 ss7 ss8
 destroy: cleans3buckets destroy-stack
 lint: lint-cfn
 test: test-stack

@@ -25,14 +25,6 @@ Conditions:
     - !Ref AuditAccountID
 
 Resources:
-  CloudGuardrailsCommonLayer:
-    Type: AWS::Lambda::LayerVersion
-    Properties:
-      LayerName: CloudGuardrailsCommonLayerPartN
-      CompatibleRuntimes:
-        - python3.12
-      Content: "../../src/layer/cloud_guardrails/build/CloudGuardrailsCommonLayer/"
-
   #############################################
   # Configure Lambda Permissions
   #############################################
