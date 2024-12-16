@@ -1,8 +1,6 @@
 AWSTemplateFormatVersion: 2010-09-09
 
 Parameters:
-  CloudGuardrailsCommonLayerArn:
-    Type: String
   OrganizationName:
     Type: String
     Default: ""
@@ -47,6 +45,14 @@ Conditions:
     - !Ref AuditAccountID
 
 Resources:
+  CloudGuardrailsCommonLayer:
+    Type: AWS::Lambda::LayerVersion
+    Properties:
+      LayerName: CloudGuardrailsCommonLayerPart1
+      CompatibleRuntimes:
+        - python3.12
+      Content: "../../src/layer/cloud_guardrails/build/CloudGuardrailsCommonLayer/"
+
   BucketSetupLambdaExecutionRolePolicy:
     Condition: IsAuditAccount
     Type: AWS::IAM::Policy
@@ -398,7 +404,7 @@ Resources:
       Runtime: !Ref PythonRuntime
       Timeout: 90
       Layers:
-        - !Ref CloudGuardrailsCommonLayerArn
+        - !Ref CloudGuardrailsCommonLayer
       LoggingConfig:
         LogGroup: !Sub "${OrganizationName}gc_guardrails"
         LogFormat: "JSON"
@@ -415,7 +421,7 @@ Resources:
       Runtime: !Ref PythonRuntime
       Timeout: 90
       Layers:
-        - !Ref CloudGuardrailsCommonLayerArn
+        - !Ref CloudGuardrailsCommonLayer
       LoggingConfig:
         LogGroup: !Sub "${OrganizationName}gc_guardrails"
         LogFormat: "JSON"
@@ -431,7 +437,7 @@ Resources:
       Runtime: !Ref PythonRuntime
       Timeout: 90
       Layers:
-        - !Ref CloudGuardrailsCommonLayerArn
+        - !Ref CloudGuardrailsCommonLayer
       LoggingConfig:
         LogGroup: !Sub "${OrganizationName}gc_guardrails"
         LogFormat: "JSON"

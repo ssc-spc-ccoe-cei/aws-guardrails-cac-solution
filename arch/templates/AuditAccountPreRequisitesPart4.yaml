@@ -2,8 +2,6 @@ AWSTemplateFormatVersion: 2010-09-09
 Description: Configures AWS Config and AWS Audit Manager for multi-account management.
 
 Parameters:
-  CloudGuardrailsCommonLayerArn:
-    Type: String
   OrganizationName:
     Type: String
     Default: ""
@@ -28,6 +26,14 @@ Conditions:
     - !Ref AuditAccountID
 
 Resources:
+  CloudGuardrailsCommonLayer:
+    Type: AWS::Lambda::LayerVersion
+    Properties:
+      LayerName: CloudGuardrailsCommonLayerPart4
+      CompatibleRuntimes:
+        - python3.12
+      Content: "../../src/layer/cloud_guardrails/build/CloudGuardrailsCommonLayer/"
+
   ## GC11
   GC11CheckMonitoringAllUsersLambda:
     Condition: IsAuditAccount
@@ -40,7 +46,7 @@ Resources:
       Runtime: !Ref PythonRuntime
       Timeout: 90
       Layers:
-        - !Ref CloudGuardrailsCommonLayerArn
+        - !Ref CloudGuardrailsCommonLayer
       LoggingConfig:
         LogGroup: !Sub "${OrganizationName}gc_guardrails"
         LogFormat: "JSON"
@@ -56,7 +62,7 @@ Resources:
       Runtime: !Ref PythonRuntime
       Timeout: 90
       Layers:
-        - !Ref CloudGuardrailsCommonLayerArn
+        - !Ref CloudGuardrailsCommonLayer
       LoggingConfig:
         LogGroup: !Sub "${OrganizationName}gc_guardrails"
         LogFormat: "JSON"
@@ -72,7 +78,7 @@ Resources:
       Runtime: !Ref PythonRuntime
       Timeout: 90
       Layers:
-        - !Ref CloudGuardrailsCommonLayerArn
+        - !Ref CloudGuardrailsCommonLayer
       LoggingConfig:
         LogGroup: !Sub "${OrganizationName}gc_guardrails"
         LogFormat: "JSON"
@@ -88,7 +94,7 @@ Resources:
       Runtime: !Ref PythonRuntime
       Timeout: 90
       Layers:
-        - !Ref CloudGuardrailsCommonLayerArn
+        - !Ref CloudGuardrailsCommonLayer
       LoggingConfig:
         LogGroup: !Sub "${OrganizationName}gc_guardrails"
         LogFormat: "JSON"
@@ -104,7 +110,7 @@ Resources:
       Runtime: !Ref PythonRuntime
       Timeout: 90
       Layers:
-        - !Ref CloudGuardrailsCommonLayerArn
+        - !Ref CloudGuardrailsCommonLayer
       LoggingConfig:
         LogGroup: !Sub "${OrganizationName}gc_guardrails"
         LogFormat: "JSON"
@@ -121,7 +127,7 @@ Resources:
       Runtime: !Ref PythonRuntime
       Timeout: 90
       Layers:
-        - !Ref CloudGuardrailsCommonLayerArn
+        - !Ref CloudGuardrailsCommonLayer
       LoggingConfig:
         LogGroup: !Sub "${OrganizationName}gc_guardrails"
         LogFormat: "JSON"
@@ -138,7 +144,7 @@ Resources:
       Runtime: !Ref PythonRuntime
       Timeout: 90
       Layers:
-        - !Ref CloudGuardrailsCommonLayerArn
+        - !Ref CloudGuardrailsCommonLayer
       LoggingConfig:
         LogGroup: !Sub "${OrganizationName}gc_guardrails"
         LogFormat: "JSON"
@@ -154,7 +160,7 @@ Resources:
       Runtime: !Ref PythonRuntime
       Timeout: 90
       Layers:
-        - !Ref CloudGuardrailsCommonLayerArn
+        - !Ref CloudGuardrailsCommonLayer
       LoggingConfig:
         LogGroup: !Sub "${OrganizationName}gc_guardrails"
         LogFormat: "JSON"
@@ -170,7 +176,7 @@ Resources:
       Runtime: !Ref PythonRuntime
       Timeout: 90
       Layers:
-        - !Ref CloudGuardrailsCommonLayerArn
+        - !Ref CloudGuardrailsCommonLayer
       LoggingConfig:
         LogGroup: !Sub "${OrganizationName}gc_guardrails"
         LogFormat: "JSON"
@@ -186,7 +192,7 @@ Resources:
       Runtime: !Ref PythonRuntime
       Timeout: 90
       Layers:
-        - !Ref CloudGuardrailsCommonLayerArn
+        - !Ref CloudGuardrailsCommonLayer
       LoggingConfig:
         LogGroup: !Sub "${OrganizationName}gc_guardrails"
         LogFormat: "JSON"
@@ -202,7 +208,7 @@ Resources:
       Runtime: !Ref PythonRuntime
       Timeout: 90
       Layers:
-        - !Ref CloudGuardrailsCommonLayerArn
+        - !Ref CloudGuardrailsCommonLayer
       LoggingConfig:
         LogGroup: !Sub "${OrganizationName}gc_guardrails"
         LogFormat: "JSON"
@@ -219,7 +225,7 @@ Resources:
       Runtime: !Ref PythonRuntime
       Timeout: 180
       Layers:
-        - !Ref CloudGuardrailsCommonLayerArn
+        - !Ref CloudGuardrailsCommonLayer
       LoggingConfig:
         LogGroup: !Sub "${OrganizationName}gc_guardrails"
         LogFormat: "JSON"
@@ -235,7 +241,7 @@ Resources:
       Runtime: !Ref PythonRuntime
       Timeout: 180
       Layers:
-        - !Ref CloudGuardrailsCommonLayerArn
+        - !Ref CloudGuardrailsCommonLayer
       LoggingConfig:
         LogGroup: !Sub "${OrganizationName}gc_guardrails"
         LogFormat: "JSON"
@@ -251,7 +257,7 @@ Resources:
       Runtime: !Ref PythonRuntime
       Timeout: 180
       Layers:
-        - !Ref CloudGuardrailsCommonLayerArn
+        - !Ref CloudGuardrailsCommonLayer
       LoggingConfig:
         LogGroup: !Sub "${OrganizationName}gc_guardrails"
         LogFormat: "JSON"
@@ -268,7 +274,7 @@ Resources:
       Runtime: !Ref PythonRuntime
       Timeout: 90
       Layers:
-        - !Ref CloudGuardrailsCommonLayerArn
+        - !Ref CloudGuardrailsCommonLayer
       LoggingConfig:
         LogGroup: !Sub "${OrganizationName}gc_guardrails"
         LogFormat: "JSON"
@@ -284,7 +290,7 @@ Resources:
       Runtime: !Ref PythonRuntime
       Timeout: 90
       Layers:
-        - !Ref CloudGuardrailsCommonLayerArn
+        - !Ref CloudGuardrailsCommonLayer
       LoggingConfig:
         LogGroup: !Sub "${OrganizationName}gc_guardrails"
         LogFormat: "JSON"
@@ -300,7 +306,7 @@ Resources:
       Runtime: !Ref PythonRuntime
       Timeout: 90
       Layers:
-        - !Ref CloudGuardrailsCommonLayerArn
+        - !Ref CloudGuardrailsCommonLayer
       LoggingConfig:
         LogGroup: !Sub "${OrganizationName}gc_guardrails"
         LogFormat: "JSON"
@@ -316,7 +322,7 @@ Resources:
       Runtime: !Ref PythonRuntime
       Timeout: 90
       Layers:
-        - !Ref CloudGuardrailsCommonLayerArn
+        - !Ref CloudGuardrailsCommonLayer
       LoggingConfig:
         LogGroup: !Sub "${OrganizationName}gc_guardrails"
         LogFormat: "JSON"

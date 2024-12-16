@@ -2,8 +2,6 @@ AWSTemplateFormatVersion: 2010-09-09
 Description: Deploys custom AWS Lambda functions to support assessment of GC Guardrails.
 
 Parameters:
-  CloudGuardrailsCommonLayerArn:
-    Type: String
   OrganizationName:
     Type: String
     Default: ""
@@ -28,6 +26,14 @@ Conditions:
     - !Ref AuditAccountID
 
 Resources:
+  CloudGuardrailsCommonLayer:
+    Type: AWS::Lambda::LayerVersion
+    Properties:
+      LayerName: CloudGuardrailsCommonLayerPart7
+      CompatibleRuntimes:
+        - python3.12
+      Content: "../../src/layer/cloud_guardrails/build/CloudGuardrailsCommonLayer/"
+
   GC06CheckEncryptionAtRestPart1Lambda:
     Condition: IsAuditAccount
     Type: AWS::Lambda::Function
@@ -39,7 +45,7 @@ Resources:
       Runtime: !Ref PythonRuntime
       Timeout: 600
       Layers:
-        - !Ref CloudGuardrailsCommonLayerArn
+        - !Ref CloudGuardrailsCommonLayer
       LoggingConfig:
         LogGroup: !Sub "${OrganizationName}gc_guardrails"
         LogFormat: "JSON"

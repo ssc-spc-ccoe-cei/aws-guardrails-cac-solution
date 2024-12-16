@@ -2,8 +2,6 @@ AWSTemplateFormatVersion: 2010-09-09
 Description: Configures AWS Config and AWS Audit Manager for multi-account management.
 
 Parameters:
-  CloudGuardrailsCommonLayerArn:
-    Type: String
   OrganizationName:
     Type: String
     Default: ""
@@ -27,6 +25,14 @@ Conditions:
     - !Ref AuditAccountID
 
 Resources:
+  CloudGuardrailsCommonLayer:
+    Type: AWS::Lambda::LayerVersion
+    Properties:
+      LayerName: CloudGuardrailsCommonLayerPartN
+      CompatibleRuntimes:
+        - python3.12
+      Content: "../../src/layer/cloud_guardrails/build/CloudGuardrailsCommonLayer/"
+
   #############################################
   # Configure Lambda Permissions
   #############################################
