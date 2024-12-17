@@ -119,10 +119,9 @@ def lambda_handler(event, context):
         logger.error("Skipping assessments as this is not a scheduled invocation")
         return
 
-    rule_parameters = json.loads(event.get("ruleParameters", "{}"))
-    valid_rule_parameters = check_required_parameters(rule_parameters, ["ExecutionRoleName"])
-    execution_role_name = valid_rule_parameters.get("ExecutionRoleName")
-    audit_account_id = valid_rule_parameters.get("AuditAccountID", "")
+    rule_parameters = check_required_parameters(json.loads(event.get("ruleParameters", "{}")), ["ExecutionRoleName"])
+    execution_role_name = rule_parameters.get("ExecutionRoleName")
+    audit_account_id = rule_parameters.get("AuditAccountID", "")
     aws_account_id = event["accountId"]
     is_not_audit_account = aws_account_id != audit_account_id
     evaluations = []
@@ -167,7 +166,7 @@ def lambda_handler(event, context):
         )
     else:
         # no, check for EventBridge rules with naming convention
-        rule_naming_convention_file_path = valid_rule_parameters.get("RuleNamingConventionFilePath", "")
+        rule_naming_convention_file_path = rule_parameters.get("RuleNamingConventionFilePath", "")
         if not check_s3_object_exists(aws_s3_client, rule_naming_convention_file_path):
             evaluations.append(
                 build_evaluation(
