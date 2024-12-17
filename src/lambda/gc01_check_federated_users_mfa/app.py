@@ -40,8 +40,8 @@ def lambda_handler(event, context):
     is_not_audit_account = aws_account_id != audit_account_id
     evaluations = []
 
-    aws_config_client = get_client("config", aws_account_id, execution_role_name, is_not_audit_account)
-    aws_iam_client = get_client("iam", aws_account_id, execution_role_name, is_not_audit_account)
+    aws_config_client = get_client("config", aws_account_id, execution_role_name)
+    aws_iam_client = get_client("iam", aws_account_id, execution_role_name)
 
     compliance_type = "COMPLIANT"
     annotation = (

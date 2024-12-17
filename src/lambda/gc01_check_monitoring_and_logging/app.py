@@ -67,8 +67,8 @@ def lambda_handler(event, context):
     is_not_audit_account = aws_account_id != audit_account_id
     evaluations = []
 
-    aws_config_client = get_client("config", aws_account_id, execution_role_name, is_not_audit_account)
-    aws_cloudtrail_client = get_client("cloudtrail", aws_account_id, execution_role_name, is_not_audit_account)
+    aws_config_client = get_client("config", aws_account_id, execution_role_name)
+    aws_cloudtrail_client = get_client("cloudtrail", aws_account_id, execution_role_name)
 
     trails = list_all_cloud_trails(aws_cloudtrail_client)
 
