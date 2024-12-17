@@ -41,9 +41,6 @@ def lambda_handler(event, context):
 
     evaluations = []
 
-    compliance_type = "NOT_APPLICABLE"
-    annotation = "Guardrail only applicable in the Audit Account"
-
     if is_not_audit_account:
         logger.info(
             "Account management plan document not checked in account %s - not the Audit account", aws_account_id
