@@ -216,5 +216,5 @@ def lambda_handler(event, context):
                     )
                 )
 
-    logging.info("AWS Config updating evaluations: %s", evaluations)
+    logger.info("AWS Config updating evaluations: %s", evaluations)
     submit_evaluations(aws_config_client, event["resultToken"], evaluations)
