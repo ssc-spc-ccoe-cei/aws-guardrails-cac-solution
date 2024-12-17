@@ -32,10 +32,9 @@ def lambda_handler(event, context):
         logger.error("Skipping assessments as this is not a scheduled invocation")
         return
 
-    rule_parameters = json.loads(event.get("ruleParameters", "{}"))
-    valid_rule_parameters = check_required_parameters(rule_parameters, ["ExecutionRoleName", "s3ObjectPath"])
-    execution_role_name = valid_rule_parameters.get("ExecutionRoleName")
-    audit_account_id = valid_rule_parameters.get("AuditAccountID", "")
+    rule_parameters = check_required_parameters(json.loads(event.get("ruleParameters", "{}")), ["ExecutionRoleName", "s3ObjectPath"])
+    execution_role_name = rule_parameters.get("ExecutionRoleName")
+    audit_account_id = rule_parameters.get("AuditAccountID", "")
     aws_account_id = event["accountId"]
     is_not_audit_account = aws_account_id != audit_account_id
 
@@ -50,7 +49,7 @@ def lambda_handler(event, context):
     aws_config_client = get_client("config")
     aws_s3_client = get_client("s3")
 
-    if check_s3_object_exists(aws_s3_client, valid_rule_parameters["s3ObjectPath"]):
+    if check_s3_object_exists(aws_s3_client, rule_parameters["s3ObjectPath"]):
         compliance_type = "COMPLIANT"
         annotation = "Account management plan document found"
     else:
