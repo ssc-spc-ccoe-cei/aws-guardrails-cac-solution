@@ -8,8 +8,9 @@ import re
 
 import botocore.exceptions
 
-from utils import is_scheduled_notification, check_required_parameters
+from utils import is_scheduled_notification, check_required_parameters, check_guardrail_rquirement_by_cloud_usage_profile, get_cloud_profile_from_tags, GuardrailType, GuardrailRequirementType
 from boto_util.client import get_client
+from boto_util.organizations import get_account_tags
 from boto_util.config import build_evaluation, submit_evaluations
 from boto_util.s3 import check_s3_object_exists, read_s3_object
 from boto_util.guard_duty import guard_duty_is_enabled
@@ -101,38 +102,9 @@ def check_rule_sns_target_is_setup(sns_client, event_bridge_client, rule, event)
         annotation="An Event rule that has a SNS topic and subscription to send notification emails is not setup or confirmed.",
     )
 
-
-def lambda_handler(event, context):
-    """
-    This function is the main entry point for Lambda.
-
-    Keyword arguments:
-
-    event -- the event variable given in the lambda handler
-
-    context -- the context variable given in the lambda handler
-    """
-    logger.info("Received Event: %s", json.dumps(event, indent=2))
-
-    invoking_event = json.loads(event["invokingEvent"])
-    if not is_scheduled_notification(invoking_event["messageType"]):
-        logger.error("Skipping assessments as this is not a scheduled invocation")
-        return
-
-    rule_parameters = json.loads(event.get("ruleParameters", "{}"))
-    valid_rule_parameters = check_required_parameters(rule_parameters, [])
-    execution_role_name = valid_rule_parameters.get("ExecutionRoleName", "AWSA-GCLambdaExecutionRole")
-    audit_account_id = valid_rule_parameters.get("AuditAccountID", "")
-    aws_account_id = event["accountId"]
-    is_not_audit_account = aws_account_id != audit_account_id
+def run_validation(event, valid_rule_parameters, aws_account_id, aws_s3_client, aws_guard_duty_client, aws_event_bridge_client, aws_sns_client):
     evaluations = []
-
-    aws_config_client = get_client("config", aws_account_id, execution_role_name, is_not_audit_account)
-    aws_s3_client = get_client("s3")
-    aws_guard_duty_client = get_client("guardduty", aws_account_id, execution_role_name, is_not_audit_account)
-    aws_event_bridge_client = get_client("events", aws_account_id, execution_role_name, is_not_audit_account)
-    aws_sns_client = get_client("sns", aws_account_id, execution_role_name, is_not_audit_account)
-
+    
     rules = list_all_event_bridge_rules(aws_event_bridge_client)
 
     guard_duty_is_setup = False
@@ -215,6 +187,63 @@ def lambda_handler(event, context):
                         annotation="GuardDuty is not enabled and there are no EventBridge rules setup to notify authorized personnel of misuse or suspicious activity.",
                     )
                 )
+                
+    return evaluations
 
-    logging.info("AWS Config updating evaluations: %s", evaluations)
-    submit_evaluations(aws_config_client, event["resultToken"], evaluations)
+def lambda_handler(event, context):
+    """
+    This function is the main entry point for Lambda.
+
+    Keyword arguments:
+
+    event -- the event variable given in the lambda handler
+
+    context -- the context variable given in the lambda handler
+    """
+    logger.info("Received Event: %s", json.dumps(event, indent=2))
+
+    invoking_event = json.loads(event["invokingEvent"])
+    if not is_scheduled_notification(invoking_event["messageType"]):
+        logger.error("Skipping assessments as this is not a scheduled invocation")
+        return
+
+    rule_parameters = json.loads(event.get("ruleParameters", "{}"))
+    valid_rule_parameters = check_required_parameters(rule_parameters, [])
+    execution_role_name = valid_rule_parameters.get("ExecutionRoleName", "AWSA-GCLambdaExecutionRole")
+    audit_account_id = valid_rule_parameters.get("AuditAccountID", "")
+    aws_account_id = event["accountId"]
+    is_not_audit_account = aws_account_id != audit_account_id
+
+    aws_config_client = get_client("config", aws_account_id, execution_role_name, is_not_audit_account)
+    aws_organization_client = get_client("organizations", aws_account_id, execution_role_name, is_not_audit_account)
+    cloud_profile = get_cloud_profile_from_tags(get_account_tags(aws_organization_client, aws_account_id))
+    
+    gr_requirement = check_guardrail_rquirement_by_cloud_usage_profile(GuardrailType.Guardrail1, cloud_profile)
+    if gr_requirement == GuardrailRequirementType.Recommended:
+        logger.info("Guardrail is recommended for the account's profile level. Submitting COMPLIANT evaluation")
+        submit_evaluations(aws_config_client, event["resultToken"], [
+            build_evaluation(
+                aws_account_id,
+                "COMPLIANT",
+                event
+            )
+        ])  
+    elif gr_requirement == GuardrailRequirementType.Not_Required:
+        logger.info("Guardrail is not required for the account's profile level. Submitting NOT_APPLICABLE")
+        submit_evaluations(aws_config_client, event["resultToken"], [
+            build_evaluation(
+                aws_account_id,
+                "NOT_APPLICABLE",
+                event
+            )
+        ])
+    else:
+        aws_s3_client = get_client("s3")
+        aws_guard_duty_client = get_client("guardduty", aws_account_id, execution_role_name, is_not_audit_account)
+        aws_event_bridge_client = get_client("events", aws_account_id, execution_role_name, is_not_audit_account)
+        aws_sns_client = get_client("sns", aws_account_id, execution_role_name, is_not_audit_account)
+
+        evaluations = run_validation(event, valid_rule_parameters, aws_account_id, aws_s3_client, aws_guard_duty_client, aws_event_bridge_client, aws_sns_client)
+
+        logging.info("AWS Config updating evaluations: %s", evaluations)
+        submit_evaluations(aws_config_client, event["resultToken"], evaluations)
