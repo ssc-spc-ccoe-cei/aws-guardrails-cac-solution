@@ -7,7 +7,7 @@ import logging
 
 import botocore
 
-from utils import is_scheduled_notification
+from utils import is_scheduled_notification, check_required_parameters
 from boto_util.client import get_client
 from boto_util.config import build_evaluation, submit_evaluations
 from boto_util.iam import account_has_federated_users
@@ -16,11 +16,7 @@ logger = logging.getLogger()
 logger.setLevel(logging.INFO)
 
 
-def evaluate_parameters(rule_parameters, password_assessment_policy):
-    """Evaluate the rule parameters.
-    Keyword arguments:
-    rule_parameters -- the Key/Value dictionary of the rule parameters
-    """
+def overlay_policy_from_parameters(rule_parameters, password_assessment_policy):
     for parameter in rule_parameters:
         if parameter in [
             "MinimumPasswordLength",
@@ -41,7 +37,7 @@ def evaluate_parameters(rule_parameters, password_assessment_policy):
                 password_assessment_policy[parameter] = True
             elif str(rule_parameters[parameter]).lower() == "false":
                 password_assessment_policy[parameter] = False
-    return rule_parameters
+    return password_assessment_policy
 
 
 def assess_iam_password_policy(iam_client, password_assessment_policy):
@@ -148,7 +144,7 @@ def lambda_handler(event, context):
     if not is_scheduled_notification(invoking_event["messageType"]):
         return
 
-    password_assessment_policy = {
+    default_assessment_policy = {
         "MinimumPasswordLength": 12,
         "RequireSymbols": True,
         "RequireNumbers": True,
@@ -161,13 +157,13 @@ def lambda_handler(event, context):
         "HardExpiry": False,
     }
 
-    rule_parameters = json.loads(event.get("ruleParameters", "{}"))
-    valid_rule_parameters = evaluate_parameters(rule_parameters, password_assessment_policy)
-    execution_role_name = valid_rule_parameters.get("ExecutionRoleName", "AWSA-GCLambdaExecutionRole")
-    audit_account_id = valid_rule_parameters.get("AuditAccountID", "")
+    rule_parameters = check_required_parameters(json.loads(event.get("ruleParameters", "{}")), ["ExecutionRoleName"])
+    execution_role_name = rule_parameters.get("ExecutionRoleName")
+    audit_account_id = rule_parameters.get("AuditAccountID", "")
     aws_account_id = event["accountId"]
     is_not_audit_account = aws_account_id != audit_account_id
 
+    password_assessment_policy = overlay_policy_from_parameters(rule_parameters, default_assessment_policy)
     evaluations = []
 
     aws_config_client = get_client("config", aws_account_id, execution_role_name, is_not_audit_account)
