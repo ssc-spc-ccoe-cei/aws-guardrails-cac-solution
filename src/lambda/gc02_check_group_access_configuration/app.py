@@ -373,7 +373,7 @@ def lambda_handler(event, context):
 
     admin_accounts_s3_path = rule_parameters.get("s3ObjectPath", "")
     if not check_s3_object_exists(aws_s3_client, admin_accounts_s3_path):
-        compliance_type = "COMPLIANT"
+        compliance_type = "NON_COMPLIANT"
         annotation = "No AdminAccountsFilePath input provided."
 
     else:
