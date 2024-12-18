@@ -32,7 +32,9 @@ def lambda_handler(event, context):
         logger.error("Skipping assessments as this is not a scheduled invocation")
         return
 
-    rule_parameters = check_required_parameters(json.loads(event.get("ruleParameters", "{}")), ["ExecutionRoleName", "s3ObjectPath"])
+    rule_parameters = check_required_parameters(
+        json.loads(event.get("ruleParameters", "{}")), ["ExecutionRoleName", "s3ObjectPath"]
+    )
     execution_role_name = rule_parameters.get("ExecutionRoleName")
     audit_account_id = rule_parameters.get("AuditAccountID", "")
     aws_account_id = event["accountId"]
