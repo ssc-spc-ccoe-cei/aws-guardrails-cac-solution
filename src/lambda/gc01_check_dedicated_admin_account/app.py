@@ -440,7 +440,7 @@ def get_admin_permission_sets_for_instance_by_account(instance_arn):
             account_id=a.get("Id")
             permission_sets[account_id] = []
             while True:
-                response = AWS_SSO_ADMIN_CLIENT.list_permission_sets_provisioned_to_account(AccountId=AWS_ACCOUNT_ID,InstanceArn=instance_arn, NextToken = next_token) if next_token else AWS_SSO_ADMIN_CLIENT.list_permission_sets_provisioned_to_account(InstanceArn=instance_arn)
+                response = AWS_SSO_ADMIN_CLIENT.list_permission_sets_provisioned_to_account(AccountId=account_id,InstanceArn=instance_arn, NextToken = next_token) if next_token else AWS_SSO_ADMIN_CLIENT.list_permission_sets_provisioned_to_account(AccountId=account_id, InstanceArn=instance_arn)
                 for p_set in response.get("PermissionSets"):
                     if permission_set_has_admin_policies(instance_arn, p_set):
                         permission_sets[account_id].append(p_set)
@@ -476,6 +476,7 @@ def check_users(iam_users, sso_users_by_instance, privileged_user_list, non_priv
     at_least_one_privileged_user_has_admin_access = False   
     non_privileged_user_with_admin_access = []
     
+    # IAM Check
     for u in iam_users:
         user_name = u.get("UserName")
         logger.info(f"Checking iam users: {user_name}")
@@ -493,7 +494,8 @@ def check_users(iam_users, sso_users_by_instance, privileged_user_list, non_priv
             inline_policies = fetch_inline_user_policies(user_name)
             if policies_grant_admin_access(managed_policies, inline_policies):
                 non_privileged_user_with_admin_access.append(user_name)
-                
+         
+    # Identity Center Check            
     for instance_arn in sso_users_by_instance.keys():
         admin_permission_sets_by_account=get_admin_permission_sets_for_instance_by_account(instance_arn)
         for user in sso_users_by_instance[instance_arn]:

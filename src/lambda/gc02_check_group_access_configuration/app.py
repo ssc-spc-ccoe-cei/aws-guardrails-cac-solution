@@ -4,10 +4,12 @@
 import json
 import logging
 import re
+from enum import Enum
 
 import boto3
 import botocore
 import botocore.exceptions
+
 
 # Logging setup
 logger = logging.getLogger()
@@ -19,6 +21,11 @@ DEFAULT_RESOURCE_TYPE = "AWS::::Account"
 GROUP_RESOURCE_TYPE = "AWS::IAM::Group"
 
 
+class GroupPermissionAssignment(Enum):
+    ADMIN = 1
+    NON_ADMIN = 2
+    MIX = 3
+    
 # This gets the client after assuming the Config service role
 # either in the same AWS account or cross-account.
 def get_client(service, event):
@@ -153,7 +160,160 @@ def check_s3_object_exists(object_path):
         # The object does exist.
         return True
 
-def fetch_groups():
+def fetch_sso_instances():
+    instances = []
+    nextToken = None
+    try:
+        while True:
+            response = AWS_SSO_ADMIN_CLIENT.list_instances(NextToken=nextToken) if nextToken else AWS_SSO_ADMIN_CLIENT.list_instances()
+            instances = instances + response.get("Instances", [])
+            nextToken = response.get("NextToken")
+            if not nextToken:
+                break
+    except botocore.exceptions.ClientError as ex:
+        logger.info(f"fetch_sso_instances exception: {ex}")
+        ex.response["Error"]["Message"] = "InternalError"
+        ex.response["Error"]["Code"] = "InternalError"
+        raise ex
+    
+    return instances
+
+def only_admin_policies(managed_policies, inline_policies):
+    # Returns True if both managed policies and inline_policies only give admin access
+    return next((False for p in managed_policies if p.get("PolicyName", "") != "AdministratorAccess"), True) and next((False for p in inline_policies if not policy_doc_gives_admin_access(p.get("PolicyDocument", '{}'))), True)
+
+def only_non_admin_policies(managed_policies, inline_policies):
+    # Returns True if both managed policies and inline_policies only give non admin access
+    return next((False for p in managed_policies if p.get("PolicyName", "") == "AdministratorAccess"), True) and next((False for p in inline_policies if policy_doc_gives_admin_access(p.get("PolicyDocument", '{}'))), True)
+
+
+def fetch_customer_managed_policy_documents_for_permission_set(customer_managed_policies):
+    policy_docs = []
+    try:
+        marker = None
+        while True:
+            response = AWS_IAM_CLIENT.list_policies(Scope="Local", Marker=marker) if marker else AWS_IAM_CLIENT.list_policies(Scope="Local")
+            policies = response.get("Policies")
+            for p in policies:
+                if p.get("PolicyName") in customer_managed_policies:
+                    p_doc_response = AWS_IAM_CLIENT.get_policy_version(p.get(PolicyArn="Arn"), VersionId=p.get("DefaultVersionId"))
+                    policy_docs.append(p_doc_response.get("PolicyVersion").get("Document"))
+            marker = response.get("Marker")
+            if not marker:
+                break
+    except botocore.exceptions.ClientError as ex:
+        ex.response["Error"]["Message"] = "InternalError"
+        ex.response["Error"]["Code"] = "InternalError"
+        raise ex
+
+    return policy_docs
+
+def permission_set_only_has_admin_or_non_admin_policies(instance_arn, permission_set_arn) -> GroupPermissionAssignment:
+    managed_policies = []
+    inline_policies = []
+    
+    next_token = None
+    try:
+        # Fetch all AWS Managed policies for the permission set and add them to the list of managed policies
+        while True:
+            response = AWS_SSO_ADMIN_CLIENT.list_managed_policies_in_permission_set(InstanceArn=instance_arn, NextToken=next_token, PermissionSetArn=permission_set_arn) if next_token else AWS_SSO_ADMIN_CLIENT.list_managed_policies_in_permission_set(InstanceArn=instance_arn, PermissionSetArn=permission_set_arn)
+            managed_policies = managed_policies + response.get("AttachedManagedPolicies")
+            next_token = response.get("NextToken")
+            if not next_token:
+                break
+        # Fetch the inline document for the permission set if any exists. If none exists the response will still be valid, just an empty policy doc.
+        response =  AWS_SSO_ADMIN_CLIENT.get_inline_policy_for_permission_set(InstanceArn=instance_arn, PermissionSetArn=permission_set_arn)
+        # If length is less than or equal to 1 then the policy doc is empty because there is no inline policy.The API specifies a min length of 1, but is a bit vague on what an empty policy doc would look like so we are covering the case of empty string 
+        if len(response.get("InlinePolicy")) > 1:
+            inline_policies.append({
+                "PolicyDocument": response.get("InlinePolicy")
+            })
+        # Fetch all customer managed policy references, convert the references into their policy document on the account, and add them to the list of inline policies.
+        while True:
+            response = AWS_SSO_ADMIN_CLIENT.list_customer_managed_policy_references_in_permission_set(InstanceArn=instance_arn, NextToken=next_token, PermissionSetArn=permission_set_arn) if next_token else AWS_SSO_ADMIN_CLIENT.list_customer_managed_policy_references_in_permission_set(InstanceArn=instance_arn, PermissionSetArn=permission_set_arn)
+            for policy_doc in fetch_customer_managed_policy_documents_for_permission_set([p.get("Name") for p in response.get("CustomerManagedPolicyReferences")]):
+                inline_policies.append({
+                    "PolicyDocument": policy_doc
+                })
+            next_token = response.get("NextToken")
+            if not next_token:
+                break
+        
+        if only_admin_policies(managed_policies, inline_policies):
+            return "ADMIN"
+        elif only_non_admin_policies(managed_policies, inline_policies):
+            return "NON_ADMIN"
+        else:
+            return "MIX"
+        
+    except botocore.exceptions.ClientError as ex:
+        ex.response["Error"]["Message"] = "InternalError"
+        ex.response["Error"]["Code"] = "InternalError"
+        raise ex
+
+def get_permission_sets_for_group(instance_arn, group_id):
+    permission_sets = set()
+    next_token = None
+    try:
+        while True:
+            response = AWS_SSO_ADMIN_CLIENT.list_account_assignments_for_principal(InstanceArn=instance_arn, PrincipalId=group_id, PrincipalType="GROUP", NextToken = next_token) if next_token else AWS_SSO_ADMIN_CLIENT.list_account_assignments_for_principal(InstanceArn=instance_arn, PrincipalId=group_id, PrincipalType="GROUP")
+            
+            for acc_assignment in response.get("PermissionSets"):
+                p_set_arn = acc_assignment.get("PermissionSetArn")
+                if p_set_arn not in permission_sets:
+                    permission_sets.append(p_set_arn)
+                    
+            next_token = response.get("NextToken")
+            if not next_token:
+                break
+    except botocore.exceptions.ClientError as ex:
+        ex.response["Error"]["Message"] = "InternalError"
+        ex.response["Error"]["Code"] = "InternalError"
+        raise ex
+    
+    return permission_sets
+
+def fetch_identity_center_groups(instance_id):
+    groups = []
+    next_token = None
+    try:
+        while True:
+            response = AWS_IDENTITY_STORE_CLIENT.list_groups(IdentityStoreId=instance_id, NextToken=next_token) if next_token else AWS_IDENTITY_STORE_CLIENT.list_groups(IdentityStoreId=instance_id)
+            groups = groups + response.get("Groups", [])
+            next_token = response.get("NextToken")
+            if not next_token:
+                break
+    except botocore.exceptions.ClientError as ex:
+        ex.response["Error"]["Message"] = "InternalError"
+        ex.response["Error"]["Code"] = "InternalError"
+        raise ex
+    
+    return groups
+
+def fetch_identity_center_group_members(instance_id, group_id):
+    members = set()
+    next_token = None
+    try:
+        while True:
+            response = AWS_IDENTITY_STORE_CLIENT.list_group_memberships(IdentityStoreId=instance_id, GroupId=group_id, NextToken=next_token) if next_token else AWS_IDENTITY_STORE_CLIENT.list_group_memberships(IdentityStoreId=instance_id, GroupId=group_id)
+            for membership in response.get("GroupMemberships", []):
+                user_id = membership.get("MemberId", {}).get("UserId", "")
+                user_description = AWS_IDENTITY_STORE_CLIENT.describe_user(IdentityStoreId=instance_id, UserId=user_id)
+                
+                if user_description not in members:
+                    members.append(user_description)
+                    
+            next_token = response.get("NextToken")
+            if not next_token:
+                break
+    except botocore.exceptions.ClientError as ex:
+        ex.response["Error"]["Message"] = "InternalError"
+        ex.response["Error"]["Code"] = "InternalError"
+        raise ex
+    
+    return members
+
+def fetch_iam_groups():
     groups = []
     marker = None
     try:
@@ -170,7 +330,7 @@ def fetch_groups():
     
     return groups
 
-def check_group_policies(group_name, admin_accounts, event):
+def check_iam_group_policies(group_name, admin_accounts, event):
     # Checks all group policies to ensure that there is not mixture of admin and non-admin roles.
     
     # Fetch aws managed and inline group policies
@@ -207,6 +367,63 @@ def check_group_policies(group_name, admin_accounts, event):
             )
             
     annotation = f"Group '{group_name}' has policies that only provides admin roles and only has admin members." if has_admin_policy else f"Group '{group_name}' has policies that only provides non-admin roles."
+        
+    return build_evaluation(
+        group_name,
+        "COMPLIANT",
+        event,
+        resource_type=GROUP_RESOURCE_TYPE,
+        annotation=annotation
+    )
+    
+def check_identity_center_group_policies(instance_id, instance_arn, group, admin_accounts, event):
+    # Checks all group policies to ensure that there is not mixture of admin and non-admin roles.
+    
+    group_id = group.get("GroupId")
+    group_name = group.get("DisplayName")
+    permission_set_arns = get_permission_sets_for_group(instance_id, group_id)
+    group_members = fetch_identity_center_group_members(instance_id, group_id)
+    has_non_admin_member = next((m for m in group_members if m.get("UserName", "") not in admin_accounts), False)
+    has_admin_pset = False
+    has_non_admin_pset = False
+    
+    for p_set_arn in permission_set_arns:
+        p_set_type = permission_set_only_has_admin_or_non_admin_policies(instance_arn, p_set_arn)\
+        # Is the group an admin group?
+        if p_set_type == GroupPermissionAssignment.ADMIN:
+            # yes, fetch group members and check against admin_accounts
+            has_admin_pset = True
+            if has_non_admin_member:
+                return build_evaluation(
+                    group_name,
+                    "NON_COMPLIANT",
+                    event,
+                    resource_type=GROUP_RESOURCE_TYPE,
+                    annotation=f"Group '{group_name}' is a group containing non-admin members that has been assigned an admin permission set."
+                )
+        elif p_set_type == GroupPermissionAssignment.NON_ADMIN:
+            has_non_admin_pset = True
+        # Does the group have admin policies and non admin policies?
+        elif p_set_type == GroupPermissionAssignment.MIX:
+            # yes, there is a mixture of admin and non-admin roles attached to the group. Return NON_COMPLIANT evaluation for group
+            return build_evaluation(
+                group_name,
+                "NON_COMPLIANT",
+                event,
+                resource_type=GROUP_RESOURCE_TYPE,
+                annotation=f"Group '{group_name}' has an assigned permission set that contain both admin and non-admin roles."
+            )
+            
+        if has_admin_pset and has_non_admin_pset:
+            return build_evaluation(
+                group_name,
+                "NON_COMPLIANT",
+                event,
+                resource_type=GROUP_RESOURCE_TYPE,
+                annotation=f"Group '{group_name}' has been assigned admin only and non admin only permission sets. Groups should only contain admin only permission sets or non admin only permission sets."
+            )
+            
+    annotation = f"Group '{group_name}' has permission sets that apply policies granting only admin roles and only has admin members." if has_admin_pset else f"Group '{group_name}' permission sets that apply policies granting only non-admin roles."
         
     return build_evaluation(
         group_name,
@@ -307,6 +524,8 @@ def lambda_handler(event, context):
     """
     global AWS_CONFIG_CLIENT
     global AWS_IAM_CLIENT
+    global AWS_IDENTITY_STORE_CLIENT
+    global AWS_SSO_ADMIN_CLIENT
     global AWS_ACCOUNT_ID
     global AWS_S3_CLIENT
     global EXECUTION_ROLE_NAME
@@ -338,6 +557,8 @@ def lambda_handler(event, context):
 
     AWS_CONFIG_CLIENT = get_client("config", event)
     AWS_IAM_CLIENT = get_client("iam", event)
+    AWS_IDENTITY_STORE_CLIENT = get_client("identitystore", event)
+    AWS_SSO_ADMIN_CLIENT = get_client("sso-admin", event)
     AWS_S3_CLIENT = boto3.client("s3")
     
     # is this a scheduled invokation?
@@ -359,12 +580,26 @@ def lambda_handler(event, context):
             is_compliant = True
             admin_accounts = read_s3_object(admin_accounts_file_path).splitlines()
             
-            groups = fetch_groups()
-            for g in groups:
-                eval = check_group_policies(g.get("GroupName", ""), admin_accounts, event)
+            # IAM
+            iam_groups = fetch_iam_groups()
+            for g in iam_groups:
+                eval = check_iam_group_policies(g.get("GroupName", ""), admin_accounts, event)
                 if eval.get("ComplianceType", "NON_COMPLIANT") == "NON_COMPLIANT":
                     is_compliant = False
                 evaluations.append(eval)
+                
+            #Identity Center
+            instances = fetch_sso_instances()
+            for i in instances:
+                i_id = i.get("IdentityStoreId")
+                i_arn = i.get("InstanceArn")
+                identity_center_groups = fetch_identity_center_groups(i_id)
+                for g in identity_center_groups:
+                    eval = check_identity_center_group_policies(i_id, i_arn, g, admin_accounts, event)
+                    if eval.get("ComplianceType", "NON_COMPLIANT") == "NON_COMPLIANT":
+                        is_compliant = False
+                    evaluations.append(eval)
+                            
             
             if is_compliant:
                 evaluations.append(

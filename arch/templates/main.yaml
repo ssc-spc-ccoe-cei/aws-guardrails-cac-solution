@@ -274,6 +274,7 @@ Resources:
                     "resource-explorer-2:ListIndexes",
                     "resource-explorer-2:Search",
                     "sso:List*",
+                    "sso:DescribeUser",
                     "sso:GetInlinePolicyForPermissionSet",
                     "s3:Get*",
                     "s3:GetBucketPublicAccessBlock",
@@ -1281,6 +1282,10 @@ Resources:
               - "sso:ListInstances"
               - "sso:ListUsers"
               - "sso:ListManagedPoliciesInPermissionSet"
+              - "sso:ListAccountAssignmentsForPrincipal"
+              - "sso:ListGroups"
+              - "sso:DescribeUser"
+              - "sso:ListGroupMemberships"
               - "sso:GetInlinePolicyForPermissionSet"
               - "sso:ListCustomerManagedPolicyReferencesInPermissionSet"
               - "sso:ListPermissionSetsProvisionedToAccount"
