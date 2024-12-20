@@ -15,6 +15,9 @@ http = urllib3.PoolManager()
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
 
+MAX_RETRIES = 3
+RETRY_DELAY = 5
+FUNCTION_NAME = "aws_create_role"
 
 def get_org_accounts():
     """
@@ -205,6 +208,33 @@ def send(event, context, response_status, response_data, physical_resource_id=No
         logger.error("send(..) failed executing http.request(..): %s", err)
 
 
+def wait_for_role(iam_client, role_name):
+    """
+    Check if role is ready (exists). Returns True if found, False otherwise.
+    """
+    try:
+        iam_client.get_role(RoleName=role_name)
+        return True
+    except iam_client.exceptions.NoSuchEntityException:
+        return False
+
+
+def self_invoke(event):
+    """
+    Re-invokes the current Lambda function asynchronously with updated retry attempts.
+    """
+    lambda_client = boto3.client('lambda')
+    current_retry = event.get('RetryCount', 0) + 1
+    event['RetryCount'] = current_retry
+    logger.info(f"Role not ready, re-invoking self with attempt {current_retry}")
+
+    lambda_client.invoke(
+        FunctionName=FUNCTION_NAME,
+        InvocationType='Event',
+        Payload=json.dumps(event)
+    )
+
+
 def lambda_handler(event, context):
     """This function is the main entry point for Lambda.
     Keyword arguments:
@@ -221,6 +251,7 @@ def lambda_handler(event, context):
         "'", '"')
     logger.info(f"Policy String: {policy_string}")
     policy_package = json.loads(policy_string, strict=False)
+    retry_count = event.get('RetryCount', 0)
     # Get list of Org accounts and the current account_id
     try:
         accounts = get_org_accounts()
@@ -251,6 +282,17 @@ def lambda_handler(event, context):
             try:
                 sts_session = assume_role(
                     session=session, account_id=account['Id'], role_name=switch_role)
+                    iam_client = sts_session.client('iam')
+                    if not wait_for_role(iam_client, role_name):
+                        if retry_count < MAX_RETRIES:
+                            self_invoke(event)
+                            return
+                        else:
+                            logger.error(f"Role {role_name} not found after {MAX_RETRIES} retries. Failing.")
+                            response_data['Error'] = f"Role {role_name} not ready in account {account['Id']}"
+                            send(event, context, FAILED, response_data)
+                            return
+
             except Exception as err:
                 logger.error(f"Error assuming role: {err}")
                 response_data['Error'] = f"Error assuming role: {err}"
