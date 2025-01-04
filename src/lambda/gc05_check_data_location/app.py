@@ -1,159 +1,82 @@
 """ GC05 - Check Data Location
     https://canada-ca.github.io/cloud-guardrails/EN/05_Data-Location.html
 """
-import botocore
-import boto3
+
+import botocore.exceptions
 import logging
 import json
 import os
 import sys
 import re
-import time
+
+from utils import is_scheduled_notification, check_required_parameters
+from boto_util.client import get_client
+from boto_util.config import build_evaluation, submit_evaluations
+from boto_util.ec2 import get_enabled_regions
+from boto_util.resource_explorer_2 import resource_explorer_get_indexes
+
 
 os.system("pip3 install --target /tmp boto3")
-sys.path.insert(0, '/tmp/')
-ASSUME_ROLE_MODE = True
-DEFAULT_RESOURCE_TYPE = 'AWS::::Account'
+sys.path.insert(0, "/tmp/")
+
+# Logging setup
+logger = logging.getLogger()
+logger.setLevel(logging.INFO)
 
 
-def get_client(service, event, region="ca-central-1"):
-    """Return the service boto client. It should be used instead of directly calling the client.
-    Keyword arguments:
-    service -- the service name used for calling the boto.client()
-    event -- the event variable given in the lambda handler
-    """
-    if not ASSUME_ROLE_MODE:
-        return boto3.client(service, region_name=region)
-    execution_role_arn = f"arn:aws:iam::{AWS_ACCOUNT_ID}:role/{EXECUTION_ROLE_NAME}"
-    credentials = get_assume_role_credentials(execution_role_arn, region)
-    return boto3.client(
-        service,
-        region_name=region,
-        aws_access_key_id=credentials['AccessKeyId'],
-        aws_secret_access_key=credentials['SecretAccessKey'],
-        aws_session_token=credentials['SessionToken']
-    )
-
-
-def get_assume_role_credentials(role_arn, region="ca-central-1"):
-    """Return the service boto client. It should be used instead of directly calling the client.
-    Keyword arguments:
-    service -- the service name used for calling the boto.client()
-    event -- the event variable given in the lambda handler
-    """
-    sts_client = boto3.client('sts', region_name=region)
-    try:
-        assume_role_response = sts_client.assume_role(
-            RoleArn=role_arn, RoleSessionName="configLambdaExecution")
-        return assume_role_response['Credentials']
-    except botocore.exceptions.ClientError as ex:
-        if 'AccessDenied' in ex.response['Error']['Code']:
-            ex.response['Error']['Message'] = "AWS Config does not have permission to assume the IAM role."
-        else:
-            ex.response['Error']['Message'] = "InternalError"
-            ex.response['Error']['Code'] = "InternalError"
-        raise ex
-
-
-def is_scheduled_notification(message_type):
-    """Check whether the message is a ScheduledNotification or not.
-    Keyword arguments:
-    message_type -- the message type
-    """
-    return message_type == 'ScheduledNotification'
-
-
-def evaluate_parameters(rule_parameters):
-    """Evaluate the rule parameters dictionary.
-    Keyword arguments:
-    rule_parameters -- the Key/Value dictionary of the Config rule parameters
-    """
-    return rule_parameters
-
-def get_enabled_regions():
-    """Get the list of enabled regions
-    Returns:
-    List of enabled regions
-    """
-    result = []
-    try:
-        response = AWS_EC2_CLIENT.describe_regions(
-            DryRun=False,
-            AllRegions=True
-        )
-    except botocore.exceptions.ClientError as ex:
-        if 'UnauthorizedOperation' in ex.response['Error']['Code']:
-            logger.error('UnauthorizedOperation when trying to describe regions (EC2)')
-        logger.error('Unable to describe regions.')
-        raise ex
-    for region in response.get('Regions'):
-        if region.get('OptInStatus') != 'not-opted-in':
-            result.append(region.get('RegionName'))
-    return result
-
-
-def is_allow_listed_resource(resourceName, resourceArn):
+def is_allow_listed_resource(resource_name, resource_arn, asea_resource_arns):
     """Assesses whether the resource is to be allow listed
     Returns True if it should be allow listed
     """
     bAllowList = False
-    ALLOWLIST_REGEX_RULES = [
-        ".*asea-.*",
-        ".*pbmm-.*",
-        "^awscfncli-.+",
-        "^awsconfigconforms-.+",
-        "^cf-templates.+"
-    ]
-    ALLOWLIST_REGEX = '(?:% s)' % '|'.join(ALLOWLIST_REGEX_RULES)
-    if re.match(ALLOWLIST_REGEX, resourceName.lower()) or (resourceArn in ASEA_RESOURCE_ARNS):
-        logger.info("Resource '{}' meets requirements for allow listing.".format(resourceName))
+    allowlist_regex_rules = [".*asea-.*", ".*pbmm-.*", "^awscfncli-.+", "^awsconfigconforms-.+", "^cf-templates.+"]
+    allowlist_regex = "(?:% s)" % "|".join(allowlist_regex_rules)
+    if re.match(allowlist_regex, resource_name.lower()) or (resource_arn in asea_resource_arns):
+        logger.info("Resource '{}' meets requirements for allow listing.".format(resource_name))
         bAllowList = True
     return bAllowList
 
 
-def arex_get_indexes(arex_client, index_type=None):
-    index_list = []
-    arex_paginator = arex_client.get_paginator('list_indexes')
-    if not index_type:
-        arex_index_list = arex_paginator.paginate(PaginationConfig={'MaxItems': PAGE_SIZE})
-    else:
-        arex_index_list = arex_paginator.paginate(
-            Type=index_type, PaginationConfig={'MaxItems': PAGE_SIZE})
-    for page in arex_index_list:
-        index_list.extend(page['Indexes'])
-        time.sleep(INTERVAL_BETWEEN_API_CALLS)
-    return index_list
-
-
-def parse_resource_explorer_result(Resources=[], Service=''):
+def parse_resource_explorer_result(
+    resources: list,
+    service: str,
+    unauthorized_resource_types: dict[str, list[str]],
+    aws_resource_explorer_to_config_resource_types: dict[str, str],
+):
     results = []
-    if not Resources or not Service:
-        logger.error('Empty Resources result provided to parse_resource_explorer_result call.')
+    if not resources or not service:
+        logger.error("Empty Resources result provided to parse_resource_explorer_result call.")
         return None
-    elif not Service:
-        logger.error('Empty Service name provided to parse_resource_explorer_result call.')
+    elif not service:
+        logger.error("Empty Service name provided to parse_resource_explorer_result call.")
         return None
-    Service = Service.lower()
-    if Service in UNAUTHORIZED_RESOURCE_TYPES.keys():
-        logger.debug("parse_resource_explorer_result - Service '{}' is of interest".format(Service))
-        for resource in Resources:
-            resource_arn = resource.get('Arn')
-            resource_id = resource.get('Id')
-            resource_service = resource.get('Service').lower()
-            resource_type = resource.get('ResourceType').lower()
-            logger.debug("parse_resource_explorer_result\n  Resource ARN '{}'\n  Service: '{}'\n  Type '{}'".format(resource_arn, resource_service, resource_type))
-            if resource_type in UNAUTHORIZED_RESOURCE_TYPES.get(Service):
-                if AWS_RESOURCE_EXPLORER_TO_CONFIG_RESOURCE_TYPES.get(resource_type, None):
+    service = service.lower()
+    if service in unauthorized_resource_types.keys():
+        logger.debug("parse_resource_explorer_result - Service '{}' is of interest".format(service))
+        for resource in resources:
+            resource_arn = resource.get("Arn")
+            resource_id = resource.get("Id")
+            resource_service = resource.get("Service").lower()
+            resource_type = resource.get("ResourceType").lower()
+            logger.debug(
+                "parse_resource_explorer_result\n  Resource ARN '{}'\n  Service: '{}'\n  Type '{}'".format(
+                    resource_arn, resource_service, resource_type
+                )
+            )
+            if resource_type in unauthorized_resource_types.get(service):
+                if aws_resource_explorer_to_config_resource_types.get(resource_type, None):
                     logger.debug("*** RESOURCE IS OF UNAUTHORIZED TYPE")
                     results.append(
                         {
-                            'Arn': resource_arn,
-                            'Id': resource_id,
-                            'ResourceType': AWS_RESOURCE_EXPLORER_TO_CONFIG_RESOURCE_TYPES.get(resource_type, '')
+                            "Arn": resource_arn,
+                            "Id": resource_id,
+                            "ResourceType": aws_resource_explorer_to_config_resource_types.get(resource_type, ""),
                         }
                     )
                 else:
-                    logger.debug('Ignoring resource {} as it is not a supported AWS Config Resource Type'.format(resource_arn))
+                    logger.debug(
+                        "Ignoring resource {} as it is not a supported AWS Config Resource Type".format(resource_arn)
+                    )
             else:
                 logger.debug("'{}' not an unauthorized resource type.".format(resource_arn))
     else:
@@ -161,190 +84,200 @@ def parse_resource_explorer_result(Resources=[], Service=''):
     return results
 
 
-def get_qldb_resources(RegionName=None, event=None):
+def get_qldb_resources(aws_account_id, execution_role_name, RegionName=None, event=None):
     """
     Finds Ledger Database (QLDB) resources in the specified region
     """
     results = []
-    AWS_QLDB_CLIENT = get_client('qldb', event, region=RegionName)
-    NextToken = ''
-    ResourceType = 'AWS::QLDB::Ledger'
+    aws_qldb_client = get_client("qldb", aws_account_id, execution_role_name, region=RegionName)
+    NextToken = ""
+    ResourceType = "AWS::QLDB::Ledger"
     try:
-        response = AWS_QLDB_CLIENT.list_ledgers()
+        response = aws_qldb_client.list_ledgers()
         while True:
             if response:
-                for ledger in response.get('Ledgers'):
-                    response2 = AWS_QLDB_CLIENT.describe_ledger(
-                        Name=ledger.get('Name')
-                    )
+                for ledger in response.get("Ledgers"):
+                    response2 = aws_qldb_client.describe_ledger(Name=ledger.get("Name"))
                     if response2:
                         results.append(
-                            {
-                                'Arn': response2.get('Arn'),
-                                'Id': response2.get('Name'),
-                                'ResourceType': ResourceType
-                            }
+                            {"Arn": response2.get("Arn"), "Id": response2.get("Name"), "ResourceType": ResourceType}
                         )
                     else:
-                        logger.info("Unable to describe_ledger '{}'".format(ledger.get('Name')))
-                NextToken = response.get('NextToken')
+                        logger.info("Unable to describe_ledger '{}'".format(ledger.get("Name")))
+                NextToken = response.get("NextToken")
                 if NextToken:
-                    response = AWS_QLDB_CLIENT.list_ledgers(NextToken=NextToken)
+                    response = aws_qldb_client.list_ledgers(NextToken=NextToken)
                 else:
                     break
             else:
                 break
     except botocore.exceptions.EndpointConnectionError as ex:
-        logger.debug('QLDB endpoint not available in the region {}'.format(RegionName))
+        logger.debug("QLDB endpoint not available in the region {}".format(RegionName))
         pass
     except botocore.exceptions.ClientError as ex:
-        if 'AccessDenied' in ex.response['Error']['Code']:
-            logger.error('AccessDenied when trying to list_ledgers or describe_ledger - get_qldb_resources')
+        if "AccessDenied" in ex.response["Error"]["Code"]:
+            logger.error("AccessDenied when trying to list_ledgers or describe_ledger - get_qldb_resources")
             pass
         else:
             raise ex
     return results
 
 
-def get_s3_resources(event=None, UnauthorizedRegionsList=[]):
+def get_s3_resources(aws_s3_client, UnauthorizedRegionsList=[]):
     """
     Finds Amazon S3 resources in the specified region
     """
     results = {}
-    AWS_S3_CLIENT = get_client('s3', event)
-    ResourceType = 'AWS::S3::Bucket'
+    ResourceType = "AWS::S3::Bucket"
     try:
-        response = AWS_S3_CLIENT.list_buckets()
+        response = aws_s3_client.list_buckets()
         if response:
-            for bucket in response.get('Buckets'):
-                bucket_name = bucket.get('Name')
+            for bucket in response.get("Buckets"):
+                bucket_name = bucket.get("Name")
                 bucket_arn = "arn:aws:s3:::{}".format(bucket_name)
-                response2 = AWS_S3_CLIENT.get_bucket_location(
-                    Bucket=bucket_name)
+                response2 = aws_s3_client.get_bucket_location(Bucket=bucket_name)
                 if response2:
-                    LocationConstraint = response2.get('LocationConstraint')
+                    LocationConstraint = response2.get("LocationConstraint")
                     if LocationConstraint:
                         if LocationConstraint in UnauthorizedRegionsList:
                             if results.get(LocationConstraint):
                                 results[LocationConstraint].append(
-                                    {
-                                        'Arn': bucket_arn,
-                                        'Id': bucket.get('Name'),
-                                        'ResourceType': ResourceType
-                                    }
+                                    {"Arn": bucket_arn, "Id": bucket.get("Name"), "ResourceType": ResourceType}
                                 )
                             else:
                                 results[LocationConstraint] = [
-                                    {
-                                        'Arn': bucket_arn,
-                                        'Id': bucket.get('Name'),
-                                        'ResourceType': ResourceType
-                                    }
+                                    {"Arn": bucket_arn, "Id": bucket.get("Name"), "ResourceType": ResourceType}
                                 ]
                     else:
-                        if results.get('global'):
-                            results['global'].append(
-                                {
-                                    'Arn': bucket_arn,
-                                    'Id': bucket.get('Name'),
-                                    'ResourceType': ResourceType
-                                }
+                        if results.get("global"):
+                            results["global"].append(
+                                {"Arn": bucket_arn, "Id": bucket.get("Name"), "ResourceType": ResourceType}
                             )
                         else:
-                            results['global'] = [
-                                {
-                                    'Arn': bucket_arn,
-                                    'Id': bucket.get('Name'),
-                                    'ResourceType': ResourceType
-                                }
+                            results["global"] = [
+                                {"Arn": bucket_arn, "Id": bucket.get("Name"), "ResourceType": ResourceType}
                             ]
                 else:
                     logger.info("Unable to get_bucket_location '{}'".format(bucket_name))
         else:
             logger.info("Unable to list buckets")
     except botocore.exceptions.ClientError as ex:
-        if 'AccessDenied' in ex.response['Error']['Code']:
-            logger.error('AccessDenied when trying to list_buckets or get_bucket_location - get_s3_resources')
+        if "AccessDenied" in ex.response["Error"]["Code"]:
+            logger.error("AccessDenied when trying to list_buckets or get_bucket_location - get_s3_resources")
             pass
         else:
             raise ex
     return results
 
 
-def get_non_authorized_resources_in_region(RegionName=None, event=None):
+def get_non_authorized_resources_in_region(
+    unauthorized_resource_types: dict[str, list[str]],
+    aws_resource_explorer_to_config_resource_types: dict[str, str],
+    resource_explorer_client,
+    aws_account_id,
+    execution_role_name,
+    RegionName=None,
+    event=None,
+    interval_between_api_calls=0.05,
+    page_size=25,
+):
     results = []
     if not RegionName:
-        logger.error(
-            'Empty region provided for get_non_authorized_resources_in_region call.')
+        logger.error("Empty region provided for get_non_authorized_resources_in_region call.")
         return None
     bResourceExplorerAvailable = False
     ResourceExplorerIndexRegion = RegionName
     try:
-        resource_explorer_indexes = arex_get_indexes(
-            AWS_RESOURCEEXPLORER_CLIENT, "AGGREGATOR")
+        resource_explorer_indexes = resource_explorer_get_indexes(
+            resource_explorer_client, "AGGREGATOR", page_size, interval_between_api_calls
+        )
         if resource_explorer_indexes:
-            ResourceExplorerIndexRegion = resource_explorer_indexes[0].get(
-                'Region', '')
+            ResourceExplorerIndexRegion = resource_explorer_indexes[0].get("Region", "")
             bResourceExplorerAvailable = True
         else:
-            resource_explorer_indexes = arex_get_indexes(
-                AWS_RESOURCEEXPLORER_CLIENT, index_type=None)
+            resource_explorer_indexes = resource_explorer_get_indexes(
+                resource_explorer_client, None, page_size, interval_between_api_calls
+            )
             for index in resource_explorer_indexes:
-                if index.get('Region', '') == RegionName:
+                if index.get("Region", "") == RegionName:
                     ResourceExplorerIndexRegion == RegionName
                     bResourceExplorerAvailable = True
                     break
     except botocore.exceptions.ClientError as ex:
-        logger.error('Error trying to list_indexes for Resource Explorer: {}'.format(ex))
+        logger.error("Error trying to list_indexes for Resource Explorer: {}".format(ex))
         pass
-    for service in UNAUTHORIZED_RESOURCE_TYPES.keys():
-        query_string = 'service:{} region:{}'.format(
-            service, ResourceExplorerIndexRegion)
+    for service in unauthorized_resource_types.keys():
+        query_string = "service:{} region:{}".format(service, ResourceExplorerIndexRegion)
         ResourceList = []
         TempResources = []
-        if service == 'qldb':
-            ResourceList = get_qldb_resources(RegionName, event=event)
-        elif service == 's3':
+        if service == "qldb":
+            ResourceList = get_qldb_resources(aws_account_id, execution_role_name, RegionName, event=event)
+        elif service == "s3":
             continue
         else:
             if not bResourceExplorerAvailable:
-                logger.info('Skipping service {} in region {} as Resource Explorer is not available.'.format(service, RegionName))
+                logger.info(
+                    "Skipping service {} in region {} as Resource Explorer is not available.".format(
+                        service, RegionName
+                    )
+                )
                 continue
             try:
-                response = AWS_RESOURCEEXPLORER_CLIENT.search(
+                response = resource_explorer_client.search(
                     QueryString=query_string,
                 )
                 if response:
-                    if response.get('Count').get('Complete') == False and response.get('Count').get('TotalResources') == 1000:
+                    if (
+                        response.get("Count").get("Complete") == False
+                        and response.get("Count").get("TotalResources") == 1000
+                    ):
                         logger.error(
-                            "Resource Explorer search limit reached when trying to query region '{}' for service '{}'. More than 1000 resources")
-                        TempResources = response.get('Resources')
+                            "Resource Explorer search limit reached when trying to query region '{}' for service '{}'. More than 1000 resources"
+                        )
+                        TempResources = response.get("Resources")
                         if TempResources:
                             logger.debug("'{}' resources found".format(len(TempResources)))
                             logger.debug(TempResources)
-                            ResourceList.extend(parse_resource_explorer_result(
-                                Resources=TempResources, Service=service))
+                            ResourceList.extend(
+                                parse_resource_explorer_result(
+                                    TempResources,
+                                    service,
+                                    unauthorized_resource_types,
+                                    aws_resource_explorer_to_config_resource_types,
+                                )
+                            )
                         continue
                     else:
-                        TempResources = response.get('Resources')
+                        TempResources = response.get("Resources")
                         if TempResources:
                             logger.debug("'{}' resources found".format(len(TempResources)))
                             logger.debug(TempResources)
-                            ResourceList.extend(parse_resource_explorer_result(
-                                Resources=TempResources, Service=service))
-                        NextToken = response.get('NextToken')
-                        while NextToken:
-                            response = AWS_RESOURCEEXPLORER_CLIENT.search(
-                                QueryString=query_string,
-                                NextToken=NextToken
+                            ResourceList.extend(
+                                parse_resource_explorer_result(
+                                    TempResources,
+                                    service,
+                                    unauthorized_resource_types,
+                                    aws_resource_explorer_to_config_resource_types,
+                                )
                             )
+                        NextToken = response.get("NextToken")
+                        while NextToken:
+                            response = resource_explorer_client.search(QueryString=query_string, NextToken=NextToken)
                             if response:
-                                ResourceList.extend(parse_resource_explorer_result(
-                                    Resources=response.get('Resources'), Service=service))
-                                NextToken = response.get('NextToken')
+                                ResourceList.extend(
+                                    parse_resource_explorer_result(
+                                        response.get("Resources"),
+                                        service,
+                                        unauthorized_resource_types,
+                                        aws_resource_explorer_to_config_resource_types,
+                                    )
+                                )
+                                NextToken = response.get("NextToken")
             except botocore.exceptions.ClientError as ex:
-                if 'UnauthorizedException' in ex.response['Error']['Code']:
-                    logger.info("UnauthorizedException when trying to use Resource Explorer in region '{}'".format(RegionName))
+                if "UnauthorizedException" in ex.response["Error"]["Code"]:
+                    logger.info(
+                        "UnauthorizedException when trying to use Resource Explorer in region '{}'".format(RegionName)
+                    )
                     pass
                 else:
                     raise ex
@@ -353,242 +286,176 @@ def get_non_authorized_resources_in_region(RegionName=None, event=None):
     return results
 
 
-def build_evaluation(resource_id, compliance_type, event, resource_type=DEFAULT_RESOURCE_TYPE, annotation=None):
-    """Form an evaluation as a dictionary. Usually suited to report on scheduled rules.
-    Keyword arguments:
-    resource_id -- the unique id of the resource to report
-    compliance_type -- either COMPLIANT, NON_COMPLIANT or NOT_APPLICABLE
-    event -- the event variable given in the lambda handler
-    resource_type -- the CloudFormation resource type (or AWS::::Account) to report on the rule (default DEFAULT_RESOURCE_TYPE)
-    annotation -- an annotation to be added to the evaluation (default None)
-    """
-    eval_cc = {}
-    if annotation:
-        eval_cc['Annotation'] = annotation
-    eval_cc['ComplianceResourceType'] = resource_type
-    eval_cc['ComplianceResourceId'] = resource_id
-    eval_cc['ComplianceType'] = compliance_type
-    eval_cc['OrderingTimestamp'] = str(json.loads(event['invokingEvent'])['notificationCreationTime'])
-    return eval_cc
-
-
-def get_asea_tagged_resource_arns(unauthorized_region_list: list, event: dict):
+def get_asea_tagged_resource_arns(
+    aws_account_id,
+    execution_role_name,
+    unauthorized_region_list: list,
+    unauthorized_resource_types: dict[str, list[str]],
+):
     result = []
-    tag_filters = [
-        {
-            'Key': 'Accelerator',
-            'Values': [
-                'ASEA',
-                'PBMM'
-            ]
-        }
-    ]
+    tag_filters = [{"Key": "Accelerator", "Values": ["ASEA", "PBMM"]}]
     resource_type_filters = []
-    for service in UNAUTHORIZED_RESOURCE_TYPES.keys():
-        resource_type_filters.extend(UNAUTHORIZED_RESOURCE_TYPES.get(service))
+    for service in unauthorized_resource_types.keys():
+        resource_type_filters.extend(unauthorized_resource_types.get(service))
     for region in unauthorized_region_list:
         try:
-            AWS_RESOURCEGROUPSTAGGINGAPI_CLIENT = get_client(
-                'resourcegroupstaggingapi', event, region)
-            response = AWS_RESOURCEGROUPSTAGGINGAPI_CLIENT.get_resources(
+            aws_resource_groups_tagging_api_client = get_client(
+                "resourcegroupstaggingapi", aws_account_id, execution_role_name, region=region
+            )
+            response = aws_resource_groups_tagging_api_client.get_resources(
                 ResourceTypeFilters=resource_type_filters,
                 TagFilters=tag_filters,
             )
             bMoreData = True
             while bMoreData:
                 if response:
-                    for resource in response.get('ResourceTagMappingList'):
-                        result.append(resource.get('ResourceARN'))
-                    if response.get('PaginationToken'):
-                        response = AWS_RESOURCEGROUPSTAGGINGAPI_CLIENT.get_resources(
-                            PaginationToken=response.get('PaginationToken'),
+                    for resource in response.get("ResourceTagMappingList"):
+                        result.append(resource.get("ResourceARN"))
+                    if response.get("PaginationToken"):
+                        response = aws_resource_groups_tagging_api_client.get_resources(
+                            PaginationToken=response.get("PaginationToken"),
                             ResourceTypeFilters=resource_type_filters,
                             TagFilters=tag_filters,
                         )
                     else:
                         bMoreData = False
         except botocore.exceptions.ClientError as ex:
-            logger.error('Failed to get_asea_tagged_resource_arns with exception {}'.format(ex))
+            logger.error("Failed to get_asea_tagged_resource_arns with exception {}".format(ex))
             pass
     return result
 
 
 def lambda_handler(event, context):
-    global logger
-    logger = logging.getLogger()
-    logger.setLevel(logging.INFO)
-    global AWS_CONFIG_CLIENT
-    global AWS_S3_CLIENT
-    global AWS_EC2_CLIENT
-    global AWS_RESOURCEEXPLORER_CLIENT
-    global ALLOWED_REGIONS
-    global UNAUTHORIZED_RESOURCE_TYPES
-    global AWS_RESOURCE_EXPLORER_TO_CONFIG_RESOURCE_TYPES
-    global AWS_ACCOUNT_ID
-    global EXECUTION_ROLE_NAME
-    global AUDIT_ACCOUNT_ID
-    global ASEA_RESOURCE_ARNS
-    global PAGE_SIZE
-    global INTERVAL_BETWEEN_API_CALLS
-    PAGE_SIZE = 25
-    INTERVAL_BETWEEN_API_CALLS = 0.05
-    AWS_RESOURCE_EXPLORER_TO_CONFIG_RESOURCE_TYPES = {
-        'ec2:instance': 'AWS::EC2::Instance',
-        'ec2:dedicated-host': 'AWS::EC2::Host',
-        'ec2:volume': 'AWS::EC2::Volume',
-        'dynamodb:table': 'AWS::DynamoDB::Table',
-        'ecs:cluster': 'AWS::ECS::Cluster',
-        'ecs:service': 'AWS::ECS::Service',
-        'ecs:task-definition': 'AWS::ECS::TaskDefinition',
-        'lambda:function': 'AWS::Lambda::Function',
-        'qldb:ledger': 'AWS::QLDB::Ledger',
-        'rds:cluster': 'AWS::RDS::DBCluster',
-        'rds:cluster-snapshot': 'AWS::RDS::DBClusterSnapshot',
-        'rds:db': 'AWS::RDS::DBInstance',
-        'rds:snapshot': 'AWS::RDS::DBSnapshot',
-        'redshift:cluster': 'AWS::Redshift::Cluster',
-        'redshift:snapshot': 'AWS::Redshift::ClusterSnapshot',
-        's3:bucket': 'AWS::S3::Bucket',
-    }
-    UNAUTHORIZED_RESOURCE_TYPES = {
-        'ec2': [
-            'ec2:instance',
-            'ec2:dedicated-host',
-            'ec2:volume'
-        ],
-        'dynamodb': [
-            'dynamodb:table'
-        ],
-        'ecs': [
-            'ecs:cluster',
-            'ecs:service',
-            'ecs:task-definition'
-        ],
-        'qldb': [
-            'qldb:ledger'
-        ],
-        'rds': [
-            'rds:cluster',
-            'rds:cluster-snapshot',
-            'rds:db',
-            'rds:snapshot'
-        ],
-        'redshift': [
-            'redshift:cluster',
-            'redshift:snapshot'
-        ],
-        's3': [
-            's3:bucket'
-        ]
-    }
-    if os.environ.get('ALLOWED_REGIONS'):
-        ALLOWED_REGIONS = os.environ.get('ALLOWED_REGIONS').split(',')
-        if ALLOWED_REGIONS == ['']:
-            ALLOWED_REGIONS == ['ca-central-1']
-    else:
-        ALLOWED_REGIONS = ['ca-central-1']
+    """
+    This function is the main entry point for Lambda.
+
+    Keyword arguments:
+
+    event -- the event variable given in the lambda handler
+
+    context -- the context variable given in the lambda handler
+    """
+    logger.info("Received Event: %s", json.dumps(event, indent=2))
+
+    invoking_event = json.loads(event["invokingEvent"])
+    if not is_scheduled_notification(invoking_event["messageType"]):
+        logger.error("Skipping assessments as this is not a scheduled invocation")
+        return
+
+    rule_parameters = check_required_parameters(json.loads(event.get("ruleParameters", "{}")), ["ExecutionRoleName"])
+    execution_role_name = rule_parameters.get("ExecutionRoleName")
+    audit_account_id = rule_parameters.get("AuditAccountID", "")
+    aws_account_id = event["accountId"]
+    is_not_audit_account = aws_account_id != audit_account_id
+
     evaluations = []
-    rule_parameters = {}
-    invoking_event = json.loads(event['invokingEvent'])
-    AWS_ACCOUNT_ID = event['accountId']
-    if 'ruleParameters' in event:
-        rule_parameters = json.loads(event['ruleParameters'])
-    valid_rule_parameters = evaluate_parameters(rule_parameters)
-    if 'ExecutionRoleName' in valid_rule_parameters:
-        EXECUTION_ROLE_NAME = valid_rule_parameters['ExecutionRoleName']
+
+    page_size = 25
+    interval_between_api_calls = 0.05
+    aws_resource_explorer_to_config_resource_types = {
+        "ec2:instance": "AWS::EC2::Instance",
+        "ec2:dedicated-host": "AWS::EC2::Host",
+        "ec2:volume": "AWS::EC2::Volume",
+        "dynamodb:table": "AWS::DynamoDB::Table",
+        "ecs:cluster": "AWS::ECS::Cluster",
+        "ecs:service": "AWS::ECS::Service",
+        "ecs:task-definition": "AWS::ECS::TaskDefinition",
+        "lambda:function": "AWS::Lambda::Function",
+        "qldb:ledger": "AWS::QLDB::Ledger",
+        "rds:cluster": "AWS::RDS::DBCluster",
+        "rds:cluster-snapshot": "AWS::RDS::DBClusterSnapshot",
+        "rds:db": "AWS::RDS::DBInstance",
+        "rds:snapshot": "AWS::RDS::DBSnapshot",
+        "redshift:cluster": "AWS::Redshift::Cluster",
+        "redshift:snapshot": "AWS::Redshift::ClusterSnapshot",
+        "s3:bucket": "AWS::S3::Bucket",
+    }
+    unauthorized_resource_types = {
+        "ec2": ["ec2:instance", "ec2:dedicated-host", "ec2:volume"],
+        "dynamodb": ["dynamodb:table"],
+        "ecs": ["ecs:cluster", "ecs:service", "ecs:task-definition"],
+        "qldb": ["qldb:ledger"],
+        "rds": ["rds:cluster", "rds:cluster-snapshot", "rds:db", "rds:snapshot"],
+        "redshift": ["redshift:cluster", "redshift:snapshot"],
+        "s3": ["s3:bucket"],
+    }
+
+    if os.environ.get("ALLOWED_REGIONS"):
+        allowed_regions = os.environ.get("ALLOWED_REGIONS").split(",")
+        if allowed_regions == [""]:
+            allowed_regions == ["ca-central-1"]
     else:
-        EXECUTION_ROLE_NAME = 'SSCGCLambdaExecutionRole'
-    if 'AuditAccountID' in valid_rule_parameters:
-        AUDIT_ACCOUNT_ID = valid_rule_parameters['AuditAccountID']
-    else:
-        AUDIT_ACCOUNT_ID = ''
-    complianceStatus = 'NOT_APPLICABLE'
-    complianceAnnotation = ''
-    AWS_CONFIG_CLIENT = get_client('config', event)
-    AWS_EC2_CLIENT = get_client('ec2', event)
-    AWS_RESOURCEEXPLORER_CLIENT = get_client('resource-explorer-2', event)
-    if is_scheduled_notification(invoking_event['messageType']):
-        EnabledRegionsList = get_enabled_regions()
-        logger.info('Regions enabled or that do not require opt-in: {}'.format(EnabledRegionsList))
-        UnauthorizedRegionsList = []
-        for region in EnabledRegionsList:
-            if region not in ALLOWED_REGIONS:
-                UnauthorizedRegionsList.append(region)
-        logger.debug("UnauthorizedRegionsList: {}".format(UnauthorizedRegionsList))
-        ASEA_RESOURCE_ARNS = get_asea_tagged_resource_arns(
-            UnauthorizedRegionsList, event)
-        UnauthorizedResourceList = {}
-        for region in UnauthorizedRegionsList:
-            TempList = []
-            TempList = get_non_authorized_resources_in_region(
-                RegionName=region, event=event)
-            if TempList:
-                UnauthorizedResourceList.update({
-                    region: TempList
-                })
-        S3UnauthorizedResourceList = get_s3_resources(
-            event, UnauthorizedRegionsList)
-        if S3UnauthorizedResourceList:
-            for region in S3UnauthorizedResourceList.keys():
-                if UnauthorizedResourceList.get(region):
-                    UnauthorizedResourceList[region].extend(
-                        S3UnauthorizedResourceList[region])
+        allowed_regions = ["ca-central-1"]
+
+    complianceStatus = "NOT_APPLICABLE"
+    annotation = ""
+    aws_config_client = get_client("config", aws_account_id, execution_role_name)
+    aws_ec2_client = get_client("ec2", aws_account_id, execution_role_name)
+    aws_resource_explorer_client = get_client("resource-explorer-2", aws_account_id, execution_role_name)
+    aws_s3_client = get_client("s3", aws_account_id, execution_role_name)
+
+    EnabledRegionsList = get_enabled_regions(aws_ec2_client)
+    logger.info("Regions enabled or that do not require opt-in: {}".format(EnabledRegionsList))
+    UnauthorizedRegionsList = []
+    for region in EnabledRegionsList:
+        if region not in allowed_regions:
+            UnauthorizedRegionsList.append(region)
+    logger.debug("UnauthorizedRegionsList: {}".format(UnauthorizedRegionsList))
+    asea_resource_arns = get_asea_tagged_resource_arns(
+        aws_account_id, execution_role_name, UnauthorizedRegionsList, unauthorized_resource_types
+    )
+    UnauthorizedResourceList = {}
+    for region in UnauthorizedRegionsList:
+        TempList = []
+        TempList = get_non_authorized_resources_in_region(
+            unauthorized_resource_types,
+            aws_resource_explorer_to_config_resource_types,
+            aws_resource_explorer_client,
+            aws_account_id,
+            execution_role_name,
+            region,
+            event,
+            interval_between_api_calls,
+            page_size,
+        )
+        if TempList:
+            UnauthorizedResourceList.update({region: TempList})
+    S3UnauthorizedResourceList = get_s3_resources(aws_s3_client, UnauthorizedRegionsList)
+    if S3UnauthorizedResourceList:
+        for region in S3UnauthorizedResourceList.keys():
+            if UnauthorizedResourceList.get(region):
+                UnauthorizedResourceList[region].extend(S3UnauthorizedResourceList[region])
+            else:
+                UnauthorizedResourceList[region] = S3UnauthorizedResourceList[region]
+    bOneNonCompliantResourceReported = False
+    if UnauthorizedResourceList:
+        for region in UnauthorizedResourceList.keys():
+            for resource in UnauthorizedResourceList.get(region):
+                if is_allow_listed_resource(resource.get("Id", ""), resource.get("Arn", ""), asea_resource_arns):
+                    complianceStatus = "COMPLIANT"
+                    annotation = "Allow listed resource found in unauthorized region - {}".format(region)
                 else:
-                    UnauthorizedResourceList[region] = S3UnauthorizedResourceList[region]
-        if UnauthorizedResourceList:
-            bOneNonCompliantResourceReported = False
-            for region in UnauthorizedResourceList.keys():
-                for resource in UnauthorizedResourceList.get(region):
-                    if is_allow_listed_resource(resource.get('Id', ''), resource.get('Arn', '')):
-                        complianceStatus = 'COMPLIANT'
-                        complianceAnnotation = "Allow listed resource found in unauthorized region - {}".format(region)
-                    else:
-                        bOneNonCompliantResourceReported = True
-                        complianceStatus = 'NON_COMPLIANT'
-                        complianceAnnotation = "Resource found in unauthorized region - {}".format(region)
-                    evaluations.append(
-                        build_evaluation(
-                            resource.get('Id', resource.get('Arn', '')),
-                            complianceStatus,
-                            event,
-                            resource.get('ResourceType', ''),
-                            annotation=complianceAnnotation
-                        )
-                    )
-            if bOneNonCompliantResourceReported:
-                complianceStatus = 'NON_COMPLIANT'
-                complianceAnnotation = 'Resources found in unauthorized regions.'
+                    bOneNonCompliantResourceReported = True
+                    complianceStatus = "NON_COMPLIANT"
+                    annotation = "Resource found in unauthorized region - {}".format(region)
                 evaluations.append(
                     build_evaluation(
-                        event['accountId'],
+                        resource.get("Id", resource.get("Arn", "")),
                         complianceStatus,
                         event,
-                        resource_type=DEFAULT_RESOURCE_TYPE,
-                        annotation=complianceAnnotation
+                        resource.get("ResourceType", ""),
+                        annotation,
                     )
                 )
-        else:
-            complianceStatus = 'COMPLIANT'
-            complianceAnnotation = 'No resources found in unauthorized regions.'
-            evaluations.append(build_evaluation(event['accountId'], complianceStatus, event, resource_type=DEFAULT_RESOURCE_TYPE, annotation=complianceAnnotation))
-        
-        number_of_evaluations = len(evaluations)
-        if number_of_evaluations > 0:
-            MAX_EVALUATIONS_PER_CALL = 100
-            rounds = number_of_evaluations // MAX_EVALUATIONS_PER_CALL
-            logger.info('Reporting {} evaluations in {} rounds.'.format(number_of_evaluations, rounds+1))
-            if number_of_evaluations > MAX_EVALUATIONS_PER_CALL:
-                for round in range(rounds):
-                    start = round * MAX_EVALUATIONS_PER_CALL
-                    end = ((round+1) * MAX_EVALUATIONS_PER_CALL)
-                    response = AWS_CONFIG_CLIENT.put_evaluations(Evaluations=evaluations[start:end], ResultToken=event['resultToken'])
-                    time.sleep(0.3)
-                start = end
-                end = number_of_evaluations
-                response = AWS_CONFIG_CLIENT.put_evaluations(
-                    Evaluations=evaluations[start:end], ResultToken=event['resultToken'])
-            else:
-                response = AWS_CONFIG_CLIENT.put_evaluations(Evaluations=evaluations, ResultToken=event['resultToken'])
-        
+
+    if bOneNonCompliantResourceReported:
+        complianceStatus = "NON_COMPLIANT"
+        annotation = "Resources found in unauthorized regions."
+        evaluations.append(build_evaluation(aws_account_id, complianceStatus, event, annotation=annotation))
     else:
-        logger.info('Invokation was not part of schedule. Skipping checks.')
+        complianceStatus = "COMPLIANT"
+        annotation = "No resources found in unauthorized regions."
+        evaluations.append(build_evaluation(aws_account_id, complianceStatus, event, annotation=annotation))
+
+    logger.info(f"{complianceStatus}: {annotation}")
+    submit_evaluations(aws_config_client, event["resultToken"], evaluations)

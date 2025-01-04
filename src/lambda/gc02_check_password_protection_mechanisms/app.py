@@ -1,272 +1,90 @@
 """ GC01 - Check Root MFA
     https://canada-ca.github.io/cloud-guardrails/EN/01_Protect-Root-Account.html
 """
+
 import json
 import logging
-import time
-import re
 
-import boto3
-import botocore
 import botocore.exceptions
+
+from utils import is_scheduled_notification, check_required_parameters
+from boto_util.client import get_client
+from boto_util.config import build_evaluation, submit_evaluations
+from boto_util.iam import account_has_federated_users
+from boto_util.guard_duty import guard_duty_is_enabled
+from boto_util.cloud_trail import trails_are_logging, list_all_cloud_trails
+
 
 # Logging setup
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
 
-# Set to True to get the lambda to assume the Role attached on the Config Service
-ASSUME_ROLE_MODE = True
-DEFAULT_RESOURCE_TYPE = "AWS::::Account"
 
-
-# This gets the client after assuming the Config service role
-# either in the same AWS account or cross-account.
-def get_client(service, event):
-    """Return the service boto client. It should be used instead of directly calling the client.
-    Keyword arguments:
-    service -- the service name used for calling the boto.client()
-    event -- the event variable given in the lambda handler
-    """
-    if not ASSUME_ROLE_MODE:
-        return boto3.client(service)
-    execution_role_arn = f"arn:aws:iam::{AWS_ACCOUNT_ID}:role/{EXECUTION_ROLE_NAME}"
-    credentials = get_assume_role_credentials(execution_role_arn)
-    return boto3.client(
-        service,
-        aws_access_key_id=credentials["AccessKeyId"],
-        aws_secret_access_key=credentials["SecretAccessKey"],
-        aws_session_token=credentials["SessionToken"],
-    )
-
-
-def get_assume_role_credentials(role_arn):
-    """Returns the temporary credentials from ASSUME_ROLE_MODE role.
-    Keyword arguments:
-    role_arn -- the ARN of the role to assume
-    """
-    sts_client = boto3.client("sts")
-    try:
-        assume_role_response = sts_client.assume_role(
-            RoleArn=role_arn,
-            RoleSessionName="configLambdaExecution"
-        )
-        return assume_role_response["Credentials"]
-    except botocore.exceptions.ClientError as ex:
-        # Scrub error message for any internal account info leaks
-        if "AccessDenied" in ex.response["Error"]["Code"]:
-            ex.response["Error"]["Message"] = "AWS Config does not have permission to assume the IAM role."
-        else:
-            ex.response["Error"]["Message"] = "InternalError"
-            ex.response["Error"]["Code"] = "InternalError"
-        raise ex
-
-
-def is_scheduled_notification(message_type):
-    """Check whether the message is a ScheduledNotification or not.
-    Keyword arguments:
-    message_type -- the message type
-    """
-    return message_type == "ScheduledNotification"
-
-
-def evaluate_parameters(rule_parameters):
-    """Evaluate the rule parameters dictionary.
-    Keyword arguments:
-    rule_parameters -- the Key/Value dictionary of the Config rule parameters
-    """
-    return rule_parameters
-
-
-# This generate an evaluation for config
-def build_evaluation(
-    resource_id,
-    compliance_type,
-    event,
-    resource_type=DEFAULT_RESOURCE_TYPE,
-    annotation=None,
-):
-    """Form an evaluation as a dictionary. Usually suited to report on scheduled rules.
-    Keyword arguments:
-    resource_id -- the unique id of the resource to report
-    compliance_type -- either COMPLIANT, NON_COMPLIANT or NOT_APPLICABLE
-    event -- the event variable given in the lambda handler
-    resource_type -- the CloudFormation resource type (or AWS::::Account)
-    to report on the rule (default DEFAULT_RESOURCE_TYPE)
-    annotation -- an annotation to be added to the evaluation (default None)
-    """
-    eval_cc = {}
-    if annotation:
-        eval_cc["Annotation"] = annotation
-    eval_cc["ComplianceResourceType"] = resource_type
-    eval_cc["ComplianceResourceId"] = resource_id
-    eval_cc["ComplianceType"] = compliance_type
-    eval_cc["OrderingTimestamp"] = str(
-        json.loads(event["invokingEvent"])["notificationCreationTime"]
-    )
-    return eval_cc
-
-def account_has_federated_users(iam_client) -> bool:
-    response = iam_client.list_open_id_connect_providers()
-    if not response:
-        raise Exception("Request to list OIDC providers returned an invalid response")
-    providers = response.get("OpenIDConnectProviderList", [])
-    if providers:
-        return True
-
-    response = iam_client.list_saml_providers()
-    if not response:
-        raise Exception("Request to list SAML providers returned an invalid response")
-    providers = response.get("SAMLProviderList", [])
-    if providers:
-        return True
-
-    return False
-
-def is_guard_duty_enabled():
-    try:
-        response = AWS_GUARD_DUTY_CLIENT.list_detectors()
-        detectorIds = response.get("DetectorIds", [])
-        return len(detectorIds) > 0
-    except botocore.exceptions.ClientError as ex:
-        if "BadRequest" in ex.response['Error']['Code']:
-            ex.response['Error']['Message'] = "Failed to fetch detector ids for GuardDuty. Bad Request."
-        else:
-            ex.response["Error"]["Message"] = "InternalError"
-            ex.response["Error"]["Code"] = "InternalError"
-            
-        raise ex
-    
-def list_cloudtrails():
-    """Fetches a list of all trails in the account"""
-    try:
-        trails = []
-        next_token = None
-        while True:
-            response = AWS_CLOUDTRAIL_CLIENT.list_trails(NextToken=next_token) if next_token else AWS_CLOUDTRAIL_CLIENT.list_trails()
-            trails = trails + response.get("Trails")
-            next_token = response.get("NextToken")
-            if not next_token:
-                break
-    except botocore.exceptions.ClientError as ex:
-        if "UnsupportedOperationException" in ex.response['Error']['Code']:
-            ex.response["Error"]["Message"] = "list_trails operation not supported by CloudTrails."
-        elif "OperationNotPermittedException" in ex.response['Error']['Code']:
-            ex.response["Error"]["Message"] = "list_trails operation not permitted."
-        else:
-            ex.response["Error"]["Message"] = "InternalError"
-            ex.response["Error"]["Code"] = "InternalError"
-            
-        raise ex
-
-def trails_are_logging(trails):
-    """Checks the status of the fetched trails"""    
-    for t in trails:
-        try:
-            trail_arn = t.get("TrailARN")
-            status = AWS_CLOUDTRAIL_CLIENT.get_trail_status(Name=trail_arn)
-            if status.get("IsLogging", False):
-                return False
-        except botocore.exceptions.ClientError as ex:
-            logger.error("Error while trying to fetch cloudtrail status.")
-            logger.error(ex)
-            raise ex
-    return True    
-    
-def trails_configured_for_iam_events(trails):
-    """Checks for a trails with the configuration required to capture IAM events and returns a filtered list"""    
+def filter_trails_configured_for_iam_events(cloudtrail_client, trails):
+    """Checks for a trails with the configuration required to capture IAM events and returns a filtered list"""
     filtered_trails = []
     for t in trails:
         try:
             trail_arn = t.get("TrailARN")
-            configuration = AWS_CLOUDTRAIL_CLIENT.get_trail(Name=trail_arn)
-            if configuration.get("IncludeGlobalServiceEvents", False) and configuration.get("IsMultiRegionTrail", False) and configuration.get("IsOrganizationTrail", False):
+            configuration = cloudtrail_client.get_trail(Name=trail_arn)
+            if (
+                configuration.get("IncludeGlobalServiceEvents", False)
+                and configuration.get("IsMultiRegionTrail", False)
+                and configuration.get("IsOrganizationTrail", False)
+            ):
                 filtered_trails.append(t)
         except botocore.exceptions.ClientError as ex:
             logger.error("Error while trying to fetch cloudtrail configuration.")
             logger.error(ex)
             raise ex
-    return filtered_trails  
+    return filtered_trails
 
-def is_cloudtrail_enabled():
+
+def is_cloudtrail_enabled(cloudtrail_client):
     """Checks if cloudtrail is enabled to watch for iam login events"""
-    trails = trails_configured_for_iam_events(list_cloudtrails())
-    return len(trails) > 0 and trails_are_logging(trails)
-        
+    trails = filter_trails_configured_for_iam_events(cloudtrail_client, list_all_cloud_trails(cloudtrail_client))
+    return len(trails) > 0 and trails_are_logging(cloudtrail_client, trails)
+
+
 def lambda_handler(event, context):
-    """This function is the main entry point for Lambda.
+    """
+    This function is the main entry point for Lambda.
+
     Keyword arguments:
+
     event -- the event variable given in the lambda handler
+
     context -- the context variable given in the lambda handler
     """
-    logger.debug("Received event: %s", event)
-
-    global AWS_CONFIG_CLIENT
-    global AWS_GUARD_DUTY_CLIENT
-    global AWS_CLOUDTRAIL_CLIENT
-    global AWS_ACCOUNT_ID
-    global EXECUTION_ROLE_NAME
-    global AUDIT_ACCOUNT_ID
-
-    evaluations = []
-    rule_parameters = {}
-    invoking_event = json.loads(event["invokingEvent"])
     logger.info("Received Event: %s", json.dumps(event, indent=2))
 
-    # parse parameters
-    AWS_ACCOUNT_ID = event["accountId"]
+    invoking_event = json.loads(event["invokingEvent"])
+    if not is_scheduled_notification(invoking_event["messageType"]):
+        logger.error("Skipping assessments as this is not a scheduled invocation")
+        return
 
-    if "ruleParameters" in event:
-        rule_parameters = json.loads(event["ruleParameters"])
+    rule_parameters = check_required_parameters(json.loads(event.get("ruleParameters", "{}")), ["ExecutionRoleName"])
+    execution_role_name = rule_parameters.get("ExecutionRoleName")
+    audit_account_id = rule_parameters.get("AuditAccountID", "")
+    aws_account_id = event["accountId"]
+    is_not_audit_account = aws_account_id != audit_account_id
 
-    valid_rule_parameters = evaluate_parameters(rule_parameters)
+    evaluations = []
 
-    if "ExecutionRoleName" in valid_rule_parameters:
-        EXECUTION_ROLE_NAME = valid_rule_parameters["ExecutionRoleName"]
-    else:
-        EXECUTION_ROLE_NAME = "AWSA-GCLambdaExecutionRole"
+    aws_config_client = get_client("config", aws_account_id, execution_role_name)
+    aws_iam_client = get_client("iam", aws_account_id, execution_role_name)
+    aws_guard_duty_client = get_client("guardduty", aws_account_id, execution_role_name)
+    aws_cloudtrail_client = get_client("cloudtrail", aws_account_id, execution_role_name)
 
-    if "AuditAccountID" in valid_rule_parameters:
-        AUDIT_ACCOUNT_ID = valid_rule_parameters["AuditAccountID"]
-    else:
-        AUDIT_ACCOUNT_ID = ""
-
-    AWS_CONFIG_CLIENT = get_client("config", event)
-    AWS_GUARD_DUTY_CLIENT = get_client("guardduty", event)
-    AWS_CLOUDTRAIL_CLIENT = get_client("cloudtrail", event)
-    
-    # is this a scheduled invokation?
-    if is_scheduled_notification(invoking_event["messageType"]):
-        # is Guardduty enabled?
-        if is_guard_duty_enabled() or is_cloudtrail_enabled():
-            # yes, check if federated idp exists and add compliant evaluation
-            annotation = ""
-            
-            if account_has_federated_users(get_client("iam", event)):
-                annotation="Dependent on the compliance of Federated IdP"
-                
-            evaluations.append(
-                build_evaluation(
-                    AWS_ACCOUNT_ID,
-                    "COMPLIANT",
-                    event,
-                    DEFAULT_RESOURCE_TYPE,
-                    annotation
-                )
-            )
-        else:
-            # no, add non compliant evaluation
-            evaluations.append(
-                build_evaluation(
-                    AWS_ACCOUNT_ID,
-                    "NON_COMPLIANT",
-                    event,
-                    DEFAULT_RESOURCE_TYPE
-                )
-            )
-            
-        # Update AWS Config with the evaluation result
-        logging.info("AWS Config updating evaluations: %s", evaluations)
-        AWS_CONFIG_CLIENT.put_evaluations(
-            Evaluations=evaluations,
-            ResultToken=event["resultToken"]
+    if guard_duty_is_enabled(aws_guard_duty_client) or is_cloudtrail_enabled(aws_cloudtrail_client):
+        compliance_type = "COMPLIANT"
+        annotation = (
+            "Dependent on the compliance of Federated IdP" if account_has_federated_users(aws_iam_client) else ""
         )
+    else:
+        compliance_type = "NON_COMPLIANT"
+        annotation = "Neither Guard Duty nor Cloud Trail are enabled."
+
+    logger.info(f"{compliance_type}: {annotation}")
+    evaluations.append(build_evaluation(aws_account_id, compliance_type, event, annotation=annotation))
+    submit_evaluations(aws_config_client, event["resultToken"], evaluations)
