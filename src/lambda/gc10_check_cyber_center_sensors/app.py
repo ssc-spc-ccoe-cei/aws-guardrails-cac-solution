@@ -6,16 +6,16 @@ import logging
 
 import botocore.exceptions
 
-# Logging setup
-logger = logging.getLogger()
-logger.setLevel(logging.INFO)
-
 from utils import is_scheduled_notification, check_required_parameters
 from boto_util.client import get_client
 from boto_util.config import build_evaluation, submit_evaluations
 from boto_util.organizations import get_organizations_mgmt_account_id, organizations_list_all_accounts
 from boto_util.s3 import list_all_s3_buckets, get_lines_from_s3_file, check_s3_object_exists
 from boto_util.iam import list_all_iam_roles
+
+# Logging setup
+logger = logging.getLogger()
+logger.setLevel(logging.INFO)
 
 
 def s3_get_bucket_replication(s3_client, bucket_name) -> tuple[dict, None] | tuple[None, dict]:

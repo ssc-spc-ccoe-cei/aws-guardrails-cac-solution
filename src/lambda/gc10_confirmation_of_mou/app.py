@@ -5,14 +5,14 @@
 import json
 import logging
 
-# Logging setup
-logger = logging.getLogger()
-logger.setLevel(logging.INFO)
-
 from utils import is_scheduled_notification, check_required_parameters
 from boto_util.client import get_client
 from boto_util.config import build_evaluation, submit_evaluations
 from boto_util.s3 import check_s3_object_exists
+
+# Logging setup
+logger = logging.getLogger()
+logger.setLevel(logging.INFO)
 
 
 def lambda_handler(event, context):

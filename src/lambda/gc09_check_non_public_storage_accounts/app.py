@@ -4,14 +4,14 @@
 import json
 import logging
 
-# Logging setup
-logger = logging.getLogger()
-logger.setLevel(logging.INFO)
-
 from utils import is_scheduled_notification, check_required_parameters
 from boto_util.client import get_client
 from boto_util.config import build_evaluation, submit_evaluations
 from boto_util.s3 import list_all_s3_buckets
+
+# Logging setup
+logger = logging.getLogger()
+logger.setLevel(logging.INFO)
 
 
 def check_bucket_acls(s3_client, bucket_name, event):
