@@ -1483,6 +1483,24 @@ Resources:
                   !GetAtt GenerateEvidenceBucketName.EvidenceBucketName,
                   !Ref EvidenceBucketName,
                 ]
+        - ParameterName: PrivilegedUsersFilePath
+          ParameterValue: !Sub
+            - "s3://${ClientEvidenceBucket}/gc-01/privileged_users.txt"
+            - ClientEvidenceBucket:
+                !If [
+                  GenerateEvidenceBucketName,
+                  !GetAtt GenerateEvidenceBucketName.EvidenceBucketName,
+                  !Ref EvidenceBucketName,
+                ]
+        - ParameterName: NonPrivilegedUsersFilePath
+          ParameterValue: !Sub
+            - "s3://${ClientEvidenceBucket}/gc-01/non_privileged_users.txt"
+            - ClientEvidenceBucket:
+                !If [
+                  GenerateEvidenceBucketName,
+                  !GetAtt GenerateEvidenceBucketName.EvidenceBucketName,
+                  !Ref EvidenceBucketName,
+                ]
         - ParameterName: S3AccountManagementPlanPath
           ParameterValue: !Sub
             - "s3://${ClientEvidenceBucket}/gc-02/account_management_plan.pdf"
@@ -1504,6 +1522,15 @@ Resources:
         - ParameterName: S3AdminAccountListPath
           ParameterValue: !Sub
             - "s3://${ClientEvidenceBucket}/gc-02/admin_accounts.txt"
+            - ClientEvidenceBucket:
+                !If [
+                  GenerateEvidenceBucketName,
+                  !GetAtt GenerateEvidenceBucketName.EvidenceBucketName,
+                  !Ref EvidenceBucketName,
+                ]
+        - ParameterName: S3VpnIpRangesPath
+          ParameterValue: !Sub
+            - "s3://${ClientEvidenceBucket}/gc-03/vpn_ip_ranges.txt"
             - ClientEvidenceBucket:
                 !If [
                   GenerateEvidenceBucketName,
@@ -1612,33 +1639,6 @@ Resources:
         - ParameterName: S3EmergencyAccountAlertsRuleNamesPath
           ParameterValue: !Sub
             - "s3://${ClientEvidenceBucket}/gc-13/rule_names.txt"
-            - ClientEvidenceBucket:
-                !If [
-                  GenerateEvidenceBucketName,
-                  !GetAtt GenerateEvidenceBucketName.EvidenceBucketName,
-                  !Ref EvidenceBucketName,
-                ]
-        - ParameterName: S3VpnIpRangesPath
-          ParameterValue: !Sub
-            - "s3://${ClientEvidenceBucket}/gc-03/vpn_ip_ranges.txt"
-            - ClientEvidenceBucket:
-                !If [
-                  GenerateEvidenceBucketName,
-                  !GetAtt GenerateEvidenceBucketName.EvidenceBucketName,
-                  !Ref EvidenceBucketName,
-                ]
-        - ParameterName: PrivilegedUsersFilePath
-          ParameterValue: !Sub
-            - "s3://${ClientEvidenceBucket}/gc-01/privileged_users.txt"
-            - ClientEvidenceBucket:
-                !If [
-                  GenerateEvidenceBucketName,
-                  !GetAtt GenerateEvidenceBucketName.EvidenceBucketName,
-                  !Ref EvidenceBucketName,
-                ]
-        - ParameterName: NonPrivilegedUsersFilePath
-          ParameterValue: !Sub
-            - "s3://${ClientEvidenceBucket}/gc-01/non_privileged_users.txt"
             - ClientEvidenceBucket:
                 !If [
                   GenerateEvidenceBucketName,
