@@ -101,6 +101,92 @@ def check_rule_sns_target_is_setup(sns_client, event_bridge_client, rule, event)
         resource_type=resource_type,
         annotation="An Event rule that has a SNS topic and subscription to send notification emails is not setup or confirmed.",
     )
+    
+def check_alerts_flag_misuse(event, rule_parameters, aws_account_id, evaluations, aws_s3_client, aws_guard_duty_client, aws_event_bridge_client, aws_sns_client):
+    rules = list_all_event_bridge_rules(aws_event_bridge_client)
+
+    guard_duty_is_setup = False
+
+    if guard_duty_is_enabled(aws_guard_duty_client):
+            # yes, filter for rules that target GuardDuty findings
+        logger.info("GuardDuty is enabled.")
+        guardduty_rules = [r for r in rules if rule_event_pattern_matches_guard_duty_findings(r.get("EventPattern"))]
+        logger.info("GuardDuty rules count: %d", len(guardduty_rules))
+            # are there any rules that target GuardDuty findings
+        if len(guardduty_rules) > 0:
+                # yes, check that an SNS target is setup that sends an email notification to authorized personnel
+            for rule in guardduty_rules:
+                eval = check_rule_sns_target_is_setup(aws_sns_client, aws_event_bridge_client, rule, event)
+                if eval.get("ComplianceType") == "COMPLIANT":
+                    guard_duty_is_setup = True
+                evaluations.append(eval)
+            logger.info(
+                    "GuardDuty is setup and rules are setup to notify authorized personnel: %s", guard_duty_is_setup
+                )
+
+        # are the GuardDuty rules found to be COMPLIANT?
+    if guard_duty_is_setup:
+            # yes, add compliance evaluation for account
+        evaluations.append(
+                build_evaluation(
+                    aws_account_id,
+                    "COMPLIANT",
+                    event,
+                    annotation="GuardDuty is enabled, and a rule is setup to notify authorized personnel of GuardDuty findings.",
+                )
+            )
+    else:
+            # no, check for EventBridge rules with naming convention
+        rule_naming_convention_file_path = rule_parameters.get("RuleNamingConventionFilePath", "")
+        if not check_s3_object_exists(aws_s3_client, rule_naming_convention_file_path):
+            evaluations.append(
+                    build_evaluation(
+                        aws_account_id,
+                        "NON_COMPLIANT",
+                        event,
+                        annotation="No RuleNamingConventionFilePath input provided.",
+                    )
+                )
+        else:
+            evaluations = []
+            is_compliant = False
+            rule_naming_convention = read_s3_object(aws_s3_client, rule_naming_convention_file_path)
+            reg = re.compile(rule_naming_convention)
+            logger.info("Filtering rules by rule_naming_convention: %s", rule_naming_convention)
+            filtered_rules = [r for r in rules if reg.search(r.get("Name", ""))]
+
+                # are there any rules matching the naming convention?
+            if len(filtered_rules) > 0:
+                    # yes, check that an SNS target is setup that sends an email notification to authorized personnel
+                for rule in filtered_rules:
+                    eval = check_rule_sns_target_is_setup(aws_sns_client, aws_event_bridge_client, rule, event)
+                    if eval.get("ComplianceType") == "COMPLIANT":
+                        is_compliant = True
+                        evaluations.append(eval)
+
+                # are EventBridge rules setup to notify authorized personnel of misuse?
+            if is_compliant:
+                    # yes, append COMPLIANT results for account
+                evaluations.append(
+                        build_evaluation(
+                            aws_account_id,
+                            "COMPLIANT",
+                            event,
+                            annotation="EventBridge rules have been setup to notify authorized personnel of misuse or suspicious activity.",
+                        )
+                    )
+            else:
+                    # no, append to NON_COMPLIANT results for account
+                evaluations.append(
+                        build_evaluation(
+                            aws_account_id,
+                            "NON_COMPLIANT",
+                            event,
+                            annotation="GuardDuty is not enabled and there are no EventBridge rules setup to notify authorized personnel of misuse or suspicious activity.",
+                        )
+                    )
+                
+    return evaluations
 
 
 def lambda_handler(event, context):
@@ -132,91 +218,33 @@ def lambda_handler(event, context):
     aws_guard_duty_client = get_client("guardduty", aws_account_id, execution_role_name)
     aws_event_bridge_client = get_client("events", aws_account_id, execution_role_name)
     aws_sns_client = get_client("sns", aws_account_id, execution_role_name)
-
-    rules = list_all_event_bridge_rules(aws_event_bridge_client)
-
-    guard_duty_is_setup = False
-
-    if guard_duty_is_enabled(aws_guard_duty_client):
-        # yes, filter for rules that target GuardDuty findings
-        logger.info("GuardDuty is enabled.")
-        guardduty_rules = [r for r in rules if rule_event_pattern_matches_guard_duty_findings(r.get("EventPattern"))]
-        logger.info("GuardDuty rules count: %d", len(guardduty_rules))
-        # are there any rules that target GuardDuty findings
-        if len(guardduty_rules) > 0:
-            # yes, check that an SNS target is setup that sends an email notification to authorized personnel
-            for rule in guardduty_rules:
-                eval = check_rule_sns_target_is_setup(aws_sns_client, aws_event_bridge_client, rule, event)
-                if eval.get("ComplianceType") == "COMPLIANT":
-                    guard_duty_is_setup = True
-                evaluations.append(eval)
-            logger.info(
-                "GuardDuty is setup and rules are setup to notify authorized personnel: %s", guard_duty_is_setup
-            )
-
-    # are the GuardDuty rules found to be COMPLIANT?
-    if guard_duty_is_setup:
-        # yes, add compliance evaluation for account
-        evaluations.append(
-            build_evaluation(
-                aws_account_id,
-                "COMPLIANT",
-                event,
-                annotation="GuardDuty is enabled, and a rule is setup to notify authorized personnel of GuardDuty findings.",
-            )
-        )
+    aws_organizations_client = get_client("organization", aws_account_id, execution_role_name)
+    
+    # Check cloud profile
+    tags = get_account_tags(aws_organizations_client, aws_account_id)
+    cloud_profile = get_cloud_profile_from_tags(tags)
+    gr_requirement_type = check_guardrail_rquirement_by_cloud_usage_profile(GuardrailType.Guardrail1, cloud_profile)
+    
+    # If the guardrail is recommended
+    if gr_requirement_type == GuardrailRequirementType.Recommended:
+        evaluations.append(build_evaluation(
+            aws_account_id,
+            "COMPLIANT",
+            event,
+            gr_requirement_type=gr_requirement_type
+        ))
+    # If the guardrail is not required
+    elif gr_requirement_type == GuardrailRequirementType.Not_Required:
+        evaluations.append(build_evaluation(
+            aws_account_id,
+            "NOT_APPLICABLE",
+            event,
+            gr_requirement_type=gr_requirement_type
+        ))
+    # If the guardrail is required
     else:
-        # no, check for EventBridge rules with naming convention
-        rule_naming_convention_file_path = rule_parameters.get("RuleNamingConventionFilePath", "")
-        if not check_s3_object_exists(aws_s3_client, rule_naming_convention_file_path):
-            evaluations.append(
-                build_evaluation(
-                    aws_account_id,
-                    "NON_COMPLIANT",
-                    event,
-                    annotation="No RuleNamingConventionFilePath input provided.",
-                )
-            )
-        else:
-            evaluations = []
-            is_compliant = False
-            rule_naming_convention = read_s3_object(aws_s3_client, rule_naming_convention_file_path)
-            reg = re.compile(rule_naming_convention)
-            logger.info("Filtering rules by rule_naming_convention: %s", rule_naming_convention)
-            filtered_rules = [r for r in rules if reg.search(r.get("Name", ""))]
-
-            # are there any rules matching the naming convention?
-            if len(filtered_rules) > 0:
-                # yes, check that an SNS target is setup that sends an email notification to authorized personnel
-                for rule in filtered_rules:
-                    eval = check_rule_sns_target_is_setup(aws_sns_client, aws_event_bridge_client, rule, event)
-                    if eval.get("ComplianceType") == "COMPLIANT":
-                        is_compliant = True
-                        evaluations.append(eval)
-
-            # are EventBridge rules setup to notify authorized personnel of misuse?
-            if is_compliant:
-                # yes, append COMPLIANT results for account
-                evaluations.append(
-                    build_evaluation(
-                        aws_account_id,
-                        "COMPLIANT",
-                        event,
-                        annotation="EventBridge rules have been setup to notify authorized personnel of misuse or suspicious activity.",
-                    )
-                )
-            else:
-                # no, append to NON_COMPLIANT results for account
-                evaluations.append(
-                    build_evaluation(
-                        aws_account_id,
-                        "NON_COMPLIANT",
-                        event,
-                        annotation="GuardDuty is not enabled and there are no EventBridge rules setup to notify authorized personnel of misuse or suspicious activity.",
-                    )
-                )
-                
-    return evaluations
+        evaluations = check_alerts_flag_misuse(event, rule_parameters, aws_account_id, evaluations, aws_s3_client, aws_guard_duty_client, aws_event_bridge_client, aws_sns_client)
 
     logger.info("AWS Config updating evaluations: %s", evaluations)
     submit_evaluations(aws_config_client, event["resultToken"], evaluations)
+
