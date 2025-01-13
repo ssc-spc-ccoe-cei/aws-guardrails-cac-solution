@@ -7,11 +7,11 @@ import logging
 
 import botocore.exceptions
 
-from utils import is_scheduled_notification, check_required_parameters
+from utils import is_scheduled_notification, check_required_parameters, check_guardrail_rquirement_by_cloud_usage_profile, get_cloud_profile_from_tags, GuardrailType, GuardrailRequirementType
+from boto_util.organizations import get_account_tags, get_organizations_mgmt_account_id, organizations_list_all_accounts
 from boto_util.client import get_client
 from boto_util.config import build_evaluation, submit_evaluations
 from boto_util.s3 import check_s3_object_exists, get_lines_from_s3_file
-from boto_util.organizations import get_organizations_mgmt_account_id, organizations_list_all_accounts
 from boto_util.iam import list_all_iam_users
 from boto_util.sso_admin import list_all_sso_admin_instances
 
@@ -453,31 +453,55 @@ def lambda_handler(event, context):
     aws_sso_admin_client = get_client("sso-admin", aws_account_id, execution_role_name, is_not_audit_account)
     aws_identity_store_client = get_client("identitystore", aws_account_id, execution_role_name, is_not_audit_account)
     aws_s3_client = get_client("s3")
-
+    
     evaluations = []
-    privileged_users_file_path = rule_parameters.get("PrivilegedUsersFilePath", "")
-    non_privileged_users_file_path = rule_parameters.get("NonPrivilegedUsersFilePath", "")
-
-    if not check_s3_object_exists(aws_s3_client, privileged_users_file_path):
-        annotation = f"No privileged user file input provided at {privileged_users_file_path}."
-        evaluations.append(build_evaluation(aws_account_id, "NON_COMPLIANT", event, annotation=annotation))
-    elif not check_s3_object_exists(aws_s3_client, non_privileged_users_file_path):
-        annotation = f"No non_privileged user file input provided at {non_privileged_users_file_path}."
-        evaluations.append(build_evaluation(aws_account_id, "NON_COMPLIANT", event, annotation=annotation))
-    else:
-        privileged_users_list = get_lines_from_s3_file(aws_s3_client, privileged_users_file_path)
-        non_privileged_users_list = get_lines_from_s3_file(aws_s3_client, non_privileged_users_file_path)
-
-        evaluations = evaluations + check_users(
-            aws_organizations_client,
-            aws_sso_admin_client,
-            aws_iam_client,
-            aws_identity_store_client,
-            privileged_users_list,
-            non_privileged_users_list,
-            event,
+    
+    # Check cloud profile
+    tags = get_account_tags(aws_organizations_client, aws_account_id)
+    cloud_profile = get_cloud_profile_from_tags(tags)
+    gr_requirement_type = check_guardrail_rquirement_by_cloud_usage_profile(GuardrailType.Guardrail1, cloud_profile)
+    
+    # If the guardrail is recommended
+    if gr_requirement_type == GuardrailRequirementType.Recommended:
+        evaluations.append(build_evaluation(
             aws_account_id,
-        )
+            "COMPLIANT",
+            event,
+            gr_requirement_type=gr_requirement_type
+        ))
+    # If the guardrail is not required
+    elif gr_requirement_type == GuardrailRequirementType.Not_Required:
+        evaluations.append(build_evaluation(
+            aws_account_id,
+            "NOT_APPLICABLE",
+            event,
+            gr_requirement_type=gr_requirement_type
+        ))
+    # If the guardrail is required
+    else:
+        privileged_users_file_path = rule_parameters.get("PrivilegedUsersFilePath", "")
+        non_privileged_users_file_path = rule_parameters.get("NonPrivilegedUsersFilePath", "")
+
+        if not check_s3_object_exists(aws_s3_client, privileged_users_file_path):
+            annotation = f"No privileged user file input provided at {privileged_users_file_path}."
+            evaluations.append(build_evaluation(aws_account_id, "NON_COMPLIANT", event, annotation=annotation))
+        elif not check_s3_object_exists(aws_s3_client, non_privileged_users_file_path):
+            annotation = f"No non_privileged user file input provided at {non_privileged_users_file_path}."
+            evaluations.append(build_evaluation(aws_account_id, "NON_COMPLIANT", event, annotation=annotation))
+        else:
+            privileged_users_list = get_lines_from_s3_file(aws_s3_client, privileged_users_file_path)
+            non_privileged_users_list = get_lines_from_s3_file(aws_s3_client, non_privileged_users_file_path)
+
+            evaluations = evaluations + check_users(
+                aws_organizations_client,
+                aws_sso_admin_client,
+                aws_iam_client,
+                aws_identity_store_client,
+                privileged_users_list,
+                non_privileged_users_list,
+                event,
+                aws_account_id,
+            )
 
     logger.info("AWS Config updating evaluations: %s", evaluations)
     submit_evaluations(aws_config_client, event["resultToken"], evaluations)

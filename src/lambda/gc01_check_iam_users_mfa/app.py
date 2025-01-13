@@ -7,7 +7,8 @@ import logging
 
 import botocore.exceptions
 
-from utils import is_scheduled_notification, check_required_parameters
+from utils import is_scheduled_notification, check_required_parameters, check_guardrail_rquirement_by_cloud_usage_profile, get_cloud_profile_from_tags, GuardrailType, GuardrailRequirementType
+from boto_util.organizations import get_account_tags
 from boto_util.client import get_client
 from boto_util.config import build_evaluation, submit_evaluations
 from boto_util.iam import list_all_iam_users
@@ -89,13 +90,38 @@ def lambda_handler(event, context):
     audit_account_id = rule_parameters.get("AuditAccountID", "")
     aws_account_id = event["accountId"]
     is_not_audit_account = aws_account_id != audit_account_id
+    evaluations = []
 
     bg_accounts = [rule_parameters["BgUser1"], rule_parameters["BgUser2"]]
 
     aws_config_client = get_client("config", aws_account_id, execution_role_name, is_not_audit_account)
     aws_iam_client = get_client("iam", aws_account_id, execution_role_name, is_not_audit_account)
-
-    evaluations = check_iam_users_mfa(aws_iam_client, aws_account_id, event, bg_accounts)
+    aws_organizations_client = get_client("organization", aws_account_id, execution_role_name)
+    
+    # Check cloud profile
+    tags = get_account_tags(aws_organizations_client, aws_account_id)
+    cloud_profile = get_cloud_profile_from_tags(tags)
+    gr_requirement_type = check_guardrail_rquirement_by_cloud_usage_profile(GuardrailType.Guardrail1, cloud_profile)
+    
+    # If the guardrail is recommended
+    if gr_requirement_type == GuardrailRequirementType.Recommended:
+        evaluations.append(build_evaluation(
+            aws_account_id,
+            "COMPLIANT",
+            event,
+            gr_requirement_type=gr_requirement_type
+        ))
+    # If the guardrail is not required
+    elif gr_requirement_type == GuardrailRequirementType.Not_Required:
+        evaluations.append(build_evaluation(
+            aws_account_id,
+            "NOT_APPLICABLE",
+            event,
+            gr_requirement_type=gr_requirement_type
+        ))
+    # If the guardrail is required
+    else:
+        evaluations = check_iam_users_mfa(aws_iam_client, aws_account_id, event, bg_accounts)
 
     logger.info("AWS Config updating evaluations: %s", evaluations)
     submit_evaluations(aws_config_client, event["resultToken"], evaluations)

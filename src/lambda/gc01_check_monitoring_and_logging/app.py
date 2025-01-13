@@ -5,7 +5,8 @@
 import json
 import logging
 
-from utils import is_scheduled_notification, check_required_parameters
+from utils import is_scheduled_notification, check_required_parameters, check_guardrail_rquirement_by_cloud_usage_profile, get_cloud_profile_from_tags, GuardrailType, GuardrailRequirementType
+from boto_util.organizations import get_account_tags
 from boto_util.client import get_client
 from boto_util.config import build_evaluation, submit_evaluations
 from boto_util.cloud_trail import list_all_cloud_trails
@@ -68,15 +69,39 @@ def lambda_handler(event, context):
 
     aws_config_client = get_client("config", aws_account_id, execution_role_name)
     aws_cloudtrail_client = get_client("cloudtrail", aws_account_id, execution_role_name)
-
-    trails = list_all_cloud_trails(aws_cloudtrail_client)
-
-    if trails:
-        evaluations.extend(check_trail_status(aws_cloudtrail_client, trails, event))
+    aws_organizations_client = get_client("organization", aws_account_id, execution_role_name)
+    
+    # Check cloud profile
+    tags = get_account_tags(aws_organizations_client, aws_account_id)
+    cloud_profile = get_cloud_profile_from_tags(tags)
+    gr_requirement_type = check_guardrail_rquirement_by_cloud_usage_profile(GuardrailType.Guardrail1, cloud_profile)
+    
+    # If the guardrail is recommended
+    if gr_requirement_type == GuardrailRequirementType.Recommended:
+        evaluations.append(build_evaluation(
+            aws_account_id,
+            "COMPLIANT",
+            event,
+            gr_requirement_type=gr_requirement_type
+        ))
+    # If the guardrail is not required
+    elif gr_requirement_type == GuardrailRequirementType.Not_Required:
+        evaluations.append(build_evaluation(
+            aws_account_id,
+            "NOT_APPLICABLE",
+            event,
+            gr_requirement_type=gr_requirement_type
+        ))
+    # If the guardrail is required
     else:
-        evaluations.append(
-            build_evaluation(aws_account_id, "NON_COMPLIANT", event, annotation="No CloudTrails found in account")
-        )
+        trails = list_all_cloud_trails(aws_cloudtrail_client)
+
+        if trails:
+            evaluations.extend(check_trail_status(aws_cloudtrail_client, trails, event))
+        else:
+            evaluations.append(
+                build_evaluation(aws_account_id, "NON_COMPLIANT", event, annotation="No CloudTrails found in account")
+            )
 
     logger.info("AWS Config updating evaluations: %s", evaluations)
     submit_evaluations(aws_config_client, event["resultToken"], evaluations)
