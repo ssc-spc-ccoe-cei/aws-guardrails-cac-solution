@@ -20,6 +20,7 @@ Metadata:
           - RootOUID
           - SecurityOUID
           - TenantId
+          - DefaultCloudProfile
       - Label:
           default: Optional Parameters
         Parameters:
@@ -36,6 +37,8 @@ Metadata:
         default: The ID of the organization
       TenantId:
         default: The ID of the tenant
+      DefaultCloudProfile:
+        default: The cloud profile to use when one is not provided by an account
       ExecutionName:
         default: Execution name of the IAM role that is passed to GC permission's
       RootOUID:
@@ -88,6 +91,10 @@ Parameters:
     Type: String
     Description: >-
       Tenant Id provided by root.yaml.
+  DefaultCloudProfile:
+    Type: String
+    Description: >-
+      The cloud profile to use when one is not provided by an account.
   ExecutionName:
     Type: String
     Description: >-
@@ -668,6 +675,8 @@ Resources:
           ParameterValue: !Ref RolePrefix
         - ParameterKey: AccelRolePrefix
           ParameterValue: !Ref AccelRolePrefix
+        - ParameterKey: DefaultCloudProfile
+          ParameterValue: !Ref DefaultCloudProfile
       PermissionModel: SERVICE_MANAGED
       StackInstancesGroup:
         - DeploymentTargets:
@@ -707,6 +716,8 @@ Resources:
           ParameterValue: !Ref AuditAccountID
         - ParameterKey: RolePrefix
           ParameterValue: !Ref RolePrefix
+        - ParameterKey: DefaultCloudProfile
+          ParameterValue: !Ref DefaultCloudProfile
       PermissionModel: SERVICE_MANAGED
       StackInstancesGroup:
         - DeploymentTargets:
@@ -746,6 +757,8 @@ Resources:
           ParameterValue: !Ref AuditAccountID
         - ParameterKey: RolePrefix
           ParameterValue: !Ref RolePrefix
+        - ParameterKey: DefaultCloudProfile
+          ParameterValue: !Ref DefaultCloudProfile
       PermissionModel: SERVICE_MANAGED
       StackInstancesGroup:
         - DeploymentTargets:
@@ -785,6 +798,8 @@ Resources:
           ParameterValue: !Ref AuditAccountID
         - ParameterKey: RolePrefix
           ParameterValue: !Ref RolePrefix
+        - ParameterKey: DefaultCloudProfile
+          ParameterValue: !Ref DefaultCloudProfile
       PermissionModel: SERVICE_MANAGED
       StackInstancesGroup:
         - DeploymentTargets:
@@ -825,6 +840,8 @@ Resources:
           ParameterValue: !Ref AuditAccountID
         - ParameterKey: RolePrefix
           ParameterValue: !Ref RolePrefix
+        - ParameterKey: DefaultCloudProfile
+          ParameterValue: !Ref DefaultCloudProfile
       PermissionModel: SERVICE_MANAGED
       StackInstancesGroup:
         - DeploymentTargets:
@@ -864,6 +881,8 @@ Resources:
           ParameterValue: !Ref AuditAccountID
         - ParameterKey: RolePrefix
           ParameterValue: !Ref RolePrefix
+        - ParameterKey: DefaultCloudProfile
+          ParameterValue: !Ref DefaultCloudProfile
       PermissionModel: SERVICE_MANAGED
       StackInstancesGroup:
         - DeploymentTargets:
@@ -903,6 +922,8 @@ Resources:
           ParameterValue: !Ref AuditAccountID
         - ParameterKey: RolePrefix
           ParameterValue: !Ref RolePrefix
+        - ParameterKey: DefaultCloudProfile
+          ParameterValue: !Ref DefaultCloudProfile
       PermissionModel: SERVICE_MANAGED
       StackInstancesGroup:
         - DeploymentTargets:
@@ -942,6 +963,8 @@ Resources:
           ParameterValue: !Ref AuditAccountID
         - ParameterKey: RolePrefix
           ParameterValue: !Ref RolePrefix
+        - ParameterKey: DefaultCloudProfile
+          ParameterValue: !Ref DefaultCloudProfile
       PermissionModel: SERVICE_MANAGED
       StackInstancesGroup:
         - DeploymentTargets:
