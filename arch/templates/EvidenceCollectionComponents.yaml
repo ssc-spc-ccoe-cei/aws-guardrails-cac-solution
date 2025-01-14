@@ -236,6 +236,10 @@ Resources:
                 Resource:
                   - !Sub "arn:aws:logs:${AWS::Region}:${AWS::AccountId}:*"
                 Effect: Allow
+              - Sid: AllowResourceTagListing
+                Action:
+                  - "organizations:ListTagsForResource"
+                Resource: "*"
               - Sid: AllowLogging
                 Action:
                   - "logs:CreateLogGroup"
