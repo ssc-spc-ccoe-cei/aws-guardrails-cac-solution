@@ -51,7 +51,30 @@ def lambda_handler(event, context):
 
     aws_config_client = get_client("config")
     aws_s3_client = get_client("s3")
-
+    aws_organizations_client = get_client("organizations", aws_account_id, execution_role_name)
+    
+    # Check cloud profile
+    tags = get_account_tags(aws_organizations_client, aws_account_id)
+    cloud_profile = get_cloud_profile_from_tags(tags)
+    gr_requirement_type = check_guardrail_rquirement_by_cloud_usage_profile(GuardrailType.Guardrail1, cloud_profile)
+    
+    # If the guardrail is recommended
+    if gr_requirement_type == GuardrailRequirementType.Recommended:
+        return submit_evaluations(aws_config_client, [build_evaluation(
+            aws_account_id,
+            "COMPLIANT",
+            event,
+            gr_requirement_type=gr_requirement_type
+        )])
+    # If the guardrail is not required
+    elif gr_requirement_type == GuardrailRequirementType.Not_Required:
+        return submit_evaluations(aws_config_client, [build_evaluation(
+            aws_account_id,
+            "NOT_APPLICABLE",
+            event,
+            gr_requirement_type=gr_requirement_type
+        )])
+        
     if check_s3_object_exists(aws_s3_client, rule_parameters["s3ObjectPath"]):
         compliance_type = "COMPLIANT"
         annotation = "Privileged Roles Reviews document found"
