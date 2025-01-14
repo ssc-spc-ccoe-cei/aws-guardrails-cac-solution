@@ -145,37 +145,36 @@ def lambda_handler(event, context):
     
     # If the guardrail is recommended
     if gr_requirement_type == GuardrailRequirementType.Recommended:
-        evaluations.append(build_evaluation(
+        return submit_evaluations(aws_config_client, [build_evaluation(
             aws_account_id,
             "COMPLIANT",
             event,
             gr_requirement_type=gr_requirement_type
-        ))
+        )])
     # If the guardrail is not required
     elif gr_requirement_type == GuardrailRequirementType.Not_Required:
-        evaluations.append(build_evaluation(
+        return submit_evaluations(aws_config_client, [build_evaluation(
             aws_account_id,
             "NOT_APPLICABLE",
             event,
             gr_requirement_type=gr_requirement_type
-        ))
-    # If the guardrail is required
+        )])
+        
+    if aws_account_id != get_organizations_mgmt_account_id(aws_organizations_client):
+        logger.info("Root Account MFA not checked in account %s as this is not the Management Account", aws_account_id)
+        return
+
+    aws_config_client = get_client("config", aws_account_id, execution_role_name)
+    aws_iam_client = get_client("iam", aws_account_id, execution_role_name)
+
+    if get_root_mfa_enabled(aws_iam_client):
+        compliance_type = "COMPLIANT"
+        annotation = "Root Account MFA enabled"
     else:
-        if aws_account_id != get_organizations_mgmt_account_id(aws_organizations_client):
-            logger.info("Root Account MFA not checked in account %s as this is not the Management Account", aws_account_id)
-            return
+        compliance_type = "NON_COMPLIANT"
+        annotation = "Root Account MFA NOT enabled."
 
-        aws_config_client = get_client("config", aws_account_id, execution_role_name)
-        aws_iam_client = get_client("iam", aws_account_id, execution_role_name)
-
-        if get_root_mfa_enabled(aws_iam_client):
-            compliance_type = "COMPLIANT"
-            annotation = "Root Account MFA enabled"
-        else:
-            compliance_type = "NON_COMPLIANT"
-            annotation = "Root Account MFA NOT enabled."
-
-        logger.info(f"{compliance_type}: {annotation}")
+    logger.info(f"{compliance_type}: {annotation}")
         
     evaluations.append(build_evaluation(aws_account_id, compliance_type, event, annotation=annotation))
     submit_evaluations(aws_config_client, event["resultToken"], evaluations)

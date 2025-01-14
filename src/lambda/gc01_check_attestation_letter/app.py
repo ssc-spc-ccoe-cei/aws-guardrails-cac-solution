@@ -47,7 +47,9 @@ def lambda_handler(event, context):
         logger.info("Attestation letter not checked in account %s - not the Audit account", aws_account_id)
         return
     
-    aws_organizations_client = get_client("organization", aws_account_id, execution_role_name)
+    aws_organizations_client = get_client("organizations", aws_account_id, execution_role_name)
+    aws_config_client = get_client("config")
+    aws_s3_client = get_client("s3")
     
     # Check cloud profile
     tags = get_account_tags(aws_organizations_client, aws_account_id)
@@ -56,33 +58,29 @@ def lambda_handler(event, context):
     
     # If the guardrail is recommended
     if gr_requirement_type == GuardrailRequirementType.Recommended:
-        evaluations.append(build_evaluation(
+        return submit_evaluations(aws_config_client, [build_evaluation(
             aws_account_id,
             "COMPLIANT",
             event,
             gr_requirement_type=gr_requirement_type
-        ))
+        )])
     # If the guardrail is not required
     elif gr_requirement_type == GuardrailRequirementType.Not_Required:
-        evaluations.append(build_evaluation(
+        return submit_evaluations(aws_config_client, [build_evaluation(
             aws_account_id,
             "NOT_APPLICABLE",
             event,
             gr_requirement_type=gr_requirement_type
-        ))
-    # If the guardrail is required
+        )])
+
+    if check_s3_object_exists(aws_s3_client, rule_parameters["s3ObjectPath"]):
+        compliance_type = "COMPLIANT"
+        annotation = "Attestation letter found"
     else:
-        aws_config_client = get_client("config")
-        aws_s3_client = get_client("s3")
+        compliance_type = "NON_COMPLIANT"
+        annotation = "Attestation letter NOT found"
 
-        if check_s3_object_exists(aws_s3_client, rule_parameters["s3ObjectPath"]):
-            compliance_type = "COMPLIANT"
-            annotation = "Attestation letter found"
-        else:
-            compliance_type = "NON_COMPLIANT"
-            annotation = "Attestation letter NOT found"
-
-        logger.info(f"{compliance_type}: {annotation}")
+    logger.info(f"{compliance_type}: {annotation}")
         
     evaluations.append(build_evaluation(aws_account_id, compliance_type, event, annotation=annotation))
     submit_evaluations(aws_config_client, event["resultToken"], evaluations)

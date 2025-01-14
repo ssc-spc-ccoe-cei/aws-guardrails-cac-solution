@@ -218,7 +218,7 @@ def lambda_handler(event, context):
     aws_guard_duty_client = get_client("guardduty", aws_account_id, execution_role_name)
     aws_event_bridge_client = get_client("events", aws_account_id, execution_role_name)
     aws_sns_client = get_client("sns", aws_account_id, execution_role_name)
-    aws_organizations_client = get_client("organization", aws_account_id, execution_role_name)
+    aws_organizations_client = get_client("organizations", aws_account_id, execution_role_name)
     
     # Check cloud profile
     tags = get_account_tags(aws_organizations_client, aws_account_id)
@@ -227,23 +227,22 @@ def lambda_handler(event, context):
     
     # If the guardrail is recommended
     if gr_requirement_type == GuardrailRequirementType.Recommended:
-        evaluations.append(build_evaluation(
+        return submit_evaluations(aws_config_client, [build_evaluation(
             aws_account_id,
             "COMPLIANT",
             event,
             gr_requirement_type=gr_requirement_type
-        ))
+        )])
     # If the guardrail is not required
     elif gr_requirement_type == GuardrailRequirementType.Not_Required:
-        evaluations.append(build_evaluation(
+        return submit_evaluations(aws_config_client, [build_evaluation(
             aws_account_id,
             "NOT_APPLICABLE",
             event,
             gr_requirement_type=gr_requirement_type
-        ))
-    # If the guardrail is required
-    else:
-        evaluations = check_alerts_flag_misuse(event, rule_parameters, aws_account_id, evaluations, aws_s3_client, aws_guard_duty_client, aws_event_bridge_client, aws_sns_client)
+        )])
+    
+    evaluations = check_alerts_flag_misuse(event, rule_parameters, aws_account_id, evaluations, aws_s3_client, aws_guard_duty_client, aws_event_bridge_client, aws_sns_client)
 
     logger.info("AWS Config updating evaluations: %s", evaluations)
     submit_evaluations(aws_config_client, event["resultToken"], evaluations)
