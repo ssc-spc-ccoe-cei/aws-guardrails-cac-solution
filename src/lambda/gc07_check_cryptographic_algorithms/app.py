@@ -4,7 +4,8 @@
 import json
 import logging
 
-from utils import is_scheduled_notification, check_required_parameters, flat
+from utils import is_scheduled_notification, check_required_parameters, flat, check_guardrail_requirement_by_cloud_usage_profile, get_cloud_profile_from_tags, GuardrailType, GuardrailRequirementType
+from boto_util.organizations import get_account_tags
 from boto_util.client import get_client
 from boto_util.config import build_evaluation, submit_evaluations
 from boto_util.elb import describe_elb_load_balancer_policies, describe_all_elb_load_balancers
@@ -163,7 +164,30 @@ def lambda_handler(event, context):
     aws_config_client = get_client("config", aws_account_id, execution_role_name, is_not_audit_account)
     # Using older 'elb' api instead of 'elbv2' so that we get the 'Classic' load balancers
     aws_elb_client = get_client("elb", aws_account_id, execution_role_name, is_not_audit_account)
-
+    aws_organizations_client = get_client("organizations", aws_account_id, execution_role_name)
+    
+    # Check cloud profile
+    tags = get_account_tags(aws_organizations_client, aws_account_id)
+    cloud_profile = get_cloud_profile_from_tags(tags)
+    gr_requirement_type = check_guardrail_requirement_by_cloud_usage_profile(GuardrailType.Guardrail7, cloud_profile)
+    
+    # If the guardrail is recommended
+    if gr_requirement_type == GuardrailRequirementType.Recommended:
+        return submit_evaluations(aws_config_client, [build_evaluation(
+            aws_account_id,
+            "COMPLIANT",
+            event,
+            gr_requirement_type=gr_requirement_type
+        )])
+    # If the guardrail is not required
+    elif gr_requirement_type == GuardrailRequirementType.Not_Required:
+        return submit_evaluations(aws_config_client, [build_evaluation(
+            aws_account_id,
+            "NOT_APPLICABLE",
+            event,
+            gr_requirement_type=gr_requirement_type
+        )])
+        
     load_balancers_details = [
         {
             "Description": x,

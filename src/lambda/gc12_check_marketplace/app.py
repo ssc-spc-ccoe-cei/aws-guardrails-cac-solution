@@ -8,7 +8,7 @@ import time
 
 import botocore
 
-from utils import is_scheduled_notification, check_required_parameters
+from utils import is_scheduled_notification, check_required_parameters, check_guardrail_requirement_by_cloud_usage_profile, get_cloud_profile_from_tags, GuardrailType, GuardrailRequirementType
 from boto_util.client import get_client
 from boto_util.config import build_evaluation, submit_evaluations
 from boto_util.organizations import (
@@ -16,6 +16,7 @@ from boto_util.organizations import (
     get_organizations_mgmt_account_id,
     organizations_list_all_policies_for_target,
     organizations_list_all_organizational_units,
+    get_account_tags
 )
 
 # Logging setup
@@ -180,7 +181,29 @@ def lambda_handler(event, context):
     aws_config_client = get_client("config", aws_account_id, execution_role_name, is_not_audit_account)
     aws_iam_client = get_client("iam", aws_account_id, execution_role_name, is_not_audit_account)
     aws_organizations_client = get_client("organizations", aws_account_id, execution_role_name, is_not_audit_account)
-
+    
+    # Check cloud profile
+    tags = get_account_tags(aws_organizations_client, aws_account_id)
+    cloud_profile = get_cloud_profile_from_tags(tags)
+    gr_requirement_type = check_guardrail_requirement_by_cloud_usage_profile(GuardrailType.Guardrail12, cloud_profile)
+    
+    # If the guardrail is recommended
+    if gr_requirement_type == GuardrailRequirementType.Recommended:
+        return submit_evaluations(aws_config_client, [build_evaluation(
+            aws_account_id,
+            "COMPLIANT",
+            event,
+            gr_requirement_type=gr_requirement_type
+        )])
+    # If the guardrail is not required
+    elif gr_requirement_type == GuardrailRequirementType.Not_Required:
+        return submit_evaluations(aws_config_client, [build_evaluation(
+            aws_account_id,
+            "NOT_APPLICABLE",
+            event,
+            gr_requirement_type=gr_requirement_type
+        )])
+        
     selected_policy_summaries = get_policies_that_restrict_marketplace_access(
         aws_organizations_client, aws_iam_client, interval_between_calls
     )
