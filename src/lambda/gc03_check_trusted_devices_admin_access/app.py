@@ -6,7 +6,7 @@ import json
 import logging
 import ipaddress
 
-from utils import is_scheduled_notification, check_required_parameters, check_guardrail_rquirement_by_cloud_usage_profile, get_cloud_profile_from_tags, GuardrailType, GuardrailRequirementType
+from utils import is_scheduled_notification, check_required_parameters, check_guardrail_requirement_by_cloud_usage_profile, get_cloud_profile_from_tags, GuardrailType, GuardrailRequirementType
 from boto_util.organizations import get_account_tags, get_organizations_mgmt_account_id
 from boto_util.client import get_client
 from boto_util.config import build_evaluation, submit_evaluations
@@ -71,7 +71,7 @@ def lambda_handler(event, context):
     # Check cloud profile
     tags = get_account_tags(aws_organizations_client, aws_account_id)
     cloud_profile = get_cloud_profile_from_tags(tags)
-    gr_requirement_type = check_guardrail_rquirement_by_cloud_usage_profile(GuardrailType.Guardrail1, cloud_profile)
+    gr_requirement_type = check_guardrail_requirement_by_cloud_usage_profile(GuardrailType.Guardrail1, cloud_profile)
     
     # If the guardrail is recommended
     if gr_requirement_type == GuardrailRequirementType.Recommended:

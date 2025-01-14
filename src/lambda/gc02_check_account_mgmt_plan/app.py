@@ -5,7 +5,7 @@
 import json
 import logging
 
-from utils import is_scheduled_notification, check_required_parameters, check_guardrail_rquirement_by_cloud_usage_profile, get_cloud_profile_from_tags, GuardrailType, GuardrailRequirementType
+from utils import is_scheduled_notification, check_required_parameters, check_guardrail_requirement_by_cloud_usage_profile, get_cloud_profile_from_tags, GuardrailType, GuardrailRequirementType
 from boto_util.organizations import get_account_tags
 from boto_util.client import get_client
 from boto_util.config import build_evaluation, submit_evaluations
@@ -54,7 +54,7 @@ def lambda_handler(event, context):
     # Check cloud profile
     tags = get_account_tags(aws_organizations_client, aws_account_id)
     cloud_profile = get_cloud_profile_from_tags(tags)
-    gr_requirement_type = check_guardrail_rquirement_by_cloud_usage_profile(GuardrailType.Guardrail1, cloud_profile)
+    gr_requirement_type = check_guardrail_requirement_by_cloud_usage_profile(GuardrailType.Guardrail1, cloud_profile)
     
     # If the guardrail is recommended
     if gr_requirement_type == GuardrailRequirementType.Recommended:
@@ -72,14 +72,13 @@ def lambda_handler(event, context):
             event,
             gr_requirement_type=gr_requirement_type
         )])
-    # If the guardrail is required
+        
+    if check_s3_object_exists(aws_s3_client, rule_parameters["s3ObjectPath"]):
+        compliance_type = "COMPLIANT"
+        annotation = "Account management plan document found"
     else:
-        if check_s3_object_exists(aws_s3_client, rule_parameters["s3ObjectPath"]):
-            compliance_type = "COMPLIANT"
-            annotation = "Account management plan document found"
-        else:
-            compliance_type = "NON_COMPLIANT"
-            annotation = "Account management plan document NOT found"
+        compliance_type = "NON_COMPLIANT"
+        annotation = "Account management plan document NOT found"
 
     logger.info(f"{compliance_type}: {annotation}")
     evaluations.append(build_evaluation(aws_account_id, compliance_type, event, annotation=annotation))
