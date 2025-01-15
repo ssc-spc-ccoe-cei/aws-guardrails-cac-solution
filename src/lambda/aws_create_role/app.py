@@ -1,4 +1,3 @@
-""" Lambda function used to assume a deployment role in all organizational accounts. """
 import json
 import logging
 import threading
@@ -64,7 +63,6 @@ def get_org_accounts():
 
     return active_accounts
 
-
 def create_iam_policy(session, policy_name, policy_document):
     """
     Creates an IAM policy.
@@ -77,7 +75,6 @@ def create_iam_policy(session, policy_name, policy_document):
     )
     return sts_response['Policy']
 
-
 def attach_iam_policy_to_role(session, role_name, policy_arn):
     """
     Attaches an IAM policy to a role.
@@ -89,7 +86,6 @@ def attach_iam_policy_to_role(session, role_name, policy_arn):
         PolicyArn=policy_arn
     )
     return sts_response
-
 
 def create_iam_role(session, role_name, principal):
     """
@@ -115,7 +111,6 @@ def create_iam_role(session, role_name, principal):
     )
     return sts_response['Role']
 
-
 def delete_role(session, role_name):
     """
     Deletes an IAM role.
@@ -127,38 +122,32 @@ def delete_role(session, role_name):
     )
     return sts_response
 
-
 def detach_all_policies_from_role(session, role_name):
     """
-    Detaches all policies from a role.
+    Detaches all policies from a role and deletes any custom policies.
     """
     logger.info(f"Detach all policies from {role_name}")
     iam_client = session.client('iam')
-    sts_response = iam_client.list_attached_role_policies(
-        RoleName=role_name
-    )
+    sts_response = iam_client.list_attached_role_policies(RoleName=role_name)
 
     logger.info(f"Attached Policies to role {role_name} are {sts_response['AttachedPolicies']}")
     for policy in sts_response['AttachedPolicies']:
         logger.info(f"Deleting Policy: {policy}")
-        sts_response = iam_client.detach_role_policy(
+        iam_client.detach_role_policy(
             RoleName=role_name,
             PolicyArn=policy['PolicyArn']
         )
         delete_iam_policy(session=session, policy_arn=policy['PolicyArn'])
 
-    sts_response = iam_client.list_role_policies(
-        RoleName=role_name
-    )
+    sts_response = iam_client.list_role_policies(RoleName=role_name)
     logger.info(f"Inline Policies attached to role {role_name} are {sts_response['PolicyNames']}")
     for policy_name in sts_response['PolicyNames']:
         logger.info(f"Deleting Policy: {policy_name}")
-        sts_response = iam_client.delete_role_policy(
+        iam_client.delete_role_policy(
             RoleName=role_name,
             PolicyName=policy_name
         )
     return sts_response
-
 
 def get_account_id(session):
     """
@@ -166,7 +155,6 @@ def get_account_id(session):
     """
     sts_client = session.client('sts')
     return sts_client.get_caller_identity()['Account']
-
 
 def assume_role(session, account_id, role_name):
     """
@@ -184,10 +172,9 @@ def assume_role(session, account_id, role_name):
     )
     return sts_session
 
-
 def delete_iam_policy(session, policy_arn):
     """
-    Deletes an IAM policy.
+    Deletes an IAM policy, skipping AWS managed policies.
     """
     # Check if the policy is an AWS managed policy
     if policy_arn.startswith("arn:aws:iam::aws:policy/"):
@@ -207,23 +194,27 @@ def delete_iam_policy(session, policy_arn):
             )
             logger.info(f"Deleted non-default policy version {version['VersionId']}")
 
-    sts_response = iam_client.delete_policy(
-        PolicyArn=policy_arn
-    )
+    sts_response = iam_client.delete_policy(PolicyArn=policy_arn)
     return sts_response
 
-
 def send(event, context, response_status, response_data, physical_resource_id=None, no_echo=False, reason=None):
-    """Sends a response to CloudFormation"""
+    """
+    Sends a response to CloudFormation. We skip this if the event
+    doesn't actually come from CloudFormation (i.e., no ResponseURL).
+    """
+    if 'ResponseURL' not in event or not event['ResponseURL']:
+        logger.info("No CFN ResponseURL found. Skipping send() for non-CFN scenario.")
+        return
+
     response_url = event['ResponseURL']
     logger.info("Response URL: %s", response_url)
     response_body = {
         'Status': response_status,
         'Reason': reason or f"See the details in CloudWatch Log Stream: {context.log_stream_name}",
         'PhysicalResourceId': physical_resource_id or context.log_stream_name,
-        'StackId': event['StackId'],
-        'RequestId': event['RequestId'],
-        'LogicalResourceId': event['LogicalResourceId'],
+        'StackId': event.get('StackId', 'NoStackId'),
+        'RequestId': event.get('RequestId', 'NoRequestId'),
+        'LogicalResourceId': event.get('LogicalResourceId', 'NoLogicalResourceId'),
         'NoEcho': no_echo,
         'Data': response_data
     }
@@ -237,176 +228,257 @@ def send(event, context, response_status, response_data, physical_resource_id=No
     except (ValueError, TypeError, urllib3.exceptions.HTTPError) as err:
         logger.error("send(..) failed executing http.request(..): %s", err)
 
+def normalize_event(event):
+    """
+    If 'RequestType' is present, assume it's a CFN event and wrap it in a list.
+    If 'Roles' is present, assume it's an EventBridge event. Convert each role
+    into a CFN-like event so we can reuse the same logic.
+    If 'Roles' is present but empty, return an empty list of events so that
+    the main loop will skip any processing.
+    """
+
+    # CloudFormation event
+    if 'RequestType' in event and 'ResourceProperties' in event:
+        return [event]  # It's already in CFN format
+
+    # EventBridge event with a list of roles
+    if 'Roles' in event:
+        # If the roles array is empty, skip further processing
+        if not event['Roles']:
+            logger.info("No roles found in the 'Roles' array. Returning an empty list.")
+            return []
+
+        normalized = []
+        for role in event['Roles']:
+            # Build a new "CFN-like" event
+            cfn_style_event = {
+                "RequestType": "Update",  # We treat these as "Update" for creation logic
+                "ResourceProperties": {
+                    "RoleName": role["Name"],
+                    "TrustPrincipal": role["TrustPrincipal"],
+                    "SwitchRole": role["SwitchRole"],
+                    # The original code expects a string for PolicyPackage
+                    "PolicyPackage": json.dumps(role["PolicyPackage"])
+                },
+                # Fake CFN required fields (since we won't actually call send() for these,
+                # or if we do, we skip if there's no real CFN ResponseURL).
+                "ResponseURL": None,
+                "StackId": "EventBridgeStack",
+                "RequestId": "EventBridgeRequest",
+                "LogicalResourceId": "EventBridgeLogicalId",
+                "PhysicalResourceId": "EventBridgePhysicalId"
+            }
+            normalized.append(cfn_style_event)
+        return normalized
+
+    # Unknown event type
+    raise ValueError("Event does not contain 'RequestType' or 'Roles'. Cannot normalize.")
 
 def lambda_handler(event, context):
     """
-    This function is the main entry point for Lambda.
+    Main entry point for Lambda. We unify the handling of both CFN and EventBridge
+    events by first normalizing them into a list of CFN-like events and then using
+    the existing flow.
     """
     global stop_reinvocation
 
     # --- REINVOCATION: read ReinvokeCount from event ---
     reinvoke_count = event.get('ReinvokeCount', 0)
 
-    # Start the background timer thread to automatically re-invoke after 10 minutes
+    # Start the background timer thread to automatically re-invoke after TIMEOUT_MINUTES
     t = threading.Thread(target=schedule_reinvocation, args=(reinvoke_count, event, context))
     t.daemon = True
     t.start()
     # --- END REINVOCATION SETUP ---
 
-    response_data = {}
     logger.info("Received Event: %s", json.dumps(event, indent=2))
 
-    # Get parameters from event
-    trust_principal = event['ResourceProperties']['TrustPrincipal'].split(',')
-    switch_role = event['ResourceProperties']['SwitchRole']
-    role_name = event['ResourceProperties']['RoleName']
-    policy_string = event['ResourceProperties']['PolicyPackage'].replace("'", '"')
-    logger.info(f"Policy String: {policy_string}")
-    policy_package = json.loads(policy_string, strict=False)
-
-    # Get list of Org accounts and the current account_id
     try:
-        accounts = get_org_accounts()
+        # Convert the incoming event to a CFN-like list
+        cfn_events = normalize_event(event)
     except Exception as err:
-        logger.error(f"Error getting accounts: {err}")
-        response_data['Error'] = f"Error getting accounts: {err}"
+        logger.error(f"Error normalizing event: {err}")
+        response_data = {"Error": str(err)}
         send(event, context, FAILED, response_data)
-        raise err
+        stop_reinvocation = True
+        return
 
-    try:
-        session = boto3.Session()
-    except Exception as err:
-        logger.error(f"Error getting session: {err}")
-        response_data['Error'] = f"Error getting session: {err}"
-        send(event, context, FAILED, response_data)
-        raise err
+    # If the list of cfn_events is empty (e.g., empty Roles), do nothing
+    if not cfn_events:
+        logger.info("No events to process after normalization. Exiting.")
+        stop_reinvocation = True
+        return
 
-    try:
-        account_id = get_account_id(session)
-    except Exception as err:
-        logger.error(f"Error getting account ID: {err}")
-        response_data['Error'] = f"Error getting account ID: {err}"
-        send(event, context, FAILED, response_data)
-        raise err
+    # Process each "synthetic CFN event" in the same Lambda invocation
+    for cfn_event in cfn_events:
+        response_data = {}
 
-    if event['RequestType'] == 'Create' or event['RequestType'] == 'Update':
-        logger.info(f"CFN {event['RequestType']} request received")
-        for account in accounts:
-            # Skip the management account
-            if account_id in account['Id']:
-                continue
+        # Pull request type from the normalized event (Create/Update/Delete).
+        request_type = cfn_event['RequestType']
 
-            try:
-                sts_session = assume_role(session=session, account_id=account['Id'], role_name=switch_role)
-            except Exception as err:
-                logger.error(f"Error assuming role: {err}")
-                response_data['Error'] = f"Error assuming role: {err}"
-                send(event, context, FAILED, response_data)
-                raise err
+        # Extract the ResourceProperties we need
+        resource_props = cfn_event['ResourceProperties']
+        trust_principal = resource_props['TrustPrincipal'].split(',')
+        switch_role = resource_props['SwitchRole']
+        role_name = resource_props['RoleName']
+        policy_string = resource_props['PolicyPackage'].replace("'", '"')
+        logger.info(f"Policy String: {policy_string}")
+        policy_package = json.loads(policy_string, strict=False)
 
-            try:
-                iam_role = create_iam_role(session=sts_session, role_name=role_name, principal=trust_principal)
-            except ClientError as e:
-                if e.response['Error']['Code'] == 'EntityAlreadyExists':
-                    logger.info(
-                        f"Existing IAM Role {role_name} found in account {account['Id']}, "
-                        f"removing policies and deleting role."
-                    )
-                    detach_all_policies_from_role(session=sts_session, role_name=role_name)
-                    delete_role(session=sts_session, role_name=role_name)
-                    iam_role = create_iam_role(session=sts_session, role_name=role_name, principal=trust_principal)
-                else:
-                    logger.info(f"Exception occurred while creating role {role_name} in {account['Id']}: {e}")
+        # Get list of Org accounts and the current account_id
+        try:
+            accounts = get_org_accounts()
+        except Exception as err:
+            logger.error(f"Error getting accounts: {err}")
+            response_data['Error'] = f"Error getting accounts: {err}"
+            send(cfn_event, context, FAILED, response_data)
+            raise err
 
-            for policy_doc in policy_package['Docs']:
-                logger.info(f"Policy_Doc: {json.dumps(policy_doc)}")
+        try:
+            session = boto3.Session()
+        except Exception as err:
+            logger.error(f"Error getting session: {err}")
+            response_data['Error'] = f"Error getting session: {err}"
+            send(cfn_event, context, FAILED, response_data)
+            raise err
+
+        try:
+            account_id = get_account_id(session)
+        except Exception as err:
+            logger.error(f"Error getting account ID: {err}")
+            response_data['Error'] = f"Error getting account ID: {err}"
+            send(cfn_event, context, FAILED, response_data)
+            raise err
+
+        # Handle Create/Update
+        if request_type == 'Create' or request_type == 'Update':
+            logger.info(f"CFN {request_type} request received")
+            for account in accounts:
+                # Skip the management account
+                if account_id in account['Id']:
+                    continue
+
                 try:
-                    policy = create_iam_policy(
+                    sts_session = assume_role(session=session, account_id=account['Id'], role_name=switch_role)
+                except Exception as err:
+                    logger.error(f"Error assuming role: {err}")
+                    response_data['Error'] = f"Error assuming role: {err}"
+                    send(cfn_event, context, FAILED, response_data)
+                    raise err
+
+                # Create or recreate the IAM role
+                try:
+                    iam_role = create_iam_role(
                         session=sts_session,
-                        policy_name=policy_doc['Statement'][0]['Sid'],
-                        policy_document=json.dumps(policy_doc)
+                        role_name=role_name,
+                        principal=trust_principal
                     )
                 except ClientError as e:
                     if e.response['Error']['Code'] == 'EntityAlreadyExists':
-                        logger.info(f"Existing Policy {policy_doc['Statement'][0]['Sid']} found. Recreating it.")
-                        try:
-                            delete_iam_policy(
-                                session=sts_session,
-                                policy_arn=f"arn:aws:iam::{account['Id']}:policy/{policy_doc['Statement'][0]['Sid']}"
-                            )
-                            policy = create_iam_policy(
-                                session=sts_session,
-                                policy_name=policy_doc['Statement'][0]['Sid'],
-                                policy_document=json.dumps(policy_doc)
-                            )
-                        except Exception as e2:
-                            logger.info(
-                                f"Error recreating {policy_doc['Statement'][0]['Sid']}. Exception: {e2}"
-                            )
-                    else:
                         logger.info(
-                            f"Exception occurred while creating policy {policy_doc['Statement'][0]['Sid']}: {e}"
+                            f"Existing IAM Role {role_name} found in account {account['Id']}, "
+                            f"removing policies and deleting role."
+                        )
+                        detach_all_policies_from_role(session=sts_session, role_name=role_name)
+                        delete_role(session=sts_session, role_name=role_name)
+                        iam_role = create_iam_role(
+                            session=sts_session,
+                            role_name=role_name,
+                            principal=trust_principal
+                        )
+                    else:
+                        logger.info(f"Exception occurred while creating role {role_name} in {account['Id']}: {e}")
+
+                # Create or recreate each policy in policy_package["Docs"], then attach
+                for policy_doc in policy_package["Docs"]:
+                    logger.info(f"Policy_Doc: {json.dumps(policy_doc)}")
+                    try:
+                        policy = create_iam_policy(
+                            session=sts_session,
+                            policy_name=policy_doc['Statement'][0]['Sid'],
+                            policy_document=json.dumps(policy_doc)
+                        )
+                    except ClientError as e:
+                        if e.response['Error']['Code'] == 'EntityAlreadyExists':
+                            logger.info(f"Existing Policy {policy_doc['Statement'][0]['Sid']} found. Recreating it.")
+                            try:
+                                delete_iam_policy(
+                                    session=sts_session,
+                                    policy_arn=f"arn:aws:iam::{account['Id']}:policy/{policy_doc['Statement'][0]['Sid']}"
+                                )
+                                policy = create_iam_policy(
+                                    session=sts_session,
+                                    policy_name=policy_doc['Statement'][0]['Sid'],
+                                    policy_document=json.dumps(policy_doc)
+                                )
+                            except Exception as e2:
+                                logger.info(
+                                    f"Error recreating {policy_doc['Statement'][0]['Sid']}. Exception: {e2}"
+                                )
+                        else:
+                            logger.info(
+                                f"Exception occurred while creating policy {policy_doc['Statement'][0]['Sid']}: {e}"
+                            )
+
+                    try:
+                        attach_iam_policy_to_role(
+                            session=sts_session,
+                            role_name=iam_role['RoleName'],
+                            policy_arn=policy['Arn']
+                        )
+                    except Exception as err:
+                        logger.info(
+                            f"Error attaching {iam_role['RoleName']} to {policy['Arn']}. Exception: {err}"
                         )
 
+            # At this point, all operations completed successfully for this event
+            send(cfn_event, context, SUCCESS, response_data)
+            # Cancel further reinvocations
+            stop_reinvocation = True
+
+        # Handle Delete
+        elif request_type == 'Delete':
+            logger.info(f"CFN {request_type} request received")
+            for account in accounts:
+                # Skip the management account
+                if account_id in account['Id']:
+                    continue
+
                 try:
-                    attach_iam_policy_to_role(
-                        session=sts_session,
-                        role_name=iam_role['RoleName'],
-                        policy_arn=policy['Arn']
-                    )
+                    sts_session = assume_role(session=session, account_id=account['Id'], role_name=switch_role)
                 except Exception as err:
-                    logger.info(
-                        f"Error attaching {iam_role['RoleName']} to {policy['Arn']}. Exception: {err}"
-                    )
+                    logger.error(f"Error assuming role: {err}")
+                    response_data['Error'] = f"Error assuming role: {err}"
+                    send(cfn_event, context, FAILED, response_data)
+                    raise err
 
-        # At this point, all operations completed successfully
-        send(event, context, SUCCESS, response_data)
-        # Cancel further reinvocations
-        stop_reinvocation = True
-
-    elif event['RequestType'] == 'Delete':
-        logger.info(f"CFN {event['RequestType']} request received")
-        for account in accounts:
-            # Skip the management account
-            if account_id in account['Id']:
-                continue
-
-            try:
-                sts_session = assume_role(session=session, account_id=account['Id'], role_name=switch_role)
-            except Exception as err:
-                logger.error(f"Error assuming role: {err}")
-                response_data['Error'] = f"Error assuming role: {err}"
-                send(event, context, FAILED, response_data)
-                raise err
-
-            try:
-                detach_all_policies_from_role(session=sts_session, role_name=role_name)
-                delete_role(session=sts_session, role_name=role_name)
-            except Exception as err:
-                logger.info(f"Error deleting role {role_name}. Exception: {err}")
-
-            # The original code in Delete references policy_package as a list of docs
-            # Ensure it aligns with the JSON structure you pass:
-            # In the original code, it was for policy_doc in policy_package (not policy_package['Docs']).
-            for policy_doc in policy_package:
+                # Detach all policies, delete the role
                 try:
-                    delete_iam_policy(
-                        session=sts_session,
-                        policy_arn=f"arn:aws:iam::{account['Id']}:policy/{policy_doc['Statement'][0]['Sid']}"
-                    )
+                    detach_all_policies_from_role(session=sts_session, role_name=role_name)
+                    delete_role(session=sts_session, role_name=role_name)
                 except Exception as err:
-                    logger.info(
-                        f"Deleting Policy {policy_doc} in {account['Id']} failed. Exception: {err}"
-                    )
-                    policy = {}
+                    logger.info(f"Error deleting role {role_name}. Exception: {err}")
 
-            rs = event['PhysicalResourceId']
-            response_data['lower'] = rs.lower()
-            send(event, context, SUCCESS, response_data)
-        # Cancel further reinvocations on success
-        stop_reinvocation = True
+                # Delete each custom policy in policy_package["Docs"]
+                for policy_doc in policy_package["Docs"]:
+                    try:
+                        delete_iam_policy(
+                            session=sts_session,
+                            policy_arn=f"arn:aws:iam::{account['Id']}:policy/{policy_doc['Statement'][0]['Sid']}"
+                        )
+                    except Exception as err:
+                        logger.info(
+                            f"Deleting Policy {policy_doc} in {account['Id']} failed. Exception: {err}"
+                        )
 
-    else:
-        # Unknown RequestType
-        send(event, context, FAILED, response_data, response_data.get('lower', None))
-        stop_reinvocation = True
+                rs = cfn_event['PhysicalResourceId']
+                response_data['lower'] = rs.lower() if rs else ''
+                send(cfn_event, context, SUCCESS, response_data)
+
+            # Cancel further reinvocations on success
+            stop_reinvocation = True
+
+        else:
+            # Unknown RequestType
+            send(cfn_event, context, FAILED, response_data, response_data.get('lower', None))
+            stop_reinvocation = True
