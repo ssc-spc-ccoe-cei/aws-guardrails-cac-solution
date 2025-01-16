@@ -487,3 +487,4 @@ def lambda_handler(event, context):
     except Exception as err:
         logger.Error(f"Error occurred: {err}")
         t.join()
+        raise err
