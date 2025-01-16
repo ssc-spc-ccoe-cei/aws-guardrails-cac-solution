@@ -115,7 +115,7 @@ def lambda_handler(event, context):
     aws_s3_client_for_audit_account = get_client("s3")
     
     # Check cloud profile
-    tags = get_account_tags(aws_organizations_client, aws_account_id)
+    tags = get_account_tags(get_client("organizations", assume_role=False), aws_account_id)
     cloud_profile = get_cloud_profile_from_tags(tags)
     gr_requirement_type = check_guardrail_requirement_by_cloud_usage_profile(GuardrailType.Guardrail10, cloud_profile)
     

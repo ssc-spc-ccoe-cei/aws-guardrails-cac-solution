@@ -164,10 +164,9 @@ def lambda_handler(event, context):
     aws_config_client = get_client("config", aws_account_id, execution_role_name, is_not_audit_account)
     # Using older 'elb' api instead of 'elbv2' so that we get the 'Classic' load balancers
     aws_elb_client = get_client("elb", aws_account_id, execution_role_name, is_not_audit_account)
-    aws_organizations_client = get_client("organizations", aws_account_id, execution_role_name)
     
     # Check cloud profile
-    tags = get_account_tags(aws_organizations_client, aws_account_id)
+    tags = get_account_tags(get_client("organizations", assume_role=False), aws_account_id)
     cloud_profile = get_cloud_profile_from_tags(tags)
     gr_requirement_type = check_guardrail_requirement_by_cloud_usage_profile(GuardrailType.Guardrail7, cloud_profile)
     

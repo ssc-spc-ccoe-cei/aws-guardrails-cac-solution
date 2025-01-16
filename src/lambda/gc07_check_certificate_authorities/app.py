@@ -76,10 +76,9 @@ def lambda_handler(event, context):
     # Get the S3 client for the current (Audit) account where this lambda runs from
     aws_s3_client = get_client("s3")
     aws_acm_client = get_client("acm", aws_account_id, execution_role_name, is_not_audit_account)
-    aws_organizations_client = get_client("organizations", aws_account_id, execution_role_name)
     
     # Check cloud profile
-    tags = get_account_tags(aws_organizations_client, aws_account_id)
+    tags = get_account_tags(get_client("organizations", assume_role=False), aws_account_id)
     cloud_profile = get_cloud_profile_from_tags(tags)
     gr_requirement_type = check_guardrail_requirement_by_cloud_usage_profile(GuardrailType.Guardrail7, cloud_profile)
     
