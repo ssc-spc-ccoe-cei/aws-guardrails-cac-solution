@@ -14,7 +14,6 @@ Parameters:
     Description: Subject to change, might not be used here
   DefaultCloudProfile:
     Type: String
-    Default: "*DEFAULT_CLOUD_PROFILE*"
     AllowedValues: [ "1", "2", "3", "4", "5", "6"]
   OrganizationId:
     Type: String
