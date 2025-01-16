@@ -1409,6 +1409,7 @@ Resources:
       PolicyName: !Sub "${OrganizationName}GCLambdaExecutionRoleOrganizationsPolicy"
       Roles:
         - !Ref GCLambdaExecutionRole
+        - !Ref GCLambdaExecutionRole2
 
   # IAM Access
   GCLambdaExecutionRoleCloudFrontPolicy:
