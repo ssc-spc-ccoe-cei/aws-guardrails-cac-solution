@@ -205,6 +205,23 @@ Resources:
               - sts:AssumeRole
       Path: "/"
       Policies:
+        - PolicyName: self_invoke
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - lambda:InvokeFunctionUrl
+                  - lambda:InvokeFunction
+                  - lambda:GetFunctionEventInvokeConfig
+                  - lambda:GetFunction
+                  - lambda:InvokeAsync
+                  - lambda:GetAlias
+                Resource: !Sub "arn:${AWS::Partition}:lambda:*:${AWS::AccountId}:function:${OrganizationName}aws_create_role"
+              - Effect: Allow
+                Action:
+                  - lambda:ListFunctions
+                Resource: "*"
         - PolicyName: assume_role
           PolicyDocument:
             Version: "2012-10-17"
@@ -1761,6 +1778,8 @@ Resources:
       Parameters:
         - ParameterKey: AuditAccountID
           ParameterValue: !Ref AuditAccountID
+        - ParameterKey: DefaultCloudProfile
+          ParameterValue: !Ref DefaultCloudProfile
         - ParameterKey: DeployVersion
           ParameterValue: !Ref DeployVersion
         - ParameterKey: DestBucketName
