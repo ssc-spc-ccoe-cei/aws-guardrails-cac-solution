@@ -5,10 +5,10 @@
 import json
 import logging
 
-from utils import is_scheduled_notification, check_required_parameters
+from utils import is_scheduled_notification, check_required_parameters, check_guardrail_requirement_by_cloud_usage_profile, get_cloud_profile_from_tags, GuardrailType, GuardrailRequirementType
+from boto_util.organizations import get_account_tags, get_organizations_mgmt_account_id
 from boto_util.client import get_client
 from boto_util.config import build_evaluation, submit_evaluations
-from boto_util.organizations import get_organizations_mgmt_account_id
 
 import botocore.exceptions
 
@@ -159,17 +159,40 @@ def lambda_handler(event, context):
             return
 
         aws_organizations_client = get_client("organizations", aws_account_id, execution_role_name)
-
+            
         if aws_account_id != get_organizations_mgmt_account_id(aws_organizations_client):
             logger.info(
                 "CloudWatch Alarms not checked in account %s as this is not the Management Account",
                 aws_account_id,
             )
             return
+        
 
         aws_config_client = get_client("config", aws_account_id, execution_role_name)
         aws_cloudwatch_client = get_client("cloudwatch", aws_account_id, execution_role_name)
 
+        # Check cloud profile
+        tags = get_account_tags(get_client("organizations", assume_role=False), aws_account_id)
+        cloud_profile = get_cloud_profile_from_tags(tags)
+        gr_requirement_type = check_guardrail_requirement_by_cloud_usage_profile(GuardrailType.Guardrail3, cloud_profile)
+        
+        # If the guardrail is recommended
+        if gr_requirement_type == GuardrailRequirementType.Recommended:
+            return submit_evaluations(aws_config_client, event["resultToken"], [build_evaluation(
+                aws_account_id,
+                "COMPLIANT",
+                event,
+                gr_requirement_type=gr_requirement_type
+            )])
+        # If the guardrail is not required
+        elif gr_requirement_type == GuardrailRequirementType.Not_Required:
+            return submit_evaluations(aws_config_client, event["resultToken"], [build_evaluation(
+                aws_account_id,
+                "NOT_APPLICABLE",
+                event,
+                gr_requirement_type=gr_requirement_type
+            )])
+            
         results = check_cloudwatch_alarms(
             aws_cloudwatch_client, alarm_names=str(rule_parameters["AlarmList"]).split(",")
         )

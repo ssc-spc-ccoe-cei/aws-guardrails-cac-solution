@@ -6,11 +6,11 @@ import json
 import logging
 import ipaddress
 
-from utils import is_scheduled_notification, check_required_parameters
+from utils import is_scheduled_notification, check_required_parameters, check_guardrail_requirement_by_cloud_usage_profile, get_cloud_profile_from_tags, GuardrailType, GuardrailRequirementType
+from boto_util.organizations import get_account_tags, get_organizations_mgmt_account_id
 from boto_util.client import get_client
 from boto_util.config import build_evaluation, submit_evaluations
 from boto_util.iam import account_has_federated_users
-from boto_util.organizations import get_organizations_mgmt_account_id
 from boto_util.s3 import check_s3_object_exists, get_lines_from_s3_file
 from boto_util.cloud_trail import lookup_cloud_trail_events
 
@@ -68,6 +68,28 @@ def lambda_handler(event, context):
     aws_cloudtrail_client = get_client("cloudtrail", aws_account_id, execution_role_name)
     aws_iam_client = get_client("iam", aws_account_id, execution_role_name)
 
+    # Check cloud profile
+    tags = get_account_tags(get_client("organizations", assume_role=False), aws_account_id)
+    cloud_profile = get_cloud_profile_from_tags(tags)
+    gr_requirement_type = check_guardrail_requirement_by_cloud_usage_profile(GuardrailType.Guardrail3, cloud_profile)
+    
+    # If the guardrail is recommended
+    if gr_requirement_type == GuardrailRequirementType.Recommended:
+        return submit_evaluations(aws_config_client, event["resultToken"], [build_evaluation(
+            aws_account_id,
+            "COMPLIANT",
+            event,
+            gr_requirement_type=gr_requirement_type
+        )])
+    # If the guardrail is not required
+    elif gr_requirement_type == GuardrailRequirementType.Not_Required:
+        return submit_evaluations(aws_config_client, event["resultToken"], [build_evaluation(
+            aws_account_id,
+            "NOT_APPLICABLE",
+            event,
+            gr_requirement_type=gr_requirement_type
+        )])
+        
     file_param_name = "s3ObjectPath"
     vpn_ip_ranges_file_path = rule_parameters.get(file_param_name, "")
 

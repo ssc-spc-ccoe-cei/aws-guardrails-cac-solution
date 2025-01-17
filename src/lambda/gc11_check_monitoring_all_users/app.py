@@ -7,7 +7,8 @@ import re
 
 import botocore.exceptions
 
-from utils import is_scheduled_notification, check_required_parameters
+from utils import is_scheduled_notification, check_required_parameters, check_guardrail_requirement_by_cloud_usage_profile, get_cloud_profile_from_tags, GuardrailType, GuardrailRequirementType
+from boto_util.organizations import get_account_tags
 from boto_util.client import get_client
 from boto_util.config import build_evaluation, submit_evaluations
 
@@ -49,7 +50,29 @@ def lambda_handler(event: dict, context):
     evaluations = []
 
     aws_config_client = get_client("config", aws_account_id, execution_role_name, is_not_audit_account)
-
+    
+    # Check cloud profile
+    tags = get_account_tags(get_client("organizations", assume_role=False), aws_account_id)
+    cloud_profile = get_cloud_profile_from_tags(tags)
+    gr_requirement_type = check_guardrail_requirement_by_cloud_usage_profile(GuardrailType.Guardrail11, cloud_profile)
+    
+    # If the guardrail is recommended
+    if gr_requirement_type == GuardrailRequirementType.Recommended:
+        return submit_evaluations(aws_config_client, event["resultToken"], [build_evaluation(
+            aws_account_id,
+            "COMPLIANT",
+            event,
+            gr_requirement_type=gr_requirement_type
+        )])
+    # If the guardrail is not required
+    elif gr_requirement_type == GuardrailRequirementType.Not_Required:
+        return submit_evaluations(aws_config_client, event["resultToken"], [build_evaluation(
+            aws_account_id,
+            "NOT_APPLICABLE",
+            event,
+            gr_requirement_type=gr_requirement_type
+        )])
+        
     conformance_pack_id = extract_conformance_pack_id(event.get("configRuleName", ""))
     config_rule_name = f"gc01_check_monitoring_and_logging-conformance-pack-{conformance_pack_id}"
 

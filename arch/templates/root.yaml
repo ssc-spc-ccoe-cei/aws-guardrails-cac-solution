@@ -12,6 +12,9 @@ Parameters:
     Type: String
     Default: "*CSPM_EMAIL*"
     Description: Subject to change, might not be used here
+  DefaultCloudProfile:
+    Type: String
+    AllowedValues: [ "1", "2", "3", "4", "5", "6"]
   OrganizationId:
     Type: String
     Default: "*ORG_ID*"
@@ -86,6 +89,7 @@ Resources:
         OrganizationName: !Ref OrganizationName
         TenantId: !Ref TenantId
         RolePrefix: !Ref RolePrefix
+        DefaultCloudProfile: !Ref DefaultCloudProfile
         AccelRolePrefix: !Ref AccelRolePrefix
         AcceleratorRole: !Ref AcceleratorRole
         SecurityOUID: !Ref SecurityOUID

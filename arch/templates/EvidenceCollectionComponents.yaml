@@ -24,6 +24,9 @@ Parameters:
     Type: String
   DeployVersion:
     Type: String
+  DefaultCloudProfile:
+    Type: String
+    Description: The cloud profile to use when one is not provided by an account.
   AssessmentName:
     Type: String
     Default: "GC Guardrails Assessment"
@@ -35,6 +38,15 @@ Conditions:
     - !Ref AuditAccountID
 
 Resources:
+  CloudGuardrailsCommonLayer:
+    Condition: IsAuditAccount
+    Type: AWS::Lambda::LayerVersion
+    Properties:
+      LayerName: CloudGuardrailsCommonLayerPartEvidenceCollection
+      CompatibleRuntimes:
+        - python3.12
+      Content: "../../src/layer/cloud_guardrails/build/CloudGuardrailsCommonLayer/"
+  
   myKey:
     Condition: IsAuditAccount
     Type: "AWS::KMS::Key"
@@ -175,6 +187,8 @@ Resources:
       Handler: app.lambda_handler
       Code: "../../src/lambda/aws_compile_audit_report/build/CronjobsLambda/"
       Role: !GetAtt CronLambdaExecutionRole.Arn
+      Layers:
+        - !Ref CloudGuardrailsCommonLayer
       Environment:
         Variables:
           source_target_bucket: !Sub "gc-fedclient-${AWS::AccountId}-${AWS::Region}"
@@ -183,7 +197,8 @@ Resources:
           ORG_NAME: !Ref OrganizationName
           TENANT_ID: !Ref TenantId
           CAC_VERSION: !Ref DeployVersion
-      Runtime: python3.9
+          DEFAULT_CLOUD_PROFILE: !Ref DefaultCloudProfile
+      Runtime: python3.12
       Timeout: 360
 
   CronLambdaExecutionRole:
@@ -200,6 +215,14 @@ Resources:
       ManagedPolicyArns:
         - "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
       Policies:
+        - PolicyName: AllowOrgList
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - organizations:ListTagsForResource
+                Resource: "*"
         - PolicyName: S3Policy
           PolicyDocument:
             Version: "2012-10-17"

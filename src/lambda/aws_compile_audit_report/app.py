@@ -8,6 +8,9 @@ import logging
 import os
 
 import boto3
+from utils import get_cloud_profile_from_tags
+from boto_util.client import get_client
+from boto_util.organizations import get_account_tags
 
 assessment_name = os.environ["ASSESSMENT_NAME"]
 cac_version = os.environ["CAC_VERSION"]
@@ -28,9 +31,10 @@ def lambda_handler(event, context):
     logger.setLevel(logging.INFO)
     logger.info("start audit manager get assessments")
     logger.info("Received Event: %s", json.dumps(event, indent=2))
-
+    
     header = [
         "accountId",
+        "accountCloudProfile",
         "dataSource",
         "guardrail",
         "controlName",
@@ -61,12 +65,16 @@ def lambda_handler(event, context):
             control_id = folder["controlName"]
             evidences = get_evidence_by_evidence_folders(assessment_id, control_set_id, folder_id)
             for item in evidences:
+                aws_account_id = item["evidenceAwsAccountId"]
+                tags = get_account_tags(get_client("organizations", assume_role=False), aws_account_id)
+                cloud_profile = get_cloud_profile_from_tags(tags)
                 if item["time"] > (datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(1)):
                     rows = []
                     if len(item["resourcesIncluded"]) == 0:
                         rows.append(
                             [
-                                item["evidenceAwsAccountId"],
+                                aws_account_id,
+                                str(cloud_profile.value),
                                 item["dataSource"],
                                 control_set_id,
                                 control_id,
@@ -84,7 +92,8 @@ def lambda_handler(event, context):
                         for sub_evidence in item["resourcesIncluded"]:
                             rows.append(
                                 [
-                                    item["evidenceAwsAccountId"],
+                                    aws_account_id,
+                                    str(cloud_profile.value),
                                     item["dataSource"],
                                     control_set_id,
                                     control_id,
@@ -102,7 +111,8 @@ def lambda_handler(event, context):
                         if "value" not in item["resourcesIncluded"][0]:
                             rows.append(
                                 [
-                                    item["evidenceAwsAccountId"],
+                                    aws_account_id,
+                                    str(cloud_profile.value),
                                     item["dataSource"],
                                     control_set_id,
                                     control_id,
@@ -119,7 +129,8 @@ def lambda_handler(event, context):
                         else:
                             rows.append(
                                 [
-                                    item["evidenceAwsAccountId"],
+                                    aws_account_id,
+                                    str(cloud_profile.value),
                                     item["dataSource"],
                                     control_set_id,
                                     control_id,

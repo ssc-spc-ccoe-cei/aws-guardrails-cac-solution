@@ -19,6 +19,9 @@ Parameters:
     Type: String
     Default: "python3.12"
     Description: The python runtime to use for the compliance dashboard
+  DefaultCloudProfile:
+    Type: String
+    Description: The cloud profile to use when one is not provided by an account.
 
 Conditions:
   IsAuditAccount: !Equals
@@ -54,6 +57,9 @@ Resources:
       LoggingConfig:
         LogGroup: !Sub "${OrganizationName}gc_guardrails"
         LogFormat: "JSON"
+      Environment:
+        Variables:
+          DEFAULT_CLOUD_PROFILE: !Ref DefaultCloudProfile
 
   ## GC08
   GC08CheckTargetNetworkArchitectureLambda:
@@ -71,6 +77,9 @@ Resources:
       LoggingConfig:
         LogGroup: !Sub "${OrganizationName}gc_guardrails"
         LogFormat: "JSON"
+      Environment:
+        Variables:
+          DEFAULT_CLOUD_PROFILE: !Ref DefaultCloudProfile
 
   GC08CheckCloudDeploymentGuideLambda:
     Condition: IsAuditAccount
@@ -87,6 +96,9 @@ Resources:
       LoggingConfig:
         LogGroup: !Sub "${OrganizationName}gc_guardrails"
         LogFormat: "JSON"
+      Environment:
+        Variables:
+          DEFAULT_CLOUD_PROFILE: !Ref DefaultCloudProfile
 
   GC08CheckCloudSegmentationDesignLambda:
     Condition: IsAuditAccount
@@ -103,6 +115,9 @@ Resources:
       LoggingConfig:
         LogGroup: !Sub "${OrganizationName}gc_guardrails"
         LogFormat: "JSON"
+      Environment:
+        Variables:
+          DEFAULT_CLOUD_PROFILE: !Ref DefaultCloudProfile
 
   ## GC09
   GC09CheckNetworkSecurityArchitectureDocumentLambda:
@@ -120,6 +135,9 @@ Resources:
       LoggingConfig:
         LogGroup: !Sub "${OrganizationName}gc_guardrails"
         LogFormat: "JSON"
+      Environment:
+        Variables:
+          DEFAULT_CLOUD_PROFILE: !Ref DefaultCloudProfile
 
   GC09CheckNonPublicStorageAccountsLambda:
     Condition: IsAuditAccount
@@ -136,6 +154,9 @@ Resources:
       LoggingConfig:
         LogGroup: !Sub "${OrganizationName}gc_guardrails"
         LogFormat: "JSON"
+      Environment:
+        Variables:
+          DEFAULT_CLOUD_PROFILE: !Ref DefaultCloudProfile
 
   ## GC10
   GC10CheckCyberCenterSensorsLambda:
@@ -153,6 +174,9 @@ Resources:
       LoggingConfig:
         LogGroup: !Sub "${OrganizationName}gc_guardrails"
         LogFormat: "JSON"
+      Environment:
+        Variables:
+          DEFAULT_CLOUD_PROFILE: !Ref DefaultCloudProfile
 
   GC10CheckSignedMOULambda:
     Condition: IsAuditAccount
@@ -169,6 +193,9 @@ Resources:
       LoggingConfig:
         LogGroup: !Sub "${OrganizationName}gc_guardrails"
         LogFormat: "JSON"
+      Environment:
+        Variables:
+          DEFAULT_CLOUD_PROFILE: !Ref DefaultCloudProfile
 
   ## GC11
   GC11CheckSecurityContactLambda:
@@ -186,3 +213,6 @@ Resources:
       LoggingConfig:
         LogGroup: !Sub "${OrganizationName}gc_guardrails"
         LogFormat: "JSON"
+      Environment:
+        Variables:
+          DEFAULT_CLOUD_PROFILE: !Ref DefaultCloudProfile

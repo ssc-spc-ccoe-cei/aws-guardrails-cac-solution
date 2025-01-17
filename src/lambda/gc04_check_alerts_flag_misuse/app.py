@@ -5,7 +5,8 @@
 import json
 import logging
 
-from utils import is_scheduled_notification, check_required_parameters, flatten_dict
+from utils import is_scheduled_notification, check_required_parameters, flatten_dict, check_guardrail_requirement_by_cloud_usage_profile, get_cloud_profile_from_tags, GuardrailType, GuardrailRequirementType
+from boto_util.organizations import get_account_tags
 from boto_util.client import get_client
 from boto_util.config import build_evaluation, submit_evaluations
 from boto_util.event_bridge import list_all_event_bridge_rules, list_all_event_bridge_rule_targets
@@ -176,7 +177,29 @@ def lambda_handler(event, context):
     aws_sns_client = get_client("sns", aws_account_id, execution_role_name)
     aws_cloud_trail_client = get_client("cloudtrail", aws_account_id, execution_role_name)
     aws_iam_client = get_client("iam", aws_account_id, execution_role_name)
-
+    
+    # Check cloud profile
+    tags = get_account_tags(get_client("organizations", assume_role=False), aws_account_id)
+    cloud_profile = get_cloud_profile_from_tags(tags)
+    gr_requirement_type = check_guardrail_requirement_by_cloud_usage_profile(GuardrailType.Guardrail4, cloud_profile)
+    
+    # If the guardrail is recommended
+    if gr_requirement_type == GuardrailRequirementType.Recommended:
+        return submit_evaluations(aws_config_client, event["resultToken"], [build_evaluation(
+            aws_account_id,
+            "COMPLIANT",
+            event,
+            gr_requirement_type=gr_requirement_type
+        )])
+    # If the guardrail is not required
+    elif gr_requirement_type == GuardrailRequirementType.Not_Required:
+        return submit_evaluations(aws_config_client, event["resultToken"], [build_evaluation(
+            aws_account_id,
+            "NOT_APPLICABLE",
+            event,
+            gr_requirement_type=gr_requirement_type
+        )])
+        
     rules_are_compliant = False
     rules = list_all_event_bridge_rules(aws_event_bridge_client)
     cb_role = rule_parameters["IAM_Role_Name"]

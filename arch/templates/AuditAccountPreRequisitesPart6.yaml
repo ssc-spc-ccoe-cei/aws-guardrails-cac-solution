@@ -19,6 +19,9 @@ Parameters:
     Type: String
     Default: "python3.12"
     Description: The python runtime to use for the compliance dashboard
+  DefaultCloudProfile:
+    Type: String
+    Description: The cloud profile to use when one is not provided by an account.
 
 Conditions:
   IsAuditAccount: !Equals
@@ -49,6 +52,9 @@ Resources:
       LoggingConfig:
         LogGroup: !Sub "${OrganizationName}gc_guardrails"
         LogFormat: "JSON"
+      Environment:
+        Variables:
+          DEFAULT_CLOUD_PROFILE: !Ref DefaultCloudProfile
 
   GC07CheckCryptographicAlgorithmsLambda:
     Condition: IsAuditAccount
@@ -65,6 +71,9 @@ Resources:
       LoggingConfig:
         LogGroup: !Sub "${OrganizationName}gc_guardrails"
         LogFormat: "JSON"
+      Environment:
+        Variables:
+          DEFAULT_CLOUD_PROFILE: !Ref DefaultCloudProfile
 
   GC07CheckEncryptionInTransitLambda:
     Condition: IsAuditAccount
@@ -81,3 +90,6 @@ Resources:
       LoggingConfig:
         LogGroup: !Sub "${OrganizationName}gc_guardrails"
         LogFormat: "JSON"
+      Environment:
+        Variables:
+          DEFAULT_CLOUD_PROFILE: !Ref DefaultCloudProfile

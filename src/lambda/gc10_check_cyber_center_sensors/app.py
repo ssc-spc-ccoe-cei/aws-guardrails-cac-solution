@@ -6,10 +6,10 @@ import logging
 
 import botocore.exceptions
 
-from utils import is_scheduled_notification, check_required_parameters
+from utils import is_scheduled_notification, check_required_parameters, check_guardrail_requirement_by_cloud_usage_profile, get_cloud_profile_from_tags, GuardrailType, GuardrailRequirementType
+from boto_util.organizations import get_organizations_mgmt_account_id, organizations_list_all_accounts, get_account_tags
 from boto_util.client import get_client
 from boto_util.config import build_evaluation, submit_evaluations
-from boto_util.organizations import get_organizations_mgmt_account_id, organizations_list_all_accounts
 from boto_util.s3 import list_all_s3_buckets, get_lines_from_s3_file, check_s3_object_exists
 from boto_util.iam import list_all_iam_roles
 
@@ -113,7 +113,29 @@ def lambda_handler(event, context):
     aws_config_client = get_client("config", aws_account_id, execution_role_name, is_not_audit_account)
     # Get the S3 client for the current (Audit) account where this lambda runs from
     aws_s3_client_for_audit_account = get_client("s3")
-
+    
+    # Check cloud profile
+    tags = get_account_tags(get_client("organizations", assume_role=False), aws_account_id)
+    cloud_profile = get_cloud_profile_from_tags(tags)
+    gr_requirement_type = check_guardrail_requirement_by_cloud_usage_profile(GuardrailType.Guardrail10, cloud_profile)
+    
+    # If the guardrail is recommended
+    if gr_requirement_type == GuardrailRequirementType.Recommended:
+        return submit_evaluations(aws_config_client, event["resultToken"], [build_evaluation(
+            aws_account_id,
+            "COMPLIANT",
+            event,
+            gr_requirement_type=gr_requirement_type
+        )])
+    # If the guardrail is not required
+    elif gr_requirement_type == GuardrailRequirementType.Not_Required:
+        return submit_evaluations(aws_config_client, event["resultToken"], [build_evaluation(
+            aws_account_id,
+            "NOT_APPLICABLE",
+            event,
+            gr_requirement_type=gr_requirement_type
+        )])
+        
     if not check_s3_object_exists(aws_s3_client_for_audit_account, log_buckets_s3_path):
         annotation = f"No file found for s3 path '{log_buckets_s3_path}' via '{file_param_name}' input parameter."
         logger.info(f"NON_COMPLIANT: {annotation}")

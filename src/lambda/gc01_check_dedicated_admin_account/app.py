@@ -7,11 +7,11 @@ import logging
 
 import botocore.exceptions
 
-from utils import is_scheduled_notification, check_required_parameters
+from utils import is_scheduled_notification, check_required_parameters, check_guardrail_requirement_by_cloud_usage_profile, get_cloud_profile_from_tags, GuardrailType, GuardrailRequirementType
+from boto_util.organizations import get_account_tags, get_organizations_mgmt_account_id, organizations_list_all_accounts
 from boto_util.client import get_client
 from boto_util.config import build_evaluation, submit_evaluations
 from boto_util.s3 import check_s3_object_exists, get_lines_from_s3_file
-from boto_util.organizations import get_organizations_mgmt_account_id, organizations_list_all_accounts
 from boto_util.iam import list_all_iam_users
 from boto_util.sso_admin import list_all_sso_admin_instances
 
@@ -453,8 +453,31 @@ def lambda_handler(event, context):
     aws_sso_admin_client = get_client("sso-admin", aws_account_id, execution_role_name, is_not_audit_account)
     aws_identity_store_client = get_client("identitystore", aws_account_id, execution_role_name, is_not_audit_account)
     aws_s3_client = get_client("s3")
-
+    
     evaluations = []
+    
+    # Check cloud profile
+    tags = get_account_tags(get_client("organizations", assume_role=False), aws_account_id)
+    cloud_profile = get_cloud_profile_from_tags(tags)
+    gr_requirement_type = check_guardrail_requirement_by_cloud_usage_profile(GuardrailType.Guardrail1, cloud_profile)
+    
+    # If the guardrail is recommended
+    if gr_requirement_type == GuardrailRequirementType.Recommended:
+        return submit_evaluations(aws_config_client, event["resultToken"], [build_evaluation(
+            aws_account_id,
+            "COMPLIANT",
+            event,
+            gr_requirement_type=gr_requirement_type
+        )])
+    # If the guardrail is not required
+    elif gr_requirement_type == GuardrailRequirementType.Not_Required:
+        return submit_evaluations(aws_config_client, event["resultToken"], [build_evaluation(
+            aws_account_id,
+            "NOT_APPLICABLE",
+            event,
+            gr_requirement_type=gr_requirement_type
+        )])
+    
     privileged_users_file_path = rule_parameters.get("PrivilegedUsersFilePath", "")
     non_privileged_users_file_path = rule_parameters.get("NonPrivilegedUsersFilePath", "")
 

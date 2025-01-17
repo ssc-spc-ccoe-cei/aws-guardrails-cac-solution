@@ -20,6 +20,7 @@ Metadata:
           - RootOUID
           - SecurityOUID
           - TenantId
+          - DefaultCloudProfile
       - Label:
           default: Optional Parameters
         Parameters:
@@ -36,6 +37,8 @@ Metadata:
         default: The ID of the organization
       TenantId:
         default: The ID of the tenant
+      DefaultCloudProfile:
+        default: The cloud profile to use when one is not provided by an account
       ExecutionName:
         default: Execution name of the IAM role that is passed to GC permission's
       RootOUID:
@@ -88,6 +91,10 @@ Parameters:
     Type: String
     Description: >-
       Tenant Id provided by root.yaml.
+  DefaultCloudProfile:
+    Type: String
+    Description: >-
+      The cloud profile to use when one is not provided by an account.
   ExecutionName:
     Type: String
     Description: >-
@@ -198,6 +205,23 @@ Resources:
               - sts:AssumeRole
       Path: "/"
       Policies:
+        - PolicyName: self_invoke
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - lambda:InvokeFunctionUrl
+                  - lambda:InvokeFunction
+                  - lambda:GetFunctionEventInvokeConfig
+                  - lambda:GetFunction
+                  - lambda:InvokeAsync
+                  - lambda:GetAlias
+                Resource: !Sub "arn:${AWS::Partition}:lambda:*:${AWS::AccountId}:function:${OrganizationName}aws_create_role"
+              - Effect: Allow
+                Action:
+                  - lambda:ListFunctions
+                Resource: "*"
         - PolicyName: assume_role
           PolicyDocument:
             Version: "2012-10-17"
@@ -266,6 +290,7 @@ Resources:
                     "kinesis:DescribeStream",
                     "kinesis:ListStreams",
                     "memorydb:Describe*",
+                    "organizations:ListTagsForResource",
                     "organizations:Describe*",
                     "organizations:List*",
                     "qldb:DescribeLedger",
@@ -391,6 +416,7 @@ Resources:
                 "kinesis:DescribeStream",
                 "kinesis:ListStreams",
                 "memorydb:Describe*",
+                "organizations:List*",
                 "qldb:DescribeLedger",
                 "qldb:ListLedgers",
                 "rds:Describe*",
@@ -666,6 +692,8 @@ Resources:
           ParameterValue: !Ref RolePrefix
         - ParameterKey: AccelRolePrefix
           ParameterValue: !Ref AccelRolePrefix
+        - ParameterKey: DefaultCloudProfile
+          ParameterValue: !Ref DefaultCloudProfile
       PermissionModel: SERVICE_MANAGED
       StackInstancesGroup:
         - DeploymentTargets:
@@ -705,6 +733,8 @@ Resources:
           ParameterValue: !Ref AuditAccountID
         - ParameterKey: RolePrefix
           ParameterValue: !Ref RolePrefix
+        - ParameterKey: DefaultCloudProfile
+          ParameterValue: !Ref DefaultCloudProfile
       PermissionModel: SERVICE_MANAGED
       StackInstancesGroup:
         - DeploymentTargets:
@@ -744,6 +774,8 @@ Resources:
           ParameterValue: !Ref AuditAccountID
         - ParameterKey: RolePrefix
           ParameterValue: !Ref RolePrefix
+        - ParameterKey: DefaultCloudProfile
+          ParameterValue: !Ref DefaultCloudProfile
       PermissionModel: SERVICE_MANAGED
       StackInstancesGroup:
         - DeploymentTargets:
@@ -783,6 +815,8 @@ Resources:
           ParameterValue: !Ref AuditAccountID
         - ParameterKey: RolePrefix
           ParameterValue: !Ref RolePrefix
+        - ParameterKey: DefaultCloudProfile
+          ParameterValue: !Ref DefaultCloudProfile
       PermissionModel: SERVICE_MANAGED
       StackInstancesGroup:
         - DeploymentTargets:
@@ -823,6 +857,8 @@ Resources:
           ParameterValue: !Ref AuditAccountID
         - ParameterKey: RolePrefix
           ParameterValue: !Ref RolePrefix
+        - ParameterKey: DefaultCloudProfile
+          ParameterValue: !Ref DefaultCloudProfile
       PermissionModel: SERVICE_MANAGED
       StackInstancesGroup:
         - DeploymentTargets:
@@ -862,6 +898,8 @@ Resources:
           ParameterValue: !Ref AuditAccountID
         - ParameterKey: RolePrefix
           ParameterValue: !Ref RolePrefix
+        - ParameterKey: DefaultCloudProfile
+          ParameterValue: !Ref DefaultCloudProfile
       PermissionModel: SERVICE_MANAGED
       StackInstancesGroup:
         - DeploymentTargets:
@@ -901,6 +939,8 @@ Resources:
           ParameterValue: !Ref AuditAccountID
         - ParameterKey: RolePrefix
           ParameterValue: !Ref RolePrefix
+        - ParameterKey: DefaultCloudProfile
+          ParameterValue: !Ref DefaultCloudProfile
       PermissionModel: SERVICE_MANAGED
       StackInstancesGroup:
         - DeploymentTargets:
@@ -940,6 +980,8 @@ Resources:
           ParameterValue: !Ref AuditAccountID
         - ParameterKey: RolePrefix
           ParameterValue: !Ref RolePrefix
+        - ParameterKey: DefaultCloudProfile
+          ParameterValue: !Ref DefaultCloudProfile
       PermissionModel: SERVICE_MANAGED
       StackInstancesGroup:
         - DeploymentTargets:
@@ -1384,6 +1426,7 @@ Resources:
       PolicyName: !Sub "${OrganizationName}GCLambdaExecutionRoleOrganizationsPolicy"
       Roles:
         - !Ref GCLambdaExecutionRole
+        - !Ref GCLambdaExecutionRole2
 
   # IAM Access
   GCLambdaExecutionRoleCloudFrontPolicy:
@@ -1735,6 +1778,8 @@ Resources:
       Parameters:
         - ParameterKey: AuditAccountID
           ParameterValue: !Ref AuditAccountID
+        - ParameterKey: DefaultCloudProfile
+          ParameterValue: !Ref DefaultCloudProfile
         - ParameterKey: DeployVersion
           ParameterValue: !Ref DeployVersion
         - ParameterKey: DestBucketName
