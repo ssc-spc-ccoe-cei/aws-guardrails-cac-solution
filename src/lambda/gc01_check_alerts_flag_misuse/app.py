@@ -213,11 +213,11 @@ def lambda_handler(event, context):
     is_not_audit_account = aws_account_id != audit_account_id
     evaluations = []
 
-    aws_config_client = get_client("config", aws_account_id, execution_role_name)
+    aws_config_client = get_client("config", aws_account_id, execution_role_name, is_not_audit_account)
     aws_s3_client = get_client("s3")
-    aws_guard_duty_client = get_client("guardduty", aws_account_id, execution_role_name)
-    aws_event_bridge_client = get_client("events", aws_account_id, execution_role_name)
-    aws_sns_client = get_client("sns", aws_account_id, execution_role_name)
+    aws_guard_duty_client = get_client("guardduty", aws_account_id, execution_role_name, is_not_audit_account)
+    aws_event_bridge_client = get_client("events", aws_account_id, execution_role_name, is_not_audit_account)
+    aws_sns_client = get_client("sns", aws_account_id, execution_role_name, is_not_audit_account)
     
     # Check cloud profile
     tags = get_account_tags(get_client("organizations", assume_role=False), aws_account_id)
