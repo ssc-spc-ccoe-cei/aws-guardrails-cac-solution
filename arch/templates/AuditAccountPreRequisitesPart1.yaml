@@ -264,8 +264,8 @@ Resources:
               - "s3:GetEncryptionConfiguration"
               - "s3:ListAllMyBuckets"
               - "s3:ListBucket"
-              - "sns:GetTopicAttributes"
-              - "sns:ListTopics"
+              - "sns:Get*"
+              - "sns:List*"
               - "tag:GetResources"
               - "timestream:DescribeEndpoints"
               - "timestream:ListDatabases"
@@ -327,6 +327,30 @@ Resources:
               - "es:DescribeElasticsearchDomain"
               - "es:DescribeElasticsearchDomains"
               - "es:ListDomainNames"
+            Resource: "*"
+            Effect: Allow
+          - Sid: AllowEventChecks
+            Action:
+              - events:List*
+            Resource: "*"
+            Effect: Allow
+          - Sid: AllowGuardDuty
+            Action:
+              - guardduty:List*
+            Resource: "*"
+            Effect: Allow
+          - Sid: AllowACM
+            Action:
+              - acm:Describe*
+              - acm:Get*
+              - acm:List*
+            Resource: "*"
+            Effect: Allow
+          - Sid: AllowCloudFront
+            Action:
+              - cloudfront:Describe*
+              - cloudfront:Get*
+              - cloudfront:List*
             Resource: "*"
             Effect: Allow
       PolicyName: !Sub "${RolePrefix}default_lambda_execution_role_policy"
