@@ -243,7 +243,7 @@ Resources:
     Type: Custom::InvokeCustomLambda
     Condition: DeployRoles
     Properties:
-      Version: 33
+      Version: 35
       ServiceToken: !GetAtt CreateRoleLambda.Arn
       TrustPrincipal: !Sub arn:${AWS::Partition}:iam::${AuditAccountID}:root
       SwitchRole: !Ref AcceleratorRole
@@ -372,7 +372,7 @@ Resources:
     Type: Custom::InvokeCustomLambda
     Condition: DeployRoles
     Properties:
-      Version: 33
+      Version: 35
       ServiceToken: !GetAtt CreateRoleLambda.Arn
       TrustPrincipal: !Sub arn:${AWS::Partition}:iam::${AuditAccountID}:root
       SwitchRole: !Ref AcceleratorRole
@@ -1556,6 +1556,15 @@ Resources:
         - ParameterName: S3RoleAssignmentReviewDocumentPath
           ParameterValue: !Sub
             - "s3://${ClientEvidenceBucket}/gc-02/access_reviews_privileged_roles.pdf"
+            - ClientEvidenceBucket:
+                !If [
+                  GenerateEvidenceBucketName,
+                  !GetAtt GenerateEvidenceBucketName.EvidenceBucketName,
+                  !Ref EvidenceBucketName,
+                ]
+        - ParameterName: S3AccessManagementAttestationDocumentPath
+          ParameterValue: !Sub
+            - "s3://${ClientEvidenceBucket}/gc-02/access_management_attestation.pdf"
             - ClientEvidenceBucket:
                 !If [
                   GenerateEvidenceBucketName,

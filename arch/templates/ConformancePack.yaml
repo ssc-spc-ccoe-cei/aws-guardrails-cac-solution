@@ -60,6 +60,8 @@ Parameters:
     Type: String
   S3RoleAssignmentReviewDocumentPath:
     Type: String
+  S3AccessManagementAttestationDocumentPath:
+    Type: String
   S3AdminAccountListPath:
     Type: String
   GC03AlarmList:
@@ -468,6 +470,42 @@ Resources:
             - - "arn:aws:lambda:ca-central-1:"
               - Ref: AuditAccountID
               - !Sub ":function:${OrganizationName}gc02_check_privileged_roles_review"
+        SourceDetails:
+          - EventSource: "aws.config"
+            MessageType: "ScheduledNotification"
+  GC02CheckAccessManagementAttestationConfigRule:
+    Type: "AWS::Config::ConfigRule"
+    Properties:
+      ConfigRuleName: gc02_check_access_management_attestation
+      Description: Checks S3 bucket for the access management attestation document.
+      InputParameters:
+        s3ObjectPath:
+          Fn::If:
+            - s3AccessManagementAttestationDocumentPath
+            - Ref: S3AccessManagementAttestationDocumentPath
+            - Ref: AWS::NoValue
+        ExecutionRoleName:
+          Fn::If:
+            - GCLambdaExecutionRoleName
+            - Ref: GCLambdaExecutionRoleName
+            - Ref: AWS::NoValue
+        AuditAccountID:
+          Fn::If:
+            - auditAccountID
+            - Ref: AuditAccountID
+            - Ref: AWS::NoValue
+      Scope:
+        ComplianceResourceTypes:
+          - AWS::Account
+      MaximumExecutionFrequency: TwentyFour_Hours
+      Source:
+        Owner: CUSTOM_LAMBDA
+        SourceIdentifier:
+          Fn::Join:
+            - ""
+            - - "arn:aws:lambda:ca-central-1:"
+              - Ref: AuditAccountID
+              - !Sub ":function:${OrganizationName}gc02_check_access_management_attestation"
         SourceDetails:
           - EventSource: "aws.config"
             MessageType: "ScheduledNotification"
@@ -1826,6 +1864,11 @@ Conditions:
       - Fn::Equals:
           - ""
           - Ref: S3RoleAssignmentReviewDocumentPath
+  s3AccessManagementAttestationDocumentPath:
+    Fn::Not:
+      - Fn::Equals:
+          - ""
+          - Ref: S3AccessManagementAttestationDocumentPath
   # GC03
   s3VpnIpRangesPath:
     Fn::Not:

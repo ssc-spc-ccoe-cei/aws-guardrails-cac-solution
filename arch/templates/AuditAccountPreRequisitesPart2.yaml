@@ -131,3 +131,22 @@ Resources:
       Environment:
         Variables:
           DEFAULT_CLOUD_PROFILE: !Ref DefaultCloudProfile
+
+  GC02CheckAccessManagementAttestationLambda:
+    Condition: IsAuditAccount
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub "${OrganizationName}gc02_check_access_management_attestation"
+      Code: "../../src/lambda/gc02_check_access_management_attestation/build/GC02CheckAccessManagementAttestationLambda/"
+      Handler: app.lambda_handler
+      Role: !Sub "arn:aws:iam::${AuditAccountID}:role/${RolePrefix}default_assessment_role"
+      Runtime: !Ref PythonRuntime
+      Timeout: 180
+      Layers:
+        - !Ref CloudGuardrailsCommonLayer
+      LoggingConfig:
+        LogGroup: !Sub "${OrganizationName}gc_guardrails"
+        LogFormat: "JSON"
+      Environment:
+        Variables:
+          DEFAULT_CLOUD_PROFILE: !Ref DefaultCloudProfile
