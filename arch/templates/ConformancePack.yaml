@@ -1596,7 +1596,7 @@ Resources:
             - ""
             - - "arn:aws:lambda:ca-central-1:"
               - Ref: AuditAccountID
-              - !Sub ":function:${OrganizationName}gc12_check_marketplace"
+              - !Sub ":function:${OrganizationName}gc12_check_private_marketplace"
         SourceDetails:
           - EventSource: "aws.config"
             MessageType: "ScheduledNotification"
@@ -1605,7 +1605,7 @@ Resources:
   GC13EmergencyAccountManagementConfigRule:
     Type: "AWS::Config::ConfigRule"
     Properties:
-      ConfigRuleName: gc13_emergency_account_management
+      ConfigRuleName: gc13_check_emergency_account_management
       Description: Checks S3 bucket for the account management procedure
       InputParameters:
         s3ObjectPath:
@@ -1634,7 +1634,7 @@ Resources:
             - ""
             - - "arn:aws:lambda:ca-central-1:"
               - Ref: AuditAccountID
-              - !Sub ":function:${OrganizationName}gc13_emergency_account_management"
+              - !Sub ":function:${OrganizationName}gc13_check_emergency_account_management"
         SourceDetails:
           - EventSource: "aws.config"
             MessageType: "ScheduledNotification"
@@ -1642,7 +1642,7 @@ Resources:
   GC13EmergencyAccountMgmtApprovalsConfigRule:
     Type: "AWS::Config::ConfigRule"
     Properties:
-      ConfigRuleName: gc13_emergency_account_mgmt_approvals
+      ConfigRuleName: gc13_check_emergency_account_mgmt_approvals
       Description: Checks S3 bucket for the account management procedure approvals
       InputParameters:
         s3ObjectPath:
@@ -1671,7 +1671,7 @@ Resources:
             - ""
             - - "arn:aws:lambda:ca-central-1:"
               - Ref: AuditAccountID
-              - !Sub ":function:${OrganizationName}gc13_emergency_account_mgmt_approvals"
+              - !Sub ":function:${OrganizationName}gc13_check_emergency_account_mgmt_approvals"
         SourceDetails:
           - EventSource: "aws.config"
             MessageType: "ScheduledNotification"
@@ -1679,7 +1679,7 @@ Resources:
   GC13EmergencyAccountAlertsConfigRule:
     Type: "AWS::Config::ConfigRule"
     Properties:
-      ConfigRuleName: gc13_emergency_account_alerts
+      ConfigRuleName: gc13_check_emergency_account_alerts
       Description: Checks for the existence of alerts that are in place to report any use of emergency accounts
       InputParameters:
         s3ObjectPath:
@@ -1708,7 +1708,7 @@ Resources:
             - ""
             - - "arn:aws:lambda:ca-central-1:"
               - Ref: AuditAccountID
-              - !Sub ":function:${OrganizationName}gc13_emergency_account_alerts"
+              - !Sub ":function:${OrganizationName}gc13_check_emergency_account_alerts"
         SourceDetails:
           - EventSource: "aws.config"
             MessageType: "ScheduledNotification"
@@ -1716,7 +1716,7 @@ Resources:
   GC13EmergencyAccountTestingConfigRule:
     Type: "AWS::Config::ConfigRule"
     Properties:
-      ConfigRuleName: gc13_emergency_account_testing
+      ConfigRuleName: gc13_check_emergency_account_testing
       Description: Verifies that testing of emergency accounts took place and that periodic testing is included
       InputParameters:
         ExecutionRoleName:
@@ -1750,7 +1750,7 @@ Resources:
             - ""
             - - "arn:aws:lambda:ca-central-1:"
               - Ref: AuditAccountID
-              - !Sub ":function:${OrganizationName}gc13_emergency_account_testing"
+              - !Sub ":function:${OrganizationName}gc13_check_emergency_account_testing"
         SourceDetails:
           - EventSource: "aws.config"
             MessageType: "ScheduledNotification"

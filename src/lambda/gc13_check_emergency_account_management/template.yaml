@@ -1,7 +1,7 @@
-AWSTemplateFormatVersion: '2010-09-09'
+AWSTemplateFormatVersion: "2010-09-09"
 Transform: AWS::Serverless-2016-10-31
 Description: >
-  gc12_check_marketplace
+  gc13_check_emergency_account_management
 
 Globals:
   Function:
@@ -9,7 +9,7 @@ Globals:
     MemorySize: 128
 
 Resources:
-  GC12CheckMarketplacesLambda:
+  GC13CheckEmergencyAccountManagementLambda:
     Type: AWS::Serverless::Function
     Properties:
       CodeUri: .

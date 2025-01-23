@@ -134,12 +134,12 @@ Resources:
           DEFAULT_CLOUD_PROFILE: !Ref DefaultCloudProfile
 
   ## GC12
-  GC12CheckMarketplacesLambda:
+  GC12CheckPrivateMarketplacesLambda:
     Condition: IsAuditAccount
     Type: AWS::Lambda::Function
     Properties:
-      FunctionName: !Sub "${OrganizationName}gc12_check_marketplace"
-      Code: "../../src/lambda/gc12_check_marketplace/build/GC12CheckMarketplacesLambda/"
+      FunctionName: !Sub "${OrganizationName}gc12_check_private_marketplace"
+      Code: "../../src/lambda/gc12_check_private_marketplace/build/GC12CheckPrivateMarketplacesLambda/"
       Handler: app.lambda_handler
       Role: !Sub "arn:aws:iam::${AuditAccountID}:role/${RolePrefix}default_assessment_role"
       Runtime: !Ref PythonRuntime
@@ -308,12 +308,12 @@ Resources:
           DEFAULT_CLOUD_PROFILE: !Ref DefaultCloudProfile
 
   ## GC13
-  GC13EmergencyAccountManagementLambda:
+  GC13CheckEmergencyAccountManagementLambda:
     Condition: IsAuditAccount
     Type: AWS::Lambda::Function
     Properties:
-      FunctionName: !Sub "${OrganizationName}gc13_emergency_account_management"
-      Code: "../../src/lambda/gc13_emergency_account_management/build/GC13EmergencyAccountManagementLambda/"
+      FunctionName: !Sub "${OrganizationName}gc13_check_emergency_account_management"
+      Code: "../../src/lambda/gc13_check_emergency_account_management/build/GC13CheckEmergencyAccountManagementLambda/"
       Handler: app.lambda_handler
       Role: !Sub "arn:aws:iam::${AuditAccountID}:role/${RolePrefix}default_assessment_role"
       Runtime: !Ref PythonRuntime
@@ -327,12 +327,12 @@ Resources:
         Variables:
           DEFAULT_CLOUD_PROFILE: !Ref DefaultCloudProfile
 
-  GC13EmergencyAccountMgmtApprovalsLambda:
+  GC13CheckEmergencyAccountMgmtApprovalsLambda:
     Condition: IsAuditAccount
     Type: AWS::Lambda::Function
     Properties:
-      FunctionName: !Sub "${OrganizationName}gc13_emergency_account_mgmt_approvals"
-      Code: "../../src/lambda/gc13_emergency_account_mgmt_approvals/build/GC13EmergencyAccountMgmtApprovalsLambda/"
+      FunctionName: !Sub "${OrganizationName}gc13_check_emergency_account_mgmt_approvals"
+      Code: "../../src/lambda/gc13_check_emergency_account_mgmt_approvals/build/GC13CheckEmergencyAccountMgmtApprovalsLambda/"
       Handler: app.lambda_handler
       Role: !Sub "arn:aws:iam::${AuditAccountID}:role/${RolePrefix}default_assessment_role"
       Runtime: !Ref PythonRuntime
@@ -346,12 +346,12 @@ Resources:
         Variables:
           DEFAULT_CLOUD_PROFILE: !Ref DefaultCloudProfile
 
-  GC13EmergencyAccountAlertsLambda:
+  GC13CheckEmergencyAccountAlertsLambda:
     Condition: IsAuditAccount
     Type: AWS::Lambda::Function
     Properties:
-      FunctionName: !Sub "${OrganizationName}gc13_emergency_account_alerts"
-      Code: "../../src/lambda/gc13_emergency_account_alerts/build/GC13EmergencyAccountAlertsLambda/"
+      FunctionName: !Sub "${OrganizationName}gc13_check_emergency_account_alerts"
+      Code: "../../src/lambda/gc13_check_emergency_account_alerts/build/GC13CheckEmergencyAccountAlertsLambda/"
       Handler: app.lambda_handler
       Role: !Sub "arn:aws:iam::${AuditAccountID}:role/${RolePrefix}default_assessment_role"
       Runtime: !Ref PythonRuntime
@@ -365,12 +365,12 @@ Resources:
         Variables:
           DEFAULT_CLOUD_PROFILE: !Ref DefaultCloudProfile
 
-  GC13EmergencyAccountTestingLambda:
+  GC13CheckEmergencyAccountTestingLambda:
     Condition: IsAuditAccount
     Type: AWS::Lambda::Function
     Properties:
-      FunctionName: !Sub "${OrganizationName}gc13_emergency_account_testing"
-      Code: "../../src/lambda/gc13_emergency_account_testing/build/GC13EmergencyAccountTestingLambda/"
+      FunctionName: !Sub "${OrganizationName}gc13_check_emergency_account_testing"
+      Code: "../../src/lambda/gc13_check_emergency_account_testing/build/GC13CheckEmergencyAccountTestingLambda/"
       Handler: app.lambda_handler
       Role: !Sub "arn:aws:iam::${AuditAccountID}:role/${RolePrefix}default_assessment_role"
       Runtime: !Ref PythonRuntime

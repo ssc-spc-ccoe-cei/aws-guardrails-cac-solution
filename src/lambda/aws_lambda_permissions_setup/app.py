@@ -109,11 +109,11 @@ def apply_lambda_permissions():
         f"{organization_name}gc11_check_security_contact": ["GC11CheckSecurityContactLambda"],
         f"{organization_name}gc11_check_timezone": ["GC11CheckTimezoneLambda"],
         f"{organization_name}gc11_check_trail_logging": ["GC11CheckTrailLoggingLambda"],
-        f"{organization_name}gc12_check_marketplace": ["GC12CheckMarketplacesLambda"],
-        f"{organization_name}gc13_emergency_account_alerts": ["GC13EmergencyAccountAlertsLambda"],
-        f"{organization_name}gc13_emergency_account_management": ["GC13EmergencyAccountManagementLambda"],
-        f"{organization_name}gc13_emergency_account_mgmt_approvals": ["GC13EmergencyAccountMgmtApprovalsLambda"],
-        f"{organization_name}gc13_emergency_account_testing": ["GC13EmergencyAccountTestingLambda"],
+        f"{organization_name}gc12_check_private_marketplace": ["GC12CheckPrivateMarketplacesLambda"],
+        f"{organization_name}gc13_check_emergency_account_alerts": ["GC13CheckEmergencyAccountAlertsLambda"],
+        f"{organization_name}gc13_check_emergency_account_management": ["GC13CheckEmergencyAccountManagementLambda"],
+        f"{organization_name}gc13_check_emergency_account_mgmt_approvals": ["GC13CheckEmergencyAccountMgmtApprovalsLambda"],
+        f"{organization_name}gc13_check_emergency_account_testing": ["GC13CheckEmergencyAccountTestingLambda"],
     }
     accounts = get_accounts()
     client = boto3.client("lambda")
