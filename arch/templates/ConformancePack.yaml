@@ -149,7 +149,7 @@ Resources:
           - EventSource: "aws.config"
             MessageType: "ScheduledNotification"
             
-  GC01CheckRootAccountMFAEnabled:
+  GC01CheckRootMfaConfigRule:
     Type: "AWS::Config::ConfigRule"
     Properties:
       ConfigRuleName: gc01_check_root_mfa
@@ -181,7 +181,7 @@ Resources:
           - EventSource: "aws.config"
             MessageType: "ScheduledNotification"
 
-  GC01CheckFederatedUsersMFA:
+  GC01CheckFederatedUsersMfaConfigRule:
     Type: "AWS::Config::ConfigRule"
     Properties:
       ConfigRuleName: gc01_check_federated_users_mfa
@@ -213,7 +213,7 @@ Resources:
           - EventSource: "aws.config"
             MessageType: "ScheduledNotification"
 
-  GC01CheckMonitoringAndLogging:
+  GC01CheckMonitoringAndLoggingConfigRule:
     Type: "AWS::Config::ConfigRule"
     Properties:
       ConfigRuleName: gc01_check_monitoring_and_logging
@@ -358,7 +358,7 @@ Resources:
           - EventSource: "aws.config"
             MessageType: "ScheduledNotification"
 
-  GC01CheckMFAIAMUsersConfigRule:
+  GC01CheckIamUsersMfaConfigRule:
     Type: "AWS::Config::ConfigRule"
     Properties:
       ConfigRuleName: gc01_check_iam_users_mfa
@@ -545,7 +545,7 @@ Resources:
         SourceDetails:
           - EventSource: "aws.config"
             MessageType: "ScheduledNotification"
-  GC02CheckPasswordProtectionMechanismsLambda:
+  GC02CheckPasswordProtectionMechanismsConfigRule:
     Type: "AWS::Config::ConfigRule"
     Properties:
       ConfigRuleName: gc02_check_password_protection_mechanisms
@@ -1320,7 +1320,7 @@ Resources:
   GC10CheckSignedMOUConfigRule:
     Type: "AWS::Config::ConfigRule"
     Properties:
-      ConfigRuleName: gc10_confirmation_of_mou
+      ConfigRuleName: gc10_check_signed_mou
       Description: Confirms if the signed MOU with CCS has been uploaded to the S3 bucket
       InputParameters:
         s3ObjectPath:
@@ -1349,7 +1349,7 @@ Resources:
             - ""
             - - "arn:aws:lambda:ca-central-1:"
               - Ref: AuditAccountID
-              - !Sub ":function:${OrganizationName}gc10_confirmation_of_mou"
+              - !Sub ":function:${OrganizationName}gc10_check_signed_mou"
         SourceDetails:
           - EventSource: "aws.config"
             MessageType: "ScheduledNotification"
@@ -1547,24 +1547,24 @@ Resources:
           - EventSource: "aws.config"
             MessageType: "ScheduledNotification"
   # GC11 - Cloud Trail check with AWS Managed rules CLOUD_TRAIL_ENABLED, CLOUDTRAIL_S3_DATAEVENTS_ENABLED, CLOUDTRAIL_SECURITY_TRAIL_ENABLED
-  GC11CloudTrailEnabledConfigRule:
+  GC11CheckCloudTrailEnabledConfigRule:
     Type: "AWS::Config::ConfigRule"
     Properties:
-      ConfigRuleName: gc11_cloud_trail_enabled
+      ConfigRuleName: gc11_check_cloud_trail_enabled
       Source:
         Owner: AWS
         SourceIdentifier: CLOUD_TRAIL_ENABLED
-  GC11CloudTrailS3DataEventsEnabledConfigRule:
+  GC11CheckCloudTrailS3DataEventsEnabledConfigRule:
     Type: "AWS::Config::ConfigRule"
     Properties:
-      ConfigRuleName: gc11_cloudtrail_s3_dataevents_enabled
+      ConfigRuleName: gc11_check_cloudtrail_s3_dataevents_enabled
       Source:
         Owner: AWS
         SourceIdentifier: CLOUDTRAIL_S3_DATAEVENTS_ENABLED
-  GC11CloudTrailSecurityTrailEnabledConfigRule:
+  GC11CheckCloudTrailSecurityTrailEnabledConfigRule:
     Type: "AWS::Config::ConfigRule"
     Properties:
-      ConfigRuleName: gc11_cloudtrail_security_trail_enabled
+      ConfigRuleName: gc11_check_cloudtrail_security_trail_enabled
       Source:
         Owner: AWS
         SourceIdentifier: CLOUDTRAIL_SECURITY_TRAIL_ENABLED
@@ -1602,7 +1602,7 @@ Resources:
             MessageType: "ScheduledNotification"
 
   # GC13
-  GC13EmergencyAccountManagementConfigRule:
+  GC13CheckEmergencyAccountManagementConfigRule:
     Type: "AWS::Config::ConfigRule"
     Properties:
       ConfigRuleName: gc13_check_emergency_account_management
@@ -1639,7 +1639,7 @@ Resources:
           - EventSource: "aws.config"
             MessageType: "ScheduledNotification"
 
-  GC13EmergencyAccountMgmtApprovalsConfigRule:
+  GC13CheckEmergencyAccountMgmtApprovalsConfigRule:
     Type: "AWS::Config::ConfigRule"
     Properties:
       ConfigRuleName: gc13_check_emergency_account_mgmt_approvals
@@ -1676,7 +1676,7 @@ Resources:
           - EventSource: "aws.config"
             MessageType: "ScheduledNotification"
 
-  GC13EmergencyAccountAlertsConfigRule:
+  GC13CheckEmergencyAccountAlertsConfigRule:
     Type: "AWS::Config::ConfigRule"
     Properties:
       ConfigRuleName: gc13_check_emergency_account_alerts
@@ -1713,7 +1713,7 @@ Resources:
           - EventSource: "aws.config"
             MessageType: "ScheduledNotification"
 
-  GC13EmergencyAccountTestingConfigRule:
+  GC13CheckEmergencyAccountTestingConfigRule:
     Type: "AWS::Config::ConfigRule"
     Properties:
       ConfigRuleName: gc13_check_emergency_account_testing

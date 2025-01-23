@@ -182,8 +182,8 @@ Resources:
     Condition: IsAuditAccount
     Type: AWS::Lambda::Function
     Properties:
-      FunctionName: !Sub "${OrganizationName}gc10_confirmation_of_mou"
-      Code: "../../src/lambda/gc10_confirmation_of_mou/build/GC10CheckSignedMOULambda/"
+      FunctionName: !Sub "${OrganizationName}gc10_check_signed_mou"
+      Code: "../../src/lambda/gc10_check_signed_mou/build/GC10CheckSignedMOULambda/"
       Handler: app.lambda_handler
       Role: !Sub "arn:aws:iam::${AuditAccountID}:role/${RolePrefix}default_assessment_role"
       Runtime: !Ref PythonRuntime

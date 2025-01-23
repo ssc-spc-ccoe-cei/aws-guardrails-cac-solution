@@ -1,7 +1,7 @@
 AWSTemplateFormatVersion: '2010-09-09'
 Transform: AWS::Serverless-2016-10-31
 Description: >
-  gc10_confirmation_of_mou
+  gc10_check_signed_mou
 
 Globals:
   Function:
