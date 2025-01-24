@@ -5,6 +5,9 @@
 ##################################################################################
 Parameters:
   # Common
+  UpdateTriggerVersion:
+    Type: String
+    Default: "v1"
   GCLambdaExecutionRoleName:
     Type: String
   GCLambdaExecutionRoleName2:
@@ -148,7 +151,7 @@ Resources:
         SourceDetails:
           - EventSource: "aws.config"
             MessageType: "ScheduledNotification"
-            
+
   GC01CheckRootMfaConfigRule:
     Type: "AWS::Config::ConfigRule"
     Properties:
@@ -315,7 +318,7 @@ Resources:
         SourceDetails:
           - EventSource: "aws.config"
             MessageType: "ScheduledNotification"
-            
+
   GC01CheckDedicatedAdminAccount:
     Type: "AWS::Config::ConfigRule"
     Properties:
@@ -1000,10 +1003,10 @@ Resources:
       Description: Verify cryptographic algorithms and protocols are configured by the user in accordance with ITSP.40.111 and ITSP.40.062
       InputParameters:
         S3CasCurrentlyInUsePath:
-            Fn::If:
-              - s3CasCurrentlyInUsePath
-              - Ref: S3CasCurrentlyInUsePath
-              - Ref: AWS::NoValue
+          Fn::If:
+            - s3CasCurrentlyInUsePath
+            - Ref: S3CasCurrentlyInUsePath
+            - Ref: AWS::NoValue
         ExecutionRoleName:
           Fn::If:
             - GCLambdaExecutionRoleName2
@@ -1242,7 +1245,7 @@ Resources:
         SourceDetails:
           - EventSource: "aws.config"
             MessageType: "ScheduledNotification"
-  
+
   GC09CheckNonPublicStorageAccountsConfigRule:
     Type: "AWS::Config::ConfigRule"
     Properties:
@@ -1857,8 +1860,8 @@ Conditions:
   s3AdminAccountListPath:
     Fn::Not:
       - Fn::Equals:
-        - ""
-        - Ref: S3AdminAccountListPath
+          - ""
+          - Ref: S3AdminAccountListPath
   s3RoleAssignmentReviewDocumentPath:
     Fn::Not:
       - Fn::Equals:
