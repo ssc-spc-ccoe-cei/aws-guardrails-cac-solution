@@ -1752,6 +1752,8 @@ Resources:
           ParameterValue: !Ref AdditionalAssessmentAdminRoleARN
         - ParameterKey: RolePrefix
           ParameterValue: !Ref RolePrefix
+        - ParameterKey: DeployVersion
+          ParameterValue: !Ref DeployVersion
       PermissionModel: SERVICE_MANAGED
       StackInstancesGroup:
         - DeploymentTargets:
