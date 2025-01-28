@@ -199,7 +199,7 @@ Resources:
           CAC_VERSION: !Ref DeployVersion
           DEFAULT_CLOUD_PROFILE: !Ref DefaultCloudProfile
       Runtime: python3.12
-      Timeout: 360
+      Timeout: 720
 
   CronLambdaExecutionRole:
     Condition: IsAuditAccount
