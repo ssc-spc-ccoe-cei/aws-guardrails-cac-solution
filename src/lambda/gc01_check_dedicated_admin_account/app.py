@@ -24,7 +24,7 @@ def fetch_sso_users(sso_admin_client, identity_store_client):
     instances = list_all_sso_admin_instances(sso_admin_client)
     users_by_instance = {}
     for i in instances:
-        if i.get("Status") != "Active":
+        if i.get("Status") != "ACTIVE":
             continue
 
         instance_id = i.get("IdentityStoreId")
@@ -411,7 +411,7 @@ def check_users(
 
 
 def policies_grant_admin_access(managed_policies, inline_policies):
-    return next((True for p in managed_policies if p.get("PolicyName", "") == "AdministratorAccess"), False) or next(
+    return next((True for p in managed_policies if p.get("PolicyName", p.get("Name", "")) == "AdministratorAccess"), False) or next(
         (True for p in inline_policies if policy_doc_gives_admin_access(p.get("PolicyDocument", "{}"))), False
     )
 
