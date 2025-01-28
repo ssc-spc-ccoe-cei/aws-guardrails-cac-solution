@@ -353,6 +353,12 @@ Resources:
               - cloudfront:List*
             Resource: "*"
             Effect: Allow
+          - Sid: AllowSSO
+            Action:
+              - sso:Describe*
+              - sso:List*
+            Resource: "*"
+            Effect: Allow
       PolicyName: !Sub "${RolePrefix}default_lambda_execution_role_policy"
       Roles:
         - !Ref GCDefaultLambdaExecutionRole

@@ -243,7 +243,7 @@ Resources:
     Type: Custom::InvokeCustomLambda
     Condition: DeployRoles
     Properties:
-      Version: 38
+      Version: 39
       ServiceToken: !GetAtt CreateRoleLambda.Arn
       TrustPrincipal: !Sub arn:${AWS::Partition}:iam::${AuditAccountID}:root
       SwitchRole: !Ref AcceleratorRole
@@ -299,7 +299,7 @@ Resources:
                     "resource-explorer-2:ListIndexes",
                     "resource-explorer-2:Search",
                     "sso:List*",
-                    "sso:DescribeUser",
+                    "sso:Describe*",
                     "sso:GetInlinePolicyForPermissionSet",
                     "s3:Get*",
                     "s3:GetBucketPublicAccessBlock",
@@ -372,7 +372,7 @@ Resources:
     Type: Custom::InvokeCustomLambda
     Condition: DeployRoles
     Properties:
-      Version: 38
+      Version: 39
       ServiceToken: !GetAtt CreateRoleLambda.Arn
       TrustPrincipal: !Sub arn:${AWS::Partition}:iam::${AuditAccountID}:root
       SwitchRole: !Ref AcceleratorRole
@@ -1327,7 +1327,7 @@ Resources:
               - "sso:ListManagedPoliciesInPermissionSet"
               - "sso:ListAccountAssignmentsForPrincipal"
               - "sso:ListGroups"
-              - "sso:DescribeUser"
+              - "sso:Describe*"
               - "sso:ListGroupMemberships"
               - "sso:GetInlinePolicyForPermissionSet"
               - "sso:ListCustomerManagedPolicyReferencesInPermissionSet"
