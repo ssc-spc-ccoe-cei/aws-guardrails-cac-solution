@@ -1323,6 +1323,7 @@ Resources:
               - "s3:GetBucketPublicAccessBlock"
               - "sso:ListInstances"
               - "sso:ListUsers"
+              - "identitystore:ListUsers"
               - "sso:ListManagedPoliciesInPermissionSet"
               - "sso:ListAccountAssignmentsForPrincipal"
               - "sso:ListGroups"
