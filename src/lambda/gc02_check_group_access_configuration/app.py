@@ -9,11 +9,11 @@ from enum import Enum
 import botocore.exceptions
 
 from utils import is_scheduled_notification, check_required_parameters, check_guardrail_requirement_by_cloud_usage_profile, get_cloud_profile_from_tags, GuardrailType, GuardrailRequirementType
-from boto_util.organizations import get_account_tags
+from boto_util.organizations import get_account_tags, get_organizations_mgmt_account_id
 from boto_util.client import get_client
 from boto_util.config import build_evaluation, submit_evaluations
 from boto_util.s3 import check_s3_object_exists, get_lines_from_s3_file
-from boto_util.iam import list_all_iam_groups, list_all_iam_attached_group_policies, get_all_iam_group_members
+from boto_util.iam import list_all_iam_users, list_all_iam_groups, list_all_iam_attached_group_policies, get_all_iam_group_members, fetch_inline_user_policies, fetch_aws_managed_user_policies, policies_grant_admin_access
 from boto_util.sso_admin import list_all_sso_admin_instances
 from boto_util.identity_store import list_all_identity_store_groups
 
@@ -23,7 +23,7 @@ logger = logging.getLogger()
 logger.setLevel(logging.INFO)
 
 
-class GroupPermissionAssignment(Enum):
+class PermissionSetPolicyComposition(Enum):
     ADMIN = 1
     NON_ADMIN = 2
     MIX = 3
@@ -73,7 +73,7 @@ def fetch_customer_managed_policy_documents_for_permission_set(iam_client, custo
 
 def permission_set_only_has_admin_or_non_admin_policies(
     iam_client, sso_admin_client, instance_arn, permission_set_arn
-) -> GroupPermissionAssignment:
+) -> PermissionSetPolicyComposition:
     managed_policies = []
     inline_policies = []
 
@@ -236,54 +236,28 @@ def check_iam_group_policies(iam_client, group_name, admin_accounts, event):
     return build_evaluation(group_name, "COMPLIANT", event, resource_type, annotation)
 
 
-def check_identity_center_group_policies(
-    iam_client, sso_admin_client, identity_store_client, instance_id, instance_arn, group, admin_accounts, event
+def is_admin_group(iam_client, sso_admin_client, instance_arn, p_set_arns) -> bool:
+    for arn in p_set_arns:
+        p_set_type = permission_set_only_has_admin_or_non_admin_policies(
+            iam_client, sso_admin_client, instance_arn, arn
+        )
+        if p_set_type == PermissionSetPolicyComposition.ADMIN and p_set_type == PermissionSetPolicyComposition.MIX:
+            return True
+    return False
+
+def check_identity_center_admin_group(identity_store_client, instance_id, instance_arn, group_id, group_name, admin_accounts, event
 ):
     resource_type = "AWS::IAM::Group"
     # Checks all group policies to ensure that there is not mixture of admin and non-admin roles.
-
-    group_id = group.get("GroupId")
-    group_name = group.get("DisplayName")
-    permission_set_arns = get_permission_sets_for_group(sso_admin_client, instance_id, group_id)
     group_members = fetch_identity_center_group_members(identity_store_client, instance_id, group_id)
     has_non_admin_member = next((m for m in group_members if m.get("UserName", "") not in admin_accounts), False)
-    has_admin_pset = False
-    has_non_admin_pset = False
 
-    for p_set_arn in permission_set_arns:
-        p_set_type = permission_set_only_has_admin_or_non_admin_policies(
-            iam_client, sso_admin_client, instance_arn, p_set_arn
-        )  # Is the group an admin group?
-        if p_set_type == GroupPermissionAssignment.ADMIN:
-            # yes, fetch group members and check against admin_accounts
-            has_admin_pset = True
-            if has_non_admin_member:
-                annotation = f"Group '{group_name}' is a group containing non-admin members that has been assigned an admin permission set."
-                return build_evaluation(group_name, "NON_COMPLIANT", event, resource_type, annotation)
-        elif p_set_type == GroupPermissionAssignment.NON_ADMIN:
-            has_non_admin_pset = True
-        # Does the group have admin policies and non admin policies?
-        elif p_set_type == GroupPermissionAssignment.MIX:
-            # yes, there is a mixture of admin and non-admin roles attached to the group. Return NON_COMPLIANT evaluation for group
-            annotation = (
-                f"Group '{group_name}' has an assigned permission set that contain both admin and non-admin roles."
-            )
-            return build_evaluation(group_name, "NON_COMPLIANT", event, resource_type, annotation)
+    if has_non_admin_member:
+        annotation = f"Group '{group_name}' has permission set(s) that applies an admin access policy but also contains non-admin members."
+        return build_evaluation(group_name, "NON_COMPLIANT", event, resource_type, annotation)
 
-        if has_admin_pset and has_non_admin_pset:
-            annotation = (
-                f"Group '{group_name}' has been assigned admin only and non admin only permission sets. Groups should only contain admin only permission sets or non admin only permission sets.",
-            )
-            return build_evaluation(group_name, "NON_COMPLIANT", event, resource_type, annotation)
-
-    annotation = (
-        f"Group '{group_name}' has permission sets that apply policies granting only admin roles and only has admin members."
-        if has_admin_pset
-        else f"Group '{group_name}' permission sets that apply policies granting only non-admin roles."
-    )
-
+    annotation = f"Group '{group_name}' has permission set(s) that applies an admin access policy and only has admin members."
     return build_evaluation(group_name, "COMPLIANT", event, resource_type, annotation=annotation)
-
 
 def policy_doc_gives_admin_access(policy_doc: str):
     document_dict = json.loads(policy_doc)
@@ -338,6 +312,11 @@ def fetch_inline_group_policies(iam_client, group_name):
 
     return policies
 
+def iam_user_has_administrator_access(iam_client, user):
+    user_name = user.get("UserName", "")
+    inline_policies = fetch_inline_user_policies(iam_client, user_name)
+    aws_managed_policies = fetch_aws_managed_user_policies(iam_client, user_name)
+    return policies_grant_admin_access(aws_managed_policies, inline_policies)
 
 def lambda_handler(event, context):
     """
@@ -371,6 +350,7 @@ def lambda_handler(event, context):
     aws_identity_store_client = get_client("identitystore", aws_account_id, execution_role_name, is_not_audit_account)
     aws_sso_admin_client = get_client("sso-admin", aws_account_id, execution_role_name, is_not_audit_account)
     aws_s3_client = get_client("s3")
+    aws_organizations_client = get_client("organizations", aws_account_id, execution_role_name, is_not_audit_account)
     
     # Check cloud profile
     tags = get_account_tags(get_client("organizations", assume_role=False), aws_account_id)
@@ -396,51 +376,95 @@ def lambda_handler(event, context):
     
     admin_accounts_s3_path = rule_parameters.get("s3ObjectPath", "")
     if not check_s3_object_exists(aws_s3_client, admin_accounts_s3_path):
-        compliance_type = "NON_COMPLIANT"
-        annotation = "No AdminAccountsFilePath input provided."
-
-    else:
-        is_compliant = True
-        admin_accounts = get_lines_from_s3_file(aws_s3_client, admin_accounts_s3_path)
-
-        # IAM
-        iam_groups = list_all_iam_groups(aws_iam_client)
-        for g in iam_groups:
-            eval = check_iam_group_policies(aws_iam_client, g.get("GroupName", ""), admin_accounts, event)
-            if eval.get("ComplianceType", "NON_COMPLIANT") == "NON_COMPLIANT":
-                is_compliant = False
-            evaluations.append(eval)
-
-        # Identity Center
-        instances = list_all_sso_admin_instances(aws_sso_admin_client)
+        evaluations.append(build_evaluation(aws_account_id, "NON_COMPLIANT", event, annotation="No AdminAccountsFilePath input provided."))
+        submit_evaluations(aws_config_client, event["resultToken"], evaluations)
+        return
+        
+    is_compliant = True
+    annotation = ""
+    management_account_id = get_organizations_mgmt_account_id(aws_organizations_client)
+    admin_accounts = get_lines_from_s3_file(aws_s3_client, admin_accounts_s3_path)
+    instances = list_all_sso_admin_instances(aws_sso_admin_client)
+    identity_center_enabled = len([ i for i in instances if i.get("Status", "") == "ACTIVE" ]) > 0
+    
+    # Identity Center Check
+    if identity_center_enabled and aws_account_id == management_account_id:
+        has_non_admin_group = False
         for i in instances:
             i_id = i.get("IdentityStoreId")
             i_arn = i.get("InstanceArn")
             identity_center_groups = list_all_identity_store_groups(aws_identity_store_client, i_id)
+            
             for g in identity_center_groups:
-                eval = check_identity_center_group_policies(
-                    aws_iam_client,
-                    aws_sso_admin_client,
-                    aws_identity_store_client,
-                    i_id,
-                    i_arn,
-                    g,
-                    admin_accounts,
-                    event,
-                )
-                if eval.get("ComplianceType", "NON_COMPLIANT") == "NON_COMPLIANT":
+                g_id = g.get("GroupId")
+                g_name = g.get("DisplayName")
+                p_sets = get_permission_sets_for_group(aws_sso_admin_client, i_id, g_id)
+                if is_admin_group(aws_iam_client, aws_sso_admin_client, i_arn, p_sets):    
+                    eval = check_identity_center_admin_group(
+                        aws_identity_store_client,
+                        i_id,
+                        i_arn,
+                        g_id,
+                        g_name,
+                        admin_accounts,
+                        event,
+                    )
+                    if eval.get("ComplianceType", "NON_COMPLIANT") == "NON_COMPLIANT":
+                        is_compliant = False
+                        annotation = "Group has a permission set that provides administrator access and members that are not admin members."
+                        
+                    evaluations.append(eval)
+                else:
+                    has_non_admin_group = True
+        
+        if has_non_admin_group:
+            is_compliant = False
+            annotation = "Account does not have an Identity Center group that does not provide administrator access."
+
+    # Was Identity Center found to be not compliant?
+    if not is_compliant:
+        # yes, append a non compliant evaluation for the account and skip the IAM check
+        evaluations.append(build_evaluation(aws_account_id, "NON_COMPLIANT", event, annotation=annotation, gr_requirement_type=gr_requirement_type))
+    else:
+        # IAM
+        if identity_center_enabled and aws_account_id != management_account_id:
+            iam_users = list_all_iam_users(aws_iam_client)
+            for u in iam_users:
+                if iam_user_has_administrator_access(aws_iam_client, u):
                     is_compliant = False
-                evaluations.append(eval)
-
-        if is_compliant:
-            compliance_type = "COMPLIANT"
-            annotation = (
-                "Account groups only have admin or only have non-admin roles, and admin groups only have admin members."
-            )
+                    evaluations.append(build_evaluation(u.get("Arn"), "NON_COMPLIANT", event, "AWS::IAM::User", annotation=f"User {u.get("UserName")} has administrator access.", gr_requirement_type=gr_requirement_type))
+                else:
+                    evaluations.append(build_evaluation(u.get("Arn"), "COMPLIANT", event, "AWS::IAM::User", gr_requirement_type=gr_requirement_type))
+            
+            # Append Account evaluation
+            evaluations.append(build_evaluation(aws_account_id, "COMPLIANT" if is_compliant else "NON_COMPLIANT", event, annotation="Account contains an IAM user with administrator access." if not is_compliant else "", gr_requirement_type=gr_requirement_type))    
         else:
-            compliance_type = "NON_COMPLIANT"
-            annotation = "Account groups do not only have admin or only have non-admin roles, and admin groups only have admin members."
+            groups = list_all_iam_groups(aws_iam_client)
+            has_non_admin_group = False
+            has_non_compliant_iam_group = False
+            
+            for g in groups:
+                group_name = g.get("GroupName")
+                inline_policies = fetch_inline_group_policies(aws_iam_client, group_name)
+                aws_managed_policies = list_all_iam_attached_group_policies(aws_iam_client, group_name)
+                # Does the group's policies grant administrator access?
+                if policies_grant_admin_access(aws_managed_policies, inline_policies):
+                    # Yes, check to make sure all group members are in the admin user list
+                    group_members = get_all_iam_group_members(aws_iam_client, group_name)
+                    non_admin_members = [u.get("UserName") for u in group_members if u.get("UserName", "") not in admin_accounts]
+                    if len(non_admin_members) > 0:
+                        has_non_compliant_iam_group = True
+                        evaluations.append(build_evaluation(g.get("Arn"), "NON_COMPLIANT", event, "AWS::IAM::Group", annotation=f"Group {group_name} gives administrator access to non-admin users: {", ".join(non_admin_members)}"), gr_requirement_type=gr_requirement_type)
+                    else:
+                        evaluations.append(build_evaluation(g.get("Arn"), "COMPLIANT", event, "AWS::IAM::Group", gr_requirement_type=gr_requirement_type))
+                else:
+                    has_non_admin_group = True
+                    evaluations.append(build_evaluation(g.get("Arn"), "COMPLIANT", event, "AWS::IAM::Group"))
+                
+            # Append Account evaluation    
+            annotation = " and ".join(filter(lambda x:x!=None, ["Account does not have an IAM group that doesn't provide admin access." if not has_non_admin_group else None, "One or more IAM groups gives administrator access to a non-admin user." if has_non_compliant_iam_group else None]))
+            compliance_type = "COMPLIANT" if has_non_admin_group and not has_non_compliant_iam_group else "NON_COMPLIANT"
+            evaluations.append(build_evaluation(aws_account_id, compliance_type, event, annotation=annotation, gr_requirement_type=gr_requirement_type))
 
-    logger.info(f"{compliance_type}: {annotation}")
-    evaluations.append(build_evaluation(aws_account_id, compliance_type, event, annotation=annotation))
+    logger.info(f"Put evaluations: {evaluations}")
     submit_evaluations(aws_config_client, event["resultToken"], evaluations)
