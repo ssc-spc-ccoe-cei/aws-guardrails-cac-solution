@@ -178,25 +178,6 @@ Resources:
         Variables:
           DEFAULT_CLOUD_PROFILE: !Ref DefaultCloudProfile
 
-  GC10CheckSignedMOULambda:
-    Condition: IsAuditAccount
-    Type: AWS::Lambda::Function
-    Properties:
-      FunctionName: !Sub "${OrganizationName}gc10_check_signed_mou"
-      Code: "../../src/lambda/gc10_check_signed_mou/build/GC10CheckSignedMOULambda/"
-      Handler: app.lambda_handler
-      Role: !Sub "arn:aws:iam::${AuditAccountID}:role/${RolePrefix}default_assessment_role"
-      Runtime: !Ref PythonRuntime
-      Timeout: 90
-      Layers:
-        - !Ref CloudGuardrailsCommonLayer
-      LoggingConfig:
-        LogGroup: !Sub "${OrganizationName}gc_guardrails"
-        LogFormat: "JSON"
-      Environment:
-        Variables:
-          DEFAULT_CLOUD_PROFILE: !Ref DefaultCloudProfile
-
   ## GC11
   GC11CheckSecurityContactLambda:
     Condition: IsAuditAccount

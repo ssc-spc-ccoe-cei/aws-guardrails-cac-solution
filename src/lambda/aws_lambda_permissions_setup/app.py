@@ -102,7 +102,6 @@ def apply_lambda_permissions():
         f"{organization_name}gc09_check_netsec_architecture": ["GC09CheckNetworkSecurityArchitectureDocumentLambda"],
         f"{organization_name}gc09_check_non_public_storage_accounts": ["GC09CheckNonPublicStorageAccountsLambda"],
         f"{organization_name}gc10_check_cyber_center_sensors": ["GC10CheckCyberCenterSensorsLambda"],
-        f"{organization_name}gc10_check_signed_mou": ["GC10CheckSignedMOULambda"],
         f"{organization_name}gc11_check_monitoring_all_users": ["GC11CheckMonitoringAllUsersLambda"],
         f"{organization_name}gc11_check_monitoring_use_cases": ["GC11CheckMonitoringUseCasesLambda"],
         f"{organization_name}gc11_check_policy_event_logging": ["GC11CheckPolicyEventLoggingLambda"],

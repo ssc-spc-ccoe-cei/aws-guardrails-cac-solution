@@ -96,8 +96,6 @@ Parameters:
   S3NetworkArchitectureDocumentPath:
     Type: String
   # GC10
-  S3SignedMOUDocumentPath:
-    Type: String
   S3LogBucketsPath:
     Type: String
   LogArchiveAccountName:
@@ -1320,42 +1318,6 @@ Resources:
           - EventSource: "aws.config"
             MessageType: "ScheduledNotification"
 
-  GC10CheckSignedMOUConfigRule:
-    Type: "AWS::Config::ConfigRule"
-    Properties:
-      ConfigRuleName: gc10_check_signed_mou
-      Description: Confirms if the signed MOU with CCS has been uploaded to the S3 bucket
-      InputParameters:
-        s3ObjectPath:
-          Fn::If:
-            - s3SignedMOUDocumentPath
-            - Ref: S3SignedMOUDocumentPath
-            - Ref: AWS::NoValue
-        ExecutionRoleName:
-          Fn::If:
-            - GCLambdaExecutionRoleName
-            - Ref: GCLambdaExecutionRoleName
-            - Ref: AWS::NoValue
-        AuditAccountID:
-          Fn::If:
-            - auditAccountID
-            - Ref: AuditAccountID
-            - Ref: AWS::NoValue
-      Scope:
-        ComplianceResourceTypes:
-          - AWS::Account
-      MaximumExecutionFrequency: TwentyFour_Hours
-      Source:
-        Owner: CUSTOM_LAMBDA
-        SourceIdentifier:
-          Fn::Join:
-            - ""
-            - - "arn:aws:lambda:ca-central-1:"
-              - Ref: AuditAccountID
-              - !Sub ":function:${OrganizationName}gc10_check_signed_mou"
-        SourceDetails:
-          - EventSource: "aws.config"
-            MessageType: "ScheduledNotification"
   # GC11 - Check Security Contact
   GC11CheckSecurityContactConfigRule:
     Type: "AWS::Config::ConfigRule"
@@ -1923,11 +1885,6 @@ Conditions:
           - ""
           - Ref: S3NetworkArchitectureDocumentPath
   # GC10
-  s3SignedMOUDocumentPath:
-    Fn::Not:
-      - Fn::Equals:
-          - ""
-          - Ref: S3SignedMOUDocumentPath
   s3LogBucketsPath:
     Fn::Not:
       - Fn::Equals:

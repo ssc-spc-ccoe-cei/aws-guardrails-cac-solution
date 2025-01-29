@@ -729,27 +729,6 @@ frameworks_data = [
                         ],
                         "tags": {},
                     },
-                    {
-                        "type": "Custom",
-                        "name": "gc10_check_signed_mou",
-                        "description": "Confirmation from CCCS that the MOU has been signed by the Department.Source: https://github.com/canada-ca/cloud-guardrails/blob/master/EN/10_Cyber-Defense-Services.md",
-                        "testingInformation": "",
-                        "actionPlanTitle": "Provide a copy of the Signed MOU with CCCS",
-                        "actionPlanInstructions": "Ensure a signed MOU with CCCS exists.",
-                        "controlSources": "AWS Config",
-                        "controlMappingSources": [
-                            {
-                                "sourceName": "S3-check",
-                                "sourceSetUpOption": "System_Controls_Mapping",
-                                "sourceType": "AWS_Config",
-                                "sourceKeyword": {
-                                    "keywordInputType": "SELECT_FROM_LIST",
-                                    "keywordValue": "Custom_gc10_check_signed_mou-conformance-pack",
-                                },
-                            }
-                        ],
-                        "tags": {},
-                    },
                 ],
             },
             {
