@@ -77,7 +77,7 @@ Parameters:
     AllowedValues: [true, false]
   DeployVersion:
     Type: String
-    Default: 1.0.0
+    Default: 2.0.0
 
 Resources:
   GuardRailsStack:
