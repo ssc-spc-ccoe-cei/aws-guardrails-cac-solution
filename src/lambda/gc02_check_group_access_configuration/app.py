@@ -148,10 +148,10 @@ def get_permission_sets_for_group(sso_admin_client, instance_arn, group_id):
                 )
             )
 
-            for acc_assignment in response.get("PermissionSets"):
+            for acc_assignment in response.get("AccountAssignments"):
                 p_set_arn = acc_assignment.get("PermissionSetArn")
                 if p_set_arn not in permission_sets:
-                    permission_sets.append(p_set_arn)
+                    permission_sets.add(p_set_arn)
 
             next_token = response.get("NextToken")
             if not next_token:
@@ -401,7 +401,7 @@ def lambda_handler(event, context):
             for g in identity_center_groups:
                 g_id = g.get("GroupId")
                 g_name = g.get("DisplayName")
-                p_sets = get_permission_sets_for_group(aws_sso_admin_client, i_id, g_id)
+                p_sets = get_permission_sets_for_group(aws_sso_admin_client, i_arn, g_id)
                 if is_admin_group(aws_iam_client, aws_sso_admin_client, i_arn, p_sets):    
                     eval = check_identity_center_admin_group(
                         aws_identity_store_client,

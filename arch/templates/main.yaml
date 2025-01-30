@@ -287,6 +287,8 @@ Resources:
                     "iam:GenerateCredentialReport",
                     "iam:Get*",
                     "iam:List*",
+                    "identitystore:ListUsers",
+                    "identitystore:ListGroups",
                     "kinesis:DescribeStream",
                     "kinesis:ListStreams",
                     "memorydb:Describe*",
@@ -1326,6 +1328,7 @@ Resources:
               - "sso:ListInstances"
               - "sso:ListUsers"
               - "identitystore:ListUsers"
+              - "identitystore:ListGroups"
               - "sso:ListManagedPoliciesInPermissionSet"
               - "sso:ListAccountAssignmentsForPrincipal"
               - "sso:ListGroups"
