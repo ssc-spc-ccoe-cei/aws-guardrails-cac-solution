@@ -100,7 +100,6 @@ Resources:
         DestBucketName: !Ref DestBucketName
         DeployRoles: !Ref DeployRoles
         DeployVersion: !Ref DeployVersion
-        InvokeUpdate: !Ref InvokeUpdate
         BGA1: !Ref BGA1
         BGA2: !Ref BGA2
       Tags:

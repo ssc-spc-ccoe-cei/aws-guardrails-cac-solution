@@ -169,8 +169,10 @@ Parameters:
     AllowedValues: [true, false]
   InvokeUpdate:
     Type: String
+    Default: "17d78b5e-9745-41e4-a926-9fd9f660bf23"
   DeployVersion:
     Type: String
+    Default: 1.0.0
   PythonRuntime:
     Type: String
     Default: "python3.12"
@@ -241,7 +243,7 @@ Resources:
     Type: Custom::InvokeCustomLambda
     Condition: DeployRoles
     Properties:
-      InvokeUpdate: !Ref InvokeUpdate
+      Version: 39
       ServiceToken: !GetAtt CreateRoleLambda.Arn
       TrustPrincipal: !Sub arn:${AWS::Partition}:iam::${AuditAccountID}:root
       SwitchRole: !Ref AcceleratorRole
@@ -372,7 +374,7 @@ Resources:
     Type: Custom::InvokeCustomLambda
     Condition: DeployRoles
     Properties:
-      InvokeUpdate: !Ref InvokeUpdate
+      Version: 39
       ServiceToken: !GetAtt CreateRoleLambda.Arn
       TrustPrincipal: !Sub arn:${AWS::Partition}:iam::${AuditAccountID}:root
       SwitchRole: !Ref AcceleratorRole
