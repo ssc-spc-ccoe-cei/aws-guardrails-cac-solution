@@ -150,7 +150,7 @@ Resources:
           - EventSource: "aws.config"
             MessageType: "ScheduledNotification"
 
-  GC01CheckRootMfaConfigRule:
+  GC01CheckRootAccountMFAEnabled:
     Type: "AWS::Config::ConfigRule"
     Properties:
       ConfigRuleName: gc01_check_root_mfa
