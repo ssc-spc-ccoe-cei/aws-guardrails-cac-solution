@@ -102,7 +102,7 @@ def assess_s3_buckets_ssl_enforcement(s3_client, event: dict):
             logger.error("AccessDenied when trying to list_buckets - get_s3_resources: %s", ex)
         else:
             logger.error("S3 - Error while calling list_buckets %s", ex)
-    logger.info("S3 - reporting %s evaluations.", len(local_evaluations))
+    # logger.info("S3 - reporting %s evaluations.", len(local_evaluations))
     return local_evaluations
 
 
@@ -129,7 +129,7 @@ def assess_redshift_clusters_ssl_enforcement(redshift_client, event: dict):
                             "ClusterParameterGroups": parameter_group_names,
                         }
                     )
-                logger.info("%s Redshift clusters found.", len(clusters))
+                # logger.info("%s Redshift clusters found.", len(clusters))
                 if next_marker:
                     time.sleep(INTERVAL_BETWEEN_API_CALLS)
                     try:
@@ -137,18 +137,18 @@ def assess_redshift_clusters_ssl_enforcement(redshift_client, event: dict):
                     except botocore.exceptions.ClientError as ex:
                         i_retries += 1
                         if is_throttling_exception(ex):
-                            logger.error("Redshift - Throttling while calling describe_clusters")
+                            # logger.error("Redshift - Throttling while calling describe_clusters")
                             time.sleep(THROTTLE_BACKOFF)
                         else:
-                            logger.error("Redshift - Error while trying to describe_clusters.%s", ex)
+                            # logger.error("Redshift - Error while trying to describe_clusters.%s", ex)
                             raise ex
                 else:
                     b_more_data = False
             else:
-                logger.error("Redshift - Empty response while trying to describe_clusters")
+                # logger.error("Redshift - Empty response while trying to describe_clusters")
                 b_more_data = False
     except botocore.exceptions.ClientError as ex:
-        logger.error("Redshift - Error while trying to describe_clusters. %s", ex)
+        # logger.error("Redshift - Error while trying to describe_clusters. %s", ex)
         raise ex
     for cluster in clusters:
         b_require_ssl = False
@@ -192,7 +192,7 @@ def assess_redshift_clusters_ssl_enforcement(redshift_client, event: dict):
                         logger.error("Redshift - Empty response while trying to describe_cluster_parameters")
                         b_more_data = False
                 if b_require_ssl:
-                    logger.info("Redshift cluster %s has require_ssl enforced.", cluster.get("ClusterIdentifier", ""))
+                    # logger.info("Redshift cluster %s has require_ssl enforced.", cluster.get("ClusterIdentifier", ""))
                     break
             except botocore.exceptions.ClientError as ex:
                 logger.error("Redshift - Error while trying to describe_cluster_parameters. %s", ex)
@@ -201,7 +201,7 @@ def assess_redshift_clusters_ssl_enforcement(redshift_client, event: dict):
             compliance_status = "COMPLIANT"
             compliance_annotation = "SSL required"
         else:
-            logger.info("Redshift cluster %s DOES NOT require_ssl.", cluster.get("ClusterIdentifier", ""))
+            # logger.info("Redshift cluster %s DOES NOT require_ssl.", cluster.get("ClusterIdentifier", ""))
             compliance_status = "NON_COMPLIANT"
             compliance_annotation = "require_ssl not set to true"
         local_evaluations.append(
@@ -213,7 +213,7 @@ def assess_redshift_clusters_ssl_enforcement(redshift_client, event: dict):
                 annotation=compliance_annotation,
             )
         )
-    logger.info("Redshift - reporting %s evaluations.", len(local_evaluations))
+    # logger.info("Redshift - reporting %s evaluations.", len(local_evaluations))
     return local_evaluations
 
 
@@ -244,10 +244,10 @@ def assess_elb_v2_ssl_enforcement(elb_v2_client, event: dict):
                     except botocore.exceptions.ClientError as ex:
                         i_retries += 1
                         if is_throttling_exception(ex):
-                            logger.error("ELBv2 - Throttling while calling describe_load_balancers")
+                            # logger.error("ELBv2 - Throttling while calling describe_load_balancers")
                             time.sleep(THROTTLE_BACKOFF)
                         else:
-                            logger.error("ELBv2 - Error while trying to describe_load_balancers. %s", ex)
+                            # logger.error("ELBv2 - Error while trying to describe_load_balancers. %s", ex)
                             raise ex
                 else:
                     b_more_data = False
@@ -255,9 +255,9 @@ def assess_elb_v2_ssl_enforcement(elb_v2_client, event: dict):
                 logger.error("ELBv2 - Empty response while trying to describe_load_balancers")
                 b_more_data = False
     except botocore.exceptions.ClientError as ex:
-        logger.error("ELBv2 - Error while trying to describe_load_balancers. %s", ex)
+        # logger.error("ELBv2 - Error while trying to describe_load_balancers. %s", ex)
         raise ex
-    logger.info("%s ELBv2 Load balancers found.", len(load_balancers))
+    # logger.info("%s ELBv2 Load balancers found.", len(load_balancers))
     for load_balancer in load_balancers:
         next_marker = ""
         try:
@@ -312,12 +312,12 @@ def assess_elb_v2_ssl_enforcement(elb_v2_client, event: dict):
         except botocore.exceptions.ClientError as ex:
             i_retries += 1
             if is_throttling_exception(ex):
-                logger.error("ELBv2 - Throttling while calling describe_listeners")
+                # logger.error("ELBv2 - Throttling while calling describe_listeners")
                 time.sleep(THROTTLE_BACKOFF)
             else:
-                logger.error("ELBv2 - Error while trying to describe_listeners. %s", ex)
+                # logger.error("ELBv2 - Error while trying to describe_listeners. %s", ex)
                 raise ex
-    logger.info("ELBv2 - reporting %s evaluations.", len(local_evaluations))
+    # logger.info("ELBv2 - reporting %s evaluations.", len(local_evaluations))
     return local_evaluations
 
 
@@ -338,7 +338,7 @@ def assess_rest_api_stages_ssl_enforcement(api_gw_client, event: dict):
                     api_id = api.get("id")
                     api_name = api.get("name")
                     if not api_id:
-                        logger.error("Skipping Malformed API item %s", api)
+                        # logger.error("Skipping Malformed API item %s", api)
                         continue
                     try:
                         api_resource_list = list_all_api_gateway_resources(
@@ -348,7 +348,7 @@ def assess_rest_api_stages_ssl_enforcement(api_gw_client, event: dict):
                         if error.response["Error"]["Code"] == "NotFoundException":
                             pass
                     if not api_resource_list:
-                        logger.info("Skipping API - %s - as it has no resources.", api_name)
+                        # logger.info("Skipping API - %s - as it has no resources.", api_name)
                         continue
                     AWS = False
                     HTTP = False
@@ -382,12 +382,12 @@ def assess_rest_api_stages_ssl_enforcement(api_gw_client, event: dict):
                                 position2 = response2.get("position")
                                 deployments = response2.get("items", [])
                                 if len(deployments) <= 0:
-                                    logger.info("APIGW - Skipping API '%s' as it has no deployments", api_name)
+                                    # logger.info("APIGW - Skipping API '%s' as it has no deployments", api_name)
                                     break
                                 for deployment in deployments:
                                     deployment_id = deployment.get("id", "")
                                     if not deployment_id:
-                                        logger.error("Skipping Malformed Deployment in API %s: %s", api, deployment)
+                                        # logger.error("Skipping Malformed Deployment in API %s: %s", api, deployment)
                                         continue
                                     try:
                                         response3 = api_gw_client.get_stages(
@@ -460,10 +460,10 @@ def assess_rest_api_stages_ssl_enforcement(api_gw_client, event: dict):
                                     except botocore.exceptions.ClientError as ex:
                                         i_retries2 += 1
                                         if is_throttling_exception(ex):
-                                            logger.error("APIGW - Throttling while calling get_deployments")
+                                            # logger.error("APIGW - Throttling while calling get_deployments")
                                             time.sleep(THROTTLE_BACKOFF)
                                         else:
-                                            logger.error("APIGW - Error while trying to get_deployments. %s", ex)
+                                            # logger.error("APIGW - Error while trying to get_deployments. %s", ex)
                                             raise ex
                                 else:
                                     b_more_data2 = False
@@ -475,10 +475,10 @@ def assess_rest_api_stages_ssl_enforcement(api_gw_client, event: dict):
                     except botocore.exceptions.ClientError as ex:
                         i_retries += 1
                         if is_throttling_exception(ex):
-                            logger.error("APIGW - Throttling while calling get_deployments")
+                            # logger.error("APIGW - Throttling while calling get_deployments")
                             time.sleep(THROTTLE_BACKOFF)
                         else:
-                            logger.error("ELBv2 - Error while trying to get_deployments. %s", ex)
+                            # logger.error("ELBv2 - Error while trying to get_deployments. %s", ex)
                             raise ex
                 if position:
                     time.sleep(INTERVAL_BETWEEN_API_CALLS)
@@ -486,21 +486,21 @@ def assess_rest_api_stages_ssl_enforcement(api_gw_client, event: dict):
                         response = api_gw_client.get_rest_apis(position=position, limit=PAGE_SIZE)
                     except botocore.exceptions.ClientError as ex:
                         if is_throttling_exception(ex):
-                            logger.error("APIGW - Throttling while calling get_rest_apis")
+                            # logger.error("APIGW - Throttling while calling get_rest_apis")
                             time.sleep(THROTTLE_BACKOFF)
                             i_retries += 1
                         else:
-                            logger.error("APIGW - Error while trying to get_rest_apis.%s", ex)
+                            # logger.error("APIGW - Error while trying to get_rest_apis.%s", ex)
                             raise ex
                 else:
                     b_more_data = False
             else:
-                logger.error("REST API - Empty response from get_rest_apis call")
+                # logger.error("REST API - Empty response from get_rest_apis call")
                 b_more_data = False
     except botocore.exceptions.ClientError as ex:
-        logger.error("REST API - Error while trying to get_rest_apis - %s", ex)
+        # logger.error("REST API - Error while trying to get_rest_apis - %s", ex)
         raise ex
-    logger.info("APIGW - reporting %s evaluations.", len(local_evaluations))
+    # logger.info("APIGW - reporting %s evaluations.", len(local_evaluations))
     return local_evaluations
 
 
@@ -522,7 +522,7 @@ def assess_open_search_node_to_node_ssl_enforcement(open_search_client, event: d
                 time.sleep(INTERVAL_BETWEEN_API_CALLS)
                 domain_name = domain.get("DomainName")
                 if not domain_name:
-                    logger.error("Malformed domain result - %s", domain)
+                    # logger.error("Malformed domain result - %s", domain)
                     continue
                 response2 = open_search_client.describe_domains(DomainNames=[domain_name])
                 if response2:
@@ -552,7 +552,7 @@ def assess_open_search_node_to_node_ssl_enforcement(open_search_client, event: d
     except botocore.exceptions.ClientError as ex:
         logger.error("OS - Error while trying to list_domain_names or describe_domains.\n%s", ex)
         raise ex
-    logger.info("OpenSearch - reporting %s evaluations.", len(local_evaluations))
+    # logger.info("OpenSearch - reporting %s evaluations.", len(local_evaluations))
     return local_evaluations
 
 
@@ -568,7 +568,7 @@ def assess_cloud_front_ssl_enforcement(cloud_front_client, event: dict) -> list[
         if not viewer_certificate:
             annotation = "Distribution does not have SSL/TLS enabled."
             local_evaluations.append(build_evaluation(resource_id, "NON_COMPLIANT", event, resource_type, annotation))
-            logger.info(f"{annotation} ({resource_id})")
+            # logger.info(f"{annotation} ({resource_id})")
             continue
 
         min_protocol_version = viewer_certificate.get("MinimumProtocolVersion", None)
@@ -578,10 +578,29 @@ def assess_cloud_front_ssl_enforcement(cloud_front_client, event: dict) -> list[
         else:
             annotation = f"Distribution does NOT have a minimum protocol version of TLS1.2. ({min_protocol_version})"
             local_evaluations.append(build_evaluation(resource_id, "NON_COMPLIANT", event, resource_type, annotation))
-        logger.info(f"{annotation} ({resource_id})")
+        # logger.info(f"{annotation} ({resource_id})")
 
-    logger.info("CloudFront - reporting %s evaluations.", len(local_evaluations))
+    # logger.info("CloudFront - reporting %s evaluations.", len(local_evaluations))
     return local_evaluations
+
+
+def get_all_compliance_details_by_config_rule(
+    config_client, config_rule_name: str, compliance_types: list[str] = None, interval_between_calls: float = 0.05
+) -> list[dict]:
+    """
+    https://boto3.amazonaws.com/v1/documentation/api/latest/reference/services/config/paginator/GetComplianceDetailsByConfigRule.html
+    """
+    args = {"ConfigRuleName": config_rule_name}
+    if compliance_types:
+        args["ComplianceTypes"] = compliance_types
+
+    resources: list[dict] = []
+    paginator = config_client.get_paginator("get_compliance_details_by_config_rule")
+    page_iterator = paginator.paginate(**args)
+    for page in page_iterator:
+        resources.extend(page.get("EvaluationResults", []))
+        time.sleep(interval_between_calls)
+    return resources
 
 
 def lambda_handler(event, context):
@@ -627,6 +646,13 @@ def lambda_handler(event, context):
     aws_open_search_client = get_client("opensearch", aws_account_id, execution_role_name, is_not_audit_account)
     aws_cloud_front_client = get_client("cloudfront", aws_account_id, execution_role_name, is_not_audit_account)
     
+
+    compliance_details = get_all_compliance_details_by_config_rule(aws_config_client, event["configRuleName"], ["NON_COMPLIANT"])
+    logger.info("compliance_detail = %s", json.dumps([(
+            x["EvaluationResultIdentifier"]["EvaluationResultQualifier"]["ResourceId"],
+            x["EvaluationResultIdentifier"]["EvaluationResultQualifier"]["ResourceType"],
+        ) for x in compliance_details], indent=2))
+
     # Check cloud profile
     tags = get_account_tags(get_client("organizations", assume_role=False), aws_account_id)
     cloud_profile = get_cloud_profile_from_tags(tags)
@@ -634,7 +660,7 @@ def lambda_handler(event, context):
     
     # If the guardrail is recommended
     if gr_requirement_type == GuardrailRequirementType.Recommended:
-        return submit_evaluations(aws_config_client, event["resultToken"], [build_evaluation(
+        return submit_evaluations(aws_config_client, event, [build_evaluation(
             aws_account_id,
             "COMPLIANT",
             event,
@@ -642,7 +668,7 @@ def lambda_handler(event, context):
         )])
     # If the guardrail is not required
     elif gr_requirement_type == GuardrailRequirementType.Not_Required:
-        return submit_evaluations(aws_config_client, event["resultToken"], [build_evaluation(
+        return submit_evaluations(aws_config_client, event, [build_evaluation(
             aws_account_id,
             "NOT_APPLICABLE",
             event,
@@ -667,4 +693,4 @@ def lambda_handler(event, context):
 
     logger.info(f"{compliance_type}: {annotation}")
     evaluations.append(build_evaluation(aws_account_id, compliance_type, event, annotation=annotation))
-    submit_evaluations(aws_config_client, event["resultToken"], evaluations, INTERVAL_BETWEEN_API_CALLS)
+    submit_evaluations(aws_config_client, event, evaluations, INTERVAL_BETWEEN_API_CALLS)

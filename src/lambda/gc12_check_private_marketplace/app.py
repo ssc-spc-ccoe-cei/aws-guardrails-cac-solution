@@ -189,7 +189,7 @@ def lambda_handler(event, context):
     
     # If the guardrail is recommended
     if gr_requirement_type == GuardrailRequirementType.Recommended:
-        return submit_evaluations(aws_config_client, event["resultToken"], [build_evaluation(
+        return submit_evaluations(aws_config_client, event, [build_evaluation(
             aws_account_id,
             "COMPLIANT",
             event,
@@ -197,7 +197,7 @@ def lambda_handler(event, context):
         )])
     # If the guardrail is not required
     elif gr_requirement_type == GuardrailRequirementType.Not_Required:
-        return submit_evaluations(aws_config_client, event["resultToken"], [build_evaluation(
+        return submit_evaluations(aws_config_client, event, [build_evaluation(
             aws_account_id,
             "NOT_APPLICABLE",
             event,
@@ -213,7 +213,7 @@ def lambda_handler(event, context):
         annotation = "A policy that restricts marketplace access was NOT found."
         logger.info(f"{compliance_type}: {annotation}")
         evaluations = [build_evaluation(aws_account_id, compliance_type, event, annotation=annotation)]
-        submit_evaluations(aws_config_client, event["resultToken"], evaluations)
+        submit_evaluations(aws_config_client, event, evaluations)
         return
 
     compliance_type, annotation = assess_policy_attachment(
@@ -234,4 +234,4 @@ def lambda_handler(event, context):
     # Update AWS Config with the evaluation result
     logger.info(f"{compliance_type}: {annotation}")
     evaluations = [build_evaluation(aws_account_id, compliance_type, event, annotation=annotation)]
-    submit_evaluations(aws_config_client, event["resultToken"], evaluations)
+    submit_evaluations(aws_config_client, event, evaluations)

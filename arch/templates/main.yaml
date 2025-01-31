@@ -276,6 +276,8 @@ Resources:
                     "cloudtrail:LookupEvents",
                     "codebuild:BatchGetProjects",
                     "codebuild:ListProjects",
+                    "config:Describe*",
+                    "config:Get*",
                     "config:PutEvaluations",
                     "dax:DescribeClusters",
                     "docdb-elastic:List*",
@@ -405,6 +407,8 @@ Resources:
                 "cloudtrail:LookupEvents",
                 "codebuild:BatchGetProjects",
                 "codebuild:ListProjects",
+                "config:Describe*",
+                "config:Get*",
                 "config:PutEvaluations",
                 "dax:DescribeClusters",
                 "docdb-elastic:ListClusters",
@@ -1306,6 +1310,8 @@ Resources:
               - "cloudfront:List*"
               - "codebuild:BatchGetProjects"
               - "codebuild:ListProjects"
+              - "config:Describe*"
+              - "config:Get*"
               - "dax:DescribeClusters"
               - "docdb-elastic:ListClusters"
               - "docdb-elastic:ListClusterSnapshots"

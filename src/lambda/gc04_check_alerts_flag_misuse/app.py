@@ -185,7 +185,7 @@ def lambda_handler(event, context):
     
     # If the guardrail is recommended
     if gr_requirement_type == GuardrailRequirementType.Recommended:
-        return submit_evaluations(aws_config_client, event["resultToken"], [build_evaluation(
+        return submit_evaluations(aws_config_client, event, [build_evaluation(
             aws_account_id,
             "COMPLIANT",
             event,
@@ -193,7 +193,7 @@ def lambda_handler(event, context):
         )])
     # If the guardrail is not required
     elif gr_requirement_type == GuardrailRequirementType.Not_Required:
-        return submit_evaluations(aws_config_client, event["resultToken"], [build_evaluation(
+        return submit_evaluations(aws_config_client, event, [build_evaluation(
             aws_account_id,
             "NOT_APPLICABLE",
             event,
@@ -211,7 +211,7 @@ def lambda_handler(event, context):
         annotation = f"Cloud Broker Role with name '{cb_role}' not found."
         evaluation = build_evaluation(aws_account_id, compliance_type, event, annotation=annotation)
         logger.info(f"{compliance_type}: {annotation}")
-        submit_evaluations(aws_config_client, event["resultToken"], [evaluation])
+        submit_evaluations(aws_config_client, event, [evaluation])
         return
 
     cb_rules = [rule for rule in rules if rule_matches_against_cb_role_identity(rule.get("EventPattern"), cb_role_arn)]
@@ -245,4 +245,4 @@ def lambda_handler(event, context):
                 )
             )
 
-    submit_evaluations(aws_config_client, event["resultToken"], evaluations)
+    submit_evaluations(aws_config_client, event, evaluations)
