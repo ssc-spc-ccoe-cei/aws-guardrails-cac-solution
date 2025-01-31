@@ -121,7 +121,7 @@ def lambda_handler(event, context):
     
     # If the guardrail is recommended
     if gr_requirement_type == GuardrailRequirementType.Recommended:
-        return submit_evaluations(aws_config_client, event["resultToken"], [build_evaluation(
+        return submit_evaluations(aws_config_client, event, [build_evaluation(
             aws_account_id,
             "COMPLIANT",
             event,
@@ -129,7 +129,7 @@ def lambda_handler(event, context):
         )])
     # If the guardrail is not required
     elif gr_requirement_type == GuardrailRequirementType.Not_Required:
-        return submit_evaluations(aws_config_client, event["resultToken"], [build_evaluation(
+        return submit_evaluations(aws_config_client, event, [build_evaluation(
             aws_account_id,
             "NOT_APPLICABLE",
             event,
@@ -140,7 +140,7 @@ def lambda_handler(event, context):
         annotation = f"No file found for s3 path '{log_buckets_s3_path}' via '{file_param_name}' input parameter."
         logger.info(f"NON_COMPLIANT: {annotation}")
         evaluations = [build_evaluation(aws_account_id, "NON_COMPLIANT", event, annotation=annotation)]
-        submit_evaluations(aws_config_client, event["resultToken"], evaluations)
+        submit_evaluations(aws_config_client, event, evaluations)
         return
 
     ###
@@ -153,7 +153,7 @@ def lambda_handler(event, context):
         annotation = f"A log archive account with name '{log_archive_account_name}' does not exist in the organization."
         logger.info(f"NON_COMPLIANT: {annotation}")
         evaluations = [build_evaluation(aws_account_id, "NON_COMPLIANT", event, annotation=annotation)]
-        submit_evaluations(aws_config_client, event["resultToken"], evaluations)
+        submit_evaluations(aws_config_client, event, evaluations)
         return
 
     logger.info("A log archive account with name '%s' was found: %s", log_archive_account_name, log_archive_account)
@@ -170,7 +170,7 @@ def lambda_handler(event, context):
         annotation = f"A role with name '{target_role_name}' was not found in the log archive account '{log_archive_account_name}'."
         logger.info(f"NON_COMPLIANT: {annotation}")
         evaluations = [build_evaluation(aws_account_id, "NON_COMPLIANT", event, annotation=annotation)]
-        submit_evaluations(aws_config_client, event["resultToken"], evaluations)
+        submit_evaluations(aws_config_client, event, evaluations)
         return
 
     ###
@@ -197,4 +197,4 @@ def lambda_handler(event, context):
 
     logger.info(f"{compliance_type}: {annotation}")
     evaluations.append(build_evaluation(aws_account_id, compliance_type, event, annotation=annotation))
-    submit_evaluations(aws_config_client, event["resultToken"], evaluations)
+    submit_evaluations(aws_config_client, event, evaluations)

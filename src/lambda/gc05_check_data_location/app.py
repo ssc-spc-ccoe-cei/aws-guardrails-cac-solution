@@ -406,14 +406,14 @@ def lambda_handler(event, context):
     if gr_requirement_type == GuardrailRequirementType.Recommended:
         return submit_evaluations(
             aws_config_client,
-            event["resultToken"],
+            event,
             [build_evaluation(aws_account_id, "COMPLIANT", event, gr_requirement_type=gr_requirement_type)],
         )
     # If the guardrail is not required
     elif gr_requirement_type == GuardrailRequirementType.Not_Required:
         return submit_evaluations(
             aws_config_client,
-            event["resultToken"],
+            event,
             [build_evaluation(aws_account_id, "NOT_APPLICABLE", event, gr_requirement_type=gr_requirement_type)],
         )
 
@@ -481,4 +481,4 @@ def lambda_handler(event, context):
         evaluations.append(build_evaluation(aws_account_id, complianceStatus, event, annotation=annotation))
 
     logger.info(f"{complianceStatus}: {annotation}")
-    submit_evaluations(aws_config_client, event["resultToken"], evaluations)
+    submit_evaluations(aws_config_client, event, evaluations)

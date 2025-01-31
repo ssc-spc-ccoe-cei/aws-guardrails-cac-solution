@@ -84,7 +84,7 @@ def lambda_handler(event, context):
     
     # If the guardrail is recommended
     if gr_requirement_type == GuardrailRequirementType.Recommended:
-        return submit_evaluations(aws_config_client, event["resultToken"], [build_evaluation(
+        return submit_evaluations(aws_config_client, event, [build_evaluation(
             aws_account_id,
             "COMPLIANT",
             event,
@@ -92,7 +92,7 @@ def lambda_handler(event, context):
         )])
     # If the guardrail is not required
     elif gr_requirement_type == GuardrailRequirementType.Not_Required:
-        return submit_evaluations(aws_config_client, event["resultToken"], [build_evaluation(
+        return submit_evaluations(aws_config_client, event, [build_evaluation(
             aws_account_id,
             "NOT_APPLICABLE",
             event,
@@ -107,7 +107,7 @@ def lambda_handler(event, context):
         )
         logger.info(annotation)
         evaluations = [build_evaluation(aws_account_id, "NON_COMPLIANT", event, annotation=annotation)]
-        submit_evaluations(aws_config_client, event["resultToken"], evaluations, interval_between_api_calls)
+        submit_evaluations(aws_config_client, event, evaluations, interval_between_api_calls)
         return
 
     cas_currently_in_use = get_lines_from_s3_file(aws_s3_client, cas_currently_in_use_file_path)
@@ -131,4 +131,4 @@ def lambda_handler(event, context):
 
     logger.info(f"{compliance_type}: {annotation}")
     evaluations.append(build_evaluation(aws_account_id, compliance_type, event, annotation=annotation))
-    submit_evaluations(aws_config_client, event["resultToken"], evaluations, interval_between_api_calls)
+    submit_evaluations(aws_config_client, event, evaluations, interval_between_api_calls)
