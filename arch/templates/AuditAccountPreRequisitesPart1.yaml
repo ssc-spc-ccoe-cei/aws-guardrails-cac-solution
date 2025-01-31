@@ -334,6 +334,7 @@ Resources:
               - "codebuild:ListProjects"
               - "config:Describe*"
               - "config:Get*"
+              - "config:PutEvaluations"
               - "dax:DescribeClusters"
               - "docdb-elastic:ListClusters"
               - "docdb-elastic:ListClusterSnapshots"
