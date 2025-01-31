@@ -672,6 +672,10 @@ Resources:
       Parameters:
         - ParameterKey: OrganizationName
           ParameterValue: !Ref OrganizationName
+        - ParameterKey: OrganizationId
+          ParameterValue: !Ref OrganizationId
+        - ParameterKey: DestBucketName
+          ParameterValue: !Ref DestBucketName
         - ParameterKey: AuditAccountID
           ParameterValue: !Ref AuditAccountID
         - ParameterKey: EvidenceBucketName
