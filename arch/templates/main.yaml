@@ -688,7 +688,9 @@ Resources:
         - ParameterKey: DestBucketName
           ParameterValue: !Ref DestBucketName
         - ParameterKey: ExecutionName
-          Parametervalue: !Ref ExecutionName2
+          ParameterValue: !Ref ExecutionName
+        - ParameterKey: ExecutionName
+          ParameterValue: !Ref ExecutionName2
         - ParameterKey: AuditAccountID
           ParameterValue: !Ref AuditAccountID
         - ParameterKey: EvidenceBucketName
