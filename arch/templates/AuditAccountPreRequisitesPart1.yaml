@@ -332,6 +332,8 @@ Resources:
               - "cassandra:Select"
               - "codebuild:BatchGetProjects"
               - "codebuild:ListProjects"
+              - "config:Describe*"
+              - "config:Get*"
               - "dax:DescribeClusters"
               - "docdb-elastic:ListClusters"
               - "docdb-elastic:ListClusterSnapshots"

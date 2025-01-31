@@ -277,6 +277,8 @@ Resources:
                     "codebuild:BatchGetProjects",
                     "codebuild:ListProjects",
                     "config:PutEvaluations",
+                    "config:Describe*",
+                    "config:Get*",
                     "dax:DescribeClusters",
                     "docdb-elastic:List*",
                     "dynamodb:DescribeTable",
@@ -406,6 +408,8 @@ Resources:
                 "codebuild:BatchGetProjects",
                 "codebuild:ListProjects",
                 "config:PutEvaluations",
+                "config:Describe*",
+                "config:Get*",
                 "dax:DescribeClusters",
                 "docdb-elastic:ListClusters",
                 "docdb-elastic:ListClusterSnapshots",
@@ -1306,6 +1310,8 @@ Resources:
               - "cloudfront:List*"
               - "codebuild:BatchGetProjects"
               - "codebuild:ListProjects"
+              - "config:Describe*"
+              - "config:Get*"
               - "dax:DescribeClusters"
               - "docdb-elastic:ListClusters"
               - "docdb-elastic:ListClusterSnapshots"
