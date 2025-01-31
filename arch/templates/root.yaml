@@ -30,6 +30,9 @@ Parameters:
   ExecutionName:
     Type: String
     Default: "gc-fedclient-copy-execution-role"
+  ExecutionName2:
+    Type: String
+    Default: "gc-fedclient-evidence-copy-execution-role"
   RootOUID:
     Type: String
     Default: "r-bv5z"
@@ -86,6 +89,7 @@ Resources:
       TemplateURL: !Sub https://${PipelineBucket}.s3.${AWS::Region}.amazonaws.com/${DeployVersion}/main.yaml
       Parameters:
         ExecutionName: !Ref ExecutionName
+        ExecutionName2: !Ref ExecutionName2
         OrganizationId: !Ref OrganizationId
         OrganizationName: !Ref OrganizationName
         TenantId: !Ref TenantId

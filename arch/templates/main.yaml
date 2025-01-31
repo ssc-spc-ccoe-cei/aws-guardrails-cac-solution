@@ -13,6 +13,7 @@ Metadata:
           - BGA1
           - BGA2
           - ExecutionName
+          - ExecutionName2
           - OrganizationId
           - OrganizationName
           - PipelineBucket
@@ -40,7 +41,9 @@ Metadata:
       DefaultCloudProfile:
         default: The cloud profile to use when one is not provided by an account
       ExecutionName:
-        default: Execution name of the IAM role that is passed to GC permission's
+        default: Execution name of the IAM role that is passed to GC permission's for report files
+      ExecutionName2:
+        default: Execution name of the IAM role that is passed to GC permission's for evidence files
       RootOUID:
         default: ID of the AWS Organizations Root OU
       AuditAccountID:
@@ -98,7 +101,11 @@ Parameters:
   ExecutionName:
     Type: String
     Description: >-
-      Execution name of the IAM role that is passed to GC permission's.
+      Execution name of the IAM role that is passed to GC permission's for report files.
+  ExecutionName2:
+    Type: String
+    Description: >-
+      Execution name of the IAM role that is passed to GC permission's for evidence files.
   RootOUID:
     Type: String
     Default: ""
@@ -676,6 +683,8 @@ Resources:
           ParameterValue: !Ref OrganizationId
         - ParameterKey: DestBucketName
           ParameterValue: !Ref DestBucketName
+        - ParameterKey: ExecutionName
+          Parametervalue: !Ref ExecutionName2
         - ParameterKey: AuditAccountID
           ParameterValue: !Ref AuditAccountID
         - ParameterKey: EvidenceBucketName
