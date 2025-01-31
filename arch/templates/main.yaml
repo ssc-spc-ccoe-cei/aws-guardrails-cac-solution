@@ -694,6 +694,10 @@ Resources:
           ParameterValue: !Ref AccelRolePrefix
         - ParameterKey: DefaultCloudProfile
           ParameterValue: !Ref DefaultCloudProfile
+        - ParameterKey: DeployVersion
+          ParameterValue: !Ref DeployVersion
+        - ParameterKey: InvokeUpdate
+          ParameterValue: !Ref InvokeUpdate
       PermissionModel: SERVICE_MANAGED
       StackInstancesGroup:
         - DeploymentTargets:

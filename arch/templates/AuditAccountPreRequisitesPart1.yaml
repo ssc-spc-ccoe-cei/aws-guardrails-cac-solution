@@ -35,6 +35,10 @@ Parameters:
   DefaultCloudProfile:
     Type: String
     Description: The cloud profile to use when one is not provided by an account.
+  DeployVersion:
+    Type: String
+  InvokeUpdate:
+    Type: String
 
 Conditions:
   GenerateEvidenceBucketName: !Equals
@@ -149,6 +153,8 @@ Resources:
           !Ref AWSConfigConformsBucketName,
         ]
       StaticWebSiteURL: "http://localhost:8000"
+      DeployVersion: !Ref DeployVersion
+      InvokeUpdate: !Ref InvokeUpdate
     DependsOn:
       - BucketsSetupLambda
 
