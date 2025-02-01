@@ -41,8 +41,8 @@ def assess_cloudtrail_configurations(cloudtrail_client, event: dict) -> tuple[li
 
     for trail in trails_descriptions:
         trail_name = trail.get("Name", "")
-        resource_id = trail.get("TrailARN", trail_name)
-        trail_status = cloudtrail_client.get_trail_status(Name=trail_name)
+        trail_arn = trail.get("TrailARN", trail_name)
+        trail_status = cloudtrail_client.get_trail_status(Name=trail_arn)
 
         if not trail_status.get("IsLogging", False):
             compliance_type = "NON_COMPLIANT"
@@ -51,7 +51,7 @@ def assess_cloudtrail_configurations(cloudtrail_client, event: dict) -> tuple[li
             compliance_type = "NON_COMPLIANT"
             annotation = f"Cloud Trail '{trail_name}' does NOT have IncludeGlobalServiceEvents set to True."
         else:
-            response = cloudtrail_client.get_event_selectors(TrailName=trail_name)
+            response = cloudtrail_client.get_event_selectors(TrailName=trail_arn)
             event_selectors = response.get("EventSelectors", [])
             if not event_selectors:
                 compliance_type = "NON_COMPLIANT"
@@ -64,7 +64,7 @@ def assess_cloudtrail_configurations(cloudtrail_client, event: dict) -> tuple[li
                 annotation = f"Cloud Trail '{trail_name}' has the required configuration."
 
         logger.info(f"{compliance_type}: {annotation}")
-        evaluations.append(build_evaluation(resource_id, compliance_type, event, resource_type, annotation))
+        evaluations.append(build_evaluation(trail_arn, compliance_type, event, resource_type, annotation))
         if compliance_type == "NON_COMPLIANT":
             all_resources_are_compliant = False
 
@@ -104,7 +104,7 @@ def lambda_handler(event, context):
     
     # If the guardrail is recommended
     if gr_requirement_type == GuardrailRequirementType.Recommended:
-        return submit_evaluations(aws_config_client, event["resultToken"], [build_evaluation(
+        return submit_evaluations(aws_config_client, event, [build_evaluation(
             aws_account_id,
             "COMPLIANT",
             event,
@@ -112,7 +112,7 @@ def lambda_handler(event, context):
         )])
     # If the guardrail is not required
     elif gr_requirement_type == GuardrailRequirementType.Not_Required:
-        return submit_evaluations(aws_config_client, event["resultToken"], [build_evaluation(
+        return submit_evaluations(aws_config_client, event, [build_evaluation(
             aws_account_id,
             "NOT_APPLICABLE",
             event,
@@ -136,4 +136,4 @@ def lambda_handler(event, context):
 
     logger.info(f"{compliance_type}: {annotation}")
     evaluations.append(build_evaluation(aws_account_id, compliance_type, event, annotation=annotation))
-    submit_evaluations(aws_config_client, event["resultToken"], evaluations)
+    submit_evaluations(aws_config_client, event, evaluations)

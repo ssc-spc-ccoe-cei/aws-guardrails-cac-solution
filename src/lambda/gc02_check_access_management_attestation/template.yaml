@@ -1,7 +1,7 @@
 AWSTemplateFormatVersion: '2010-09-09'
 Transform: AWS::Serverless-2016-10-31
 Description: >
-  gc10_confirmation_of_mou
+  gc02_check_access_management_attestation
 
 Globals:
   Function:
@@ -9,7 +9,7 @@ Globals:
     MemorySize: 128
 
 Resources:
-  GC10CheckSignedMOULambda:
+  GC02CheckAccessManagementAttestationLambda:
     Type: AWS::Serverless::Function
     Properties:
       CodeUri: .

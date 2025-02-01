@@ -1,4 +1,4 @@
-AWSTemplateFormatVersion: 2010-09-09
+AWSTemplateFormatVersion: "2010-09-09"
 Description: Creates the AWS Audit Manager compliance framework and assessment to assess GC Guardrails.
 
 Parameters:
@@ -22,14 +22,16 @@ Parameters:
       (optional) ARN of any additional roles that should be configured as owners of the Assessment in Audit Manager
   RolePrefix:
     Type: String
-    Default: "ASEA-"
+    Default: ASEA-
     Description: >-
       The prefix to apply to generated role names, in ASEA this is generally ASEA- for lza this could be cdk-accel etc
   PythonRuntime:
     Type: String
-    Default: 'python3.12'
-    Description:
-      The python runtime to use for the compliance dashboard
+    Default: python3.12
+    Description: The python runtime to use for the compliance dashboard
+  DeployVersion:
+    Type: String
+    Default: "1.0.0"
 
 Conditions:
   IsAuditAccount: !Equals
@@ -141,6 +143,7 @@ Resources:
       EvidenceBucketName: !Ref EvidenceBucketName
       LambdaExecutionRoleARN: !GetAtt AuditManagerResourcesLambdaExecutionRole.Arn
       AdditionalAssessmentAdminRoleARN: !Ref AdditionalAssessmentAdminRoleARN
-      UpdateVariable: QVdTb21lCg8
+      UpdateVariable: QVdTb21lCg9
+      DeployVersion: !Ref DeployVersion
     DependsOn:
       - AuditManagerResourcesLambda

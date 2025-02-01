@@ -4,6 +4,7 @@ import logging
 import random
 import string
 import time
+import os
 
 import boto3
 import botocore
@@ -19,6 +20,20 @@ http = urllib3.PoolManager()
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
 
+evidence_watcher_lambda_arn = os.environ["EVIDENCE_WATCHER_ARN"]
+
+lambda_notification_config_id = 'EvidenceWatcherNotification'
+notification_configuration = {
+    'LambdaFunctionConfigurations': [
+        {
+            'Id': lambda_notification_config_id,
+            'LambdaFunctionArn': evidence_watcher_lambda_arn,
+            'Events': [
+                's3:ObjectCreated:*'
+            ]
+        },
+    ]
+}
 
 def bucket_exists(client=None, bucket_name=None):
     """Check if a bucket exists"""
@@ -127,6 +142,12 @@ def create_bucket(client=None, bucket_name=None):
                                     )
                                 except (ValueError, TypeError):
                                     logger.error("Failed to create folder %s in bucket %s", folder_name, bucket_name)
+                                    
+                            try:
+                                client.put_bucket_notification_configuration(Bucket=bucket_name, NotificationConfiguration=notification_configuration)
+                            except Exception as err:
+                                logger.error(f"Failed to setup trigger for lambda and bucket: {err}")
+                                
                         b_completed = True
                         return True
                     else:
@@ -136,8 +157,30 @@ def create_bucket(client=None, bucket_name=None):
             else:
                 # bucket already exists
                 logger.info("Bucket '%s' already exists.", bucket_name)
+                if "awsconfig" not in bucket_name:
+                    # Make sure all the evidence folders exist in the bucket
+                    for x in range(1, 14):
+                        folder_name = f"gc-{x:02}"
+                        try:
+                            client.put_object(
+                                Body=binary_data,
+                                Bucket=bucket_name,
+                                Key=f"{folder_name}/",
+                            )
+                        except (ValueError, TypeError):
+                            logger.error("Failed to create folder %s in bucket %s", folder_name, bucket_name)
+                            
+                    try:
+                        bucket_notification_configurations = client.get_bucket_notification_configuration(Bucket=bucket_name)
+                        notification_config_exists = next((True for nc in bucket_notification_configurations.get("LambdaFunctionConfigurations", []) if nc.get("Id") == lambda_notification_config_id), False)
+                        if not notification_config_exists:
+                            logger.info("Notification configuration does not exit. Attempting to create.")
+                            client.put_bucket_notification_configuration(Bucket=bucket_name, NotificationConfiguration=notification_configuration)
+                    except Exception as err:
+                        logger.error(f"Failed to setup trigger for lambda and bucket: {err}")
+
+                b_completed = True
                 return True
-            b_completed = True
         except botocore.exceptions.ClientError as error:
             logger.error("Error trying to create bucket name '%s'", bucket_name)
             logger.error("Error: %s", error)
@@ -176,8 +219,8 @@ def lambda_handler(event, context):
     event -- the event variable given in the lambda handler
     context -- the context variable given in the lambda handler
     """
+    logger.info("Received Event: %s", json.dumps(event, indent=2))
     aws_s3_client = boto3.client("s3")
-    logger.info("got event %s", event)
     response_data = {}
     if event["RequestType"] == "Create":
         letters_and_numbers = string.ascii_lowercase + string.digits

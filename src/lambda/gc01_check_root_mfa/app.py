@@ -137,6 +137,7 @@ def lambda_handler(event, context):
     evaluations = []
 
     aws_organizations_client = get_client("organizations", aws_account_id, execution_role_name)
+    aws_config_client = get_client("config", aws_account_id, execution_role_name)
     
     # Check cloud profile
     tags = get_account_tags(get_client("organizations", assume_role=False), aws_account_id)
@@ -145,7 +146,7 @@ def lambda_handler(event, context):
     
     # If the guardrail is recommended
     if gr_requirement_type == GuardrailRequirementType.Recommended:
-        return submit_evaluations(aws_config_client, event["resultToken"], [build_evaluation(
+        return submit_evaluations(aws_config_client, event, [build_evaluation(
             aws_account_id,
             "COMPLIANT",
             event,
@@ -153,7 +154,7 @@ def lambda_handler(event, context):
         )])
     # If the guardrail is not required
     elif gr_requirement_type == GuardrailRequirementType.Not_Required:
-        return submit_evaluations(aws_config_client, event["resultToken"], [build_evaluation(
+        return submit_evaluations(aws_config_client, event, [build_evaluation(
             aws_account_id,
             "NOT_APPLICABLE",
             event,
@@ -164,7 +165,6 @@ def lambda_handler(event, context):
         logger.info("Root Account MFA not checked in account %s as this is not the Management Account", aws_account_id)
         return
 
-    aws_config_client = get_client("config", aws_account_id, execution_role_name)
     aws_iam_client = get_client("iam", aws_account_id, execution_role_name)
 
     if get_root_mfa_enabled(aws_iam_client):
@@ -177,4 +177,4 @@ def lambda_handler(event, context):
     logger.info(f"{compliance_type}: {annotation}")
         
     evaluations.append(build_evaluation(aws_account_id, compliance_type, event, annotation=annotation))
-    submit_evaluations(aws_config_client, event["resultToken"], evaluations)
+    submit_evaluations(aws_config_client, event, evaluations)

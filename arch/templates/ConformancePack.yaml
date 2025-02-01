@@ -5,6 +5,9 @@
 ##################################################################################
 Parameters:
   # Common
+  UpdateTriggerVersion:
+    Type: String
+    Default: "v1"
   GCLambdaExecutionRoleName:
     Type: String
   GCLambdaExecutionRoleName2:
@@ -60,6 +63,8 @@ Parameters:
     Type: String
   S3RoleAssignmentReviewDocumentPath:
     Type: String
+  S3AccessManagementAttestationDocumentPath:
+    Type: String
   S3AdminAccountListPath:
     Type: String
   GC03AlarmList:
@@ -91,8 +96,6 @@ Parameters:
   S3NetworkArchitectureDocumentPath:
     Type: String
   # GC10
-  S3SignedMOUDocumentPath:
-    Type: String
   S3LogBucketsPath:
     Type: String
   LogArchiveAccountName:
@@ -146,7 +149,7 @@ Resources:
         SourceDetails:
           - EventSource: "aws.config"
             MessageType: "ScheduledNotification"
-            
+
   GC01CheckRootAccountMFAEnabled:
     Type: "AWS::Config::ConfigRule"
     Properties:
@@ -179,7 +182,7 @@ Resources:
           - EventSource: "aws.config"
             MessageType: "ScheduledNotification"
 
-  GC01CheckFederatedUsersMFA:
+  GC01CheckFederatedUsersMfaConfigRule:
     Type: "AWS::Config::ConfigRule"
     Properties:
       ConfigRuleName: gc01_check_federated_users_mfa
@@ -211,7 +214,7 @@ Resources:
           - EventSource: "aws.config"
             MessageType: "ScheduledNotification"
 
-  GC01CheckMonitoringAndLogging:
+  GC01CheckMonitoringAndLoggingConfigRule:
     Type: "AWS::Config::ConfigRule"
     Properties:
       ConfigRuleName: gc01_check_monitoring_and_logging
@@ -313,7 +316,7 @@ Resources:
         SourceDetails:
           - EventSource: "aws.config"
             MessageType: "ScheduledNotification"
-            
+
   GC01CheckDedicatedAdminAccount:
     Type: "AWS::Config::ConfigRule"
     Properties:
@@ -356,7 +359,7 @@ Resources:
           - EventSource: "aws.config"
             MessageType: "ScheduledNotification"
 
-  GC01CheckMFAIAMUsersConfigRule:
+  GC01CheckIamUsersMfaConfigRule:
     Type: "AWS::Config::ConfigRule"
     Properties:
       ConfigRuleName: gc01_check_iam_users_mfa
@@ -471,6 +474,42 @@ Resources:
         SourceDetails:
           - EventSource: "aws.config"
             MessageType: "ScheduledNotification"
+  GC02CheckAccessManagementAttestationConfigRule:
+    Type: "AWS::Config::ConfigRule"
+    Properties:
+      ConfigRuleName: gc02_check_access_management_attestation
+      Description: Checks S3 bucket for the access management attestation document.
+      InputParameters:
+        s3ObjectPath:
+          Fn::If:
+            - s3AccessManagementAttestationDocumentPath
+            - Ref: S3AccessManagementAttestationDocumentPath
+            - Ref: AWS::NoValue
+        ExecutionRoleName:
+          Fn::If:
+            - GCLambdaExecutionRoleName
+            - Ref: GCLambdaExecutionRoleName
+            - Ref: AWS::NoValue
+        AuditAccountID:
+          Fn::If:
+            - auditAccountID
+            - Ref: AuditAccountID
+            - Ref: AWS::NoValue
+      Scope:
+        ComplianceResourceTypes:
+          - AWS::Account
+      MaximumExecutionFrequency: TwentyFour_Hours
+      Source:
+        Owner: CUSTOM_LAMBDA
+        SourceIdentifier:
+          Fn::Join:
+            - ""
+            - - "arn:aws:lambda:ca-central-1:"
+              - Ref: AuditAccountID
+              - !Sub ":function:${OrganizationName}gc02_check_access_management_attestation"
+        SourceDetails:
+          - EventSource: "aws.config"
+            MessageType: "ScheduledNotification"
   GC02CheckGroupAccessConfigurationConfigRule:
     Type: "AWS::Config::ConfigRule"
     Properties:
@@ -507,7 +546,7 @@ Resources:
         SourceDetails:
           - EventSource: "aws.config"
             MessageType: "ScheduledNotification"
-  GC02CheckPasswordProtectionMechanismsLambda:
+  GC02CheckPasswordProtectionMechanismsConfigRule:
     Type: "AWS::Config::ConfigRule"
     Properties:
       ConfigRuleName: gc02_check_password_protection_mechanisms
@@ -962,10 +1001,10 @@ Resources:
       Description: Verify cryptographic algorithms and protocols are configured by the user in accordance with ITSP.40.111 and ITSP.40.062
       InputParameters:
         S3CasCurrentlyInUsePath:
-            Fn::If:
-              - s3CasCurrentlyInUsePath
-              - Ref: S3CasCurrentlyInUsePath
-              - Ref: AWS::NoValue
+          Fn::If:
+            - s3CasCurrentlyInUsePath
+            - Ref: S3CasCurrentlyInUsePath
+            - Ref: AWS::NoValue
         ExecutionRoleName:
           Fn::If:
             - GCLambdaExecutionRoleName2
@@ -1204,7 +1243,7 @@ Resources:
         SourceDetails:
           - EventSource: "aws.config"
             MessageType: "ScheduledNotification"
-  
+
   GC09CheckNonPublicStorageAccountsConfigRule:
     Type: "AWS::Config::ConfigRule"
     Properties:
@@ -1279,42 +1318,6 @@ Resources:
           - EventSource: "aws.config"
             MessageType: "ScheduledNotification"
 
-  GC10CheckSignedMOUConfigRule:
-    Type: "AWS::Config::ConfigRule"
-    Properties:
-      ConfigRuleName: gc10_confirmation_of_mou
-      Description: Confirms if the signed MOU with CCS has been uploaded to the S3 bucket
-      InputParameters:
-        s3ObjectPath:
-          Fn::If:
-            - s3SignedMOUDocumentPath
-            - Ref: S3SignedMOUDocumentPath
-            - Ref: AWS::NoValue
-        ExecutionRoleName:
-          Fn::If:
-            - GCLambdaExecutionRoleName
-            - Ref: GCLambdaExecutionRoleName
-            - Ref: AWS::NoValue
-        AuditAccountID:
-          Fn::If:
-            - auditAccountID
-            - Ref: AuditAccountID
-            - Ref: AWS::NoValue
-      Scope:
-        ComplianceResourceTypes:
-          - AWS::Account
-      MaximumExecutionFrequency: TwentyFour_Hours
-      Source:
-        Owner: CUSTOM_LAMBDA
-        SourceIdentifier:
-          Fn::Join:
-            - ""
-            - - "arn:aws:lambda:ca-central-1:"
-              - Ref: AuditAccountID
-              - !Sub ":function:${OrganizationName}gc10_confirmation_of_mou"
-        SourceDetails:
-          - EventSource: "aws.config"
-            MessageType: "ScheduledNotification"
   # GC11 - Check Security Contact
   GC11CheckSecurityContactConfigRule:
     Type: "AWS::Config::ConfigRule"
@@ -1509,24 +1512,24 @@ Resources:
           - EventSource: "aws.config"
             MessageType: "ScheduledNotification"
   # GC11 - Cloud Trail check with AWS Managed rules CLOUD_TRAIL_ENABLED, CLOUDTRAIL_S3_DATAEVENTS_ENABLED, CLOUDTRAIL_SECURITY_TRAIL_ENABLED
-  GC11CloudTrailEnabledConfigRule:
+  GC11CheckCloudTrailEnabledConfigRule:
     Type: "AWS::Config::ConfigRule"
     Properties:
-      ConfigRuleName: gc11_cloud_trail_enabled
+      ConfigRuleName: gc11_check_cloud_trail_enabled
       Source:
         Owner: AWS
         SourceIdentifier: CLOUD_TRAIL_ENABLED
-  GC11CloudTrailS3DataEventsEnabledConfigRule:
+  GC11CheckCloudTrailS3DataEventsEnabledConfigRule:
     Type: "AWS::Config::ConfigRule"
     Properties:
-      ConfigRuleName: gc11_cloudtrail_s3_dataevents_enabled
+      ConfigRuleName: gc11_check_cloudtrail_s3_dataevents_enabled
       Source:
         Owner: AWS
         SourceIdentifier: CLOUDTRAIL_S3_DATAEVENTS_ENABLED
-  GC11CloudTrailSecurityTrailEnabledConfigRule:
+  GC11CheckCloudTrailSecurityTrailEnabledConfigRule:
     Type: "AWS::Config::ConfigRule"
     Properties:
-      ConfigRuleName: gc11_cloudtrail_security_trail_enabled
+      ConfigRuleName: gc11_check_cloudtrail_security_trail_enabled
       Source:
         Owner: AWS
         SourceIdentifier: CLOUDTRAIL_SECURITY_TRAIL_ENABLED
@@ -1558,16 +1561,16 @@ Resources:
             - ""
             - - "arn:aws:lambda:ca-central-1:"
               - Ref: AuditAccountID
-              - !Sub ":function:${OrganizationName}gc12_check_marketplace"
+              - !Sub ":function:${OrganizationName}gc12_check_private_marketplace"
         SourceDetails:
           - EventSource: "aws.config"
             MessageType: "ScheduledNotification"
 
   # GC13
-  GC13EmergencyAccountManagementConfigRule:
+  GC13CheckEmergencyAccountManagementConfigRule:
     Type: "AWS::Config::ConfigRule"
     Properties:
-      ConfigRuleName: gc13_emergency_account_management
+      ConfigRuleName: gc13_check_emergency_account_management
       Description: Checks S3 bucket for the account management procedure
       InputParameters:
         s3ObjectPath:
@@ -1596,15 +1599,15 @@ Resources:
             - ""
             - - "arn:aws:lambda:ca-central-1:"
               - Ref: AuditAccountID
-              - !Sub ":function:${OrganizationName}gc13_emergency_account_management"
+              - !Sub ":function:${OrganizationName}gc13_check_emergency_account_management"
         SourceDetails:
           - EventSource: "aws.config"
             MessageType: "ScheduledNotification"
 
-  GC13EmergencyAccountMgmtApprovalsConfigRule:
+  GC13CheckEmergencyAccountMgmtApprovalsConfigRule:
     Type: "AWS::Config::ConfigRule"
     Properties:
-      ConfigRuleName: gc13_emergency_account_mgmt_approvals
+      ConfigRuleName: gc13_check_emergency_account_mgmt_approvals
       Description: Checks S3 bucket for the account management procedure approvals
       InputParameters:
         s3ObjectPath:
@@ -1633,15 +1636,15 @@ Resources:
             - ""
             - - "arn:aws:lambda:ca-central-1:"
               - Ref: AuditAccountID
-              - !Sub ":function:${OrganizationName}gc13_emergency_account_mgmt_approvals"
+              - !Sub ":function:${OrganizationName}gc13_check_emergency_account_mgmt_approvals"
         SourceDetails:
           - EventSource: "aws.config"
             MessageType: "ScheduledNotification"
 
-  GC13EmergencyAccountAlertsConfigRule:
+  GC13CheckEmergencyAccountAlertsConfigRule:
     Type: "AWS::Config::ConfigRule"
     Properties:
-      ConfigRuleName: gc13_emergency_account_alerts
+      ConfigRuleName: gc13_check_emergency_account_alerts
       Description: Checks for the existence of alerts that are in place to report any use of emergency accounts
       InputParameters:
         s3ObjectPath:
@@ -1670,15 +1673,15 @@ Resources:
             - ""
             - - "arn:aws:lambda:ca-central-1:"
               - Ref: AuditAccountID
-              - !Sub ":function:${OrganizationName}gc13_emergency_account_alerts"
+              - !Sub ":function:${OrganizationName}gc13_check_emergency_account_alerts"
         SourceDetails:
           - EventSource: "aws.config"
             MessageType: "ScheduledNotification"
 
-  GC13EmergencyAccountTestingConfigRule:
+  GC13CheckEmergencyAccountTestingConfigRule:
     Type: "AWS::Config::ConfigRule"
     Properties:
-      ConfigRuleName: gc13_emergency_account_testing
+      ConfigRuleName: gc13_check_emergency_account_testing
       Description: Verifies that testing of emergency accounts took place and that periodic testing is included
       InputParameters:
         ExecutionRoleName:
@@ -1712,7 +1715,7 @@ Resources:
             - ""
             - - "arn:aws:lambda:ca-central-1:"
               - Ref: AuditAccountID
-              - !Sub ":function:${OrganizationName}gc13_emergency_account_testing"
+              - !Sub ":function:${OrganizationName}gc13_check_emergency_account_testing"
         SourceDetails:
           - EventSource: "aws.config"
             MessageType: "ScheduledNotification"
@@ -1819,13 +1822,18 @@ Conditions:
   s3AdminAccountListPath:
     Fn::Not:
       - Fn::Equals:
-        - ""
-        - Ref: S3AdminAccountListPath
+          - ""
+          - Ref: S3AdminAccountListPath
   s3RoleAssignmentReviewDocumentPath:
     Fn::Not:
       - Fn::Equals:
           - ""
           - Ref: S3RoleAssignmentReviewDocumentPath
+  s3AccessManagementAttestationDocumentPath:
+    Fn::Not:
+      - Fn::Equals:
+          - ""
+          - Ref: S3AccessManagementAttestationDocumentPath
   # GC03
   s3VpnIpRangesPath:
     Fn::Not:
@@ -1877,11 +1885,6 @@ Conditions:
           - ""
           - Ref: S3NetworkArchitectureDocumentPath
   # GC10
-  s3SignedMOUDocumentPath:
-    Fn::Not:
-      - Fn::Equals:
-          - ""
-          - Ref: S3SignedMOUDocumentPath
   s3LogBucketsPath:
     Fn::Not:
       - Fn::Equals:

@@ -213,11 +213,11 @@ def lambda_handler(event, context):
     is_not_audit_account = aws_account_id != audit_account_id
     evaluations = []
 
-    aws_config_client = get_client("config", aws_account_id, execution_role_name)
+    aws_config_client = get_client("config", aws_account_id, execution_role_name, is_not_audit_account)
     aws_s3_client = get_client("s3")
-    aws_guard_duty_client = get_client("guardduty", aws_account_id, execution_role_name)
-    aws_event_bridge_client = get_client("events", aws_account_id, execution_role_name)
-    aws_sns_client = get_client("sns", aws_account_id, execution_role_name)
+    aws_guard_duty_client = get_client("guardduty", aws_account_id, execution_role_name, is_not_audit_account)
+    aws_event_bridge_client = get_client("events", aws_account_id, execution_role_name, is_not_audit_account)
+    aws_sns_client = get_client("sns", aws_account_id, execution_role_name, is_not_audit_account)
     
     # Check cloud profile
     tags = get_account_tags(get_client("organizations", assume_role=False), aws_account_id)
@@ -226,7 +226,7 @@ def lambda_handler(event, context):
     
     # If the guardrail is recommended
     if gr_requirement_type == GuardrailRequirementType.Recommended:
-        return submit_evaluations(aws_config_client, event["resultToken"], [build_evaluation(
+        return submit_evaluations(aws_config_client, event, [build_evaluation(
             aws_account_id,
             "COMPLIANT",
             event,
@@ -234,7 +234,7 @@ def lambda_handler(event, context):
         )])
     # If the guardrail is not required
     elif gr_requirement_type == GuardrailRequirementType.Not_Required:
-        return submit_evaluations(aws_config_client, event["resultToken"], [build_evaluation(
+        return submit_evaluations(aws_config_client, event, [build_evaluation(
             aws_account_id,
             "NOT_APPLICABLE",
             event,
@@ -244,5 +244,5 @@ def lambda_handler(event, context):
     evaluations = check_alerts_flag_misuse(event, rule_parameters, aws_account_id, evaluations, aws_s3_client, aws_guard_duty_client, aws_event_bridge_client, aws_sns_client)
 
     logger.info("AWS Config updating evaluations: %s", evaluations)
-    submit_evaluations(aws_config_client, event["resultToken"], evaluations)
+    submit_evaluations(aws_config_client, event, evaluations)
 

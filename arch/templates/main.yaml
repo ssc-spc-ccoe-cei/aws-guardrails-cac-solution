@@ -13,6 +13,7 @@ Metadata:
           - BGA1
           - BGA2
           - ExecutionName
+          - ExecutionName2
           - OrganizationId
           - OrganizationName
           - PipelineBucket
@@ -40,7 +41,9 @@ Metadata:
       DefaultCloudProfile:
         default: The cloud profile to use when one is not provided by an account
       ExecutionName:
-        default: Execution name of the IAM role that is passed to GC permission's
+        default: Execution name of the IAM role that is passed to GC permission's for report files
+      ExecutionName2:
+        default: Execution name of the IAM role that is passed to GC permission's for evidence files
       RootOUID:
         default: ID of the AWS Organizations Root OU
       AuditAccountID:
@@ -98,7 +101,11 @@ Parameters:
   ExecutionName:
     Type: String
     Description: >-
-      Execution name of the IAM role that is passed to GC permission's.
+      Execution name of the IAM role that is passed to GC permission's for report files.
+  ExecutionName2:
+    Type: String
+    Description: >-
+      Execution name of the IAM role that is passed to GC permission's for evidence files.
   RootOUID:
     Type: String
     Default: ""
@@ -169,10 +176,8 @@ Parameters:
     AllowedValues: [true, false]
   InvokeUpdate:
     Type: String
-    Default: "17d78b5e-9745-41e4-a926-9fd9f660bf23"
   DeployVersion:
     Type: String
-    Default: 1.0.0
   PythonRuntime:
     Type: String
     Default: "python3.12"
@@ -243,7 +248,7 @@ Resources:
     Type: Custom::InvokeCustomLambda
     Condition: DeployRoles
     Properties:
-      Version: 32
+      InvokeUpdate: !Ref InvokeUpdate
       ServiceToken: !GetAtt CreateRoleLambda.Arn
       TrustPrincipal: !Sub arn:${AWS::Partition}:iam::${AuditAccountID}:root
       SwitchRole: !Ref AcceleratorRole
@@ -271,6 +276,8 @@ Resources:
                     "cloudtrail:LookupEvents",
                     "codebuild:BatchGetProjects",
                     "codebuild:ListProjects",
+                    "config:Describe*",
+                    "config:Get*",
                     "config:PutEvaluations",
                     "dax:DescribeClusters",
                     "docdb-elastic:List*",
@@ -287,6 +294,8 @@ Resources:
                     "iam:GenerateCredentialReport",
                     "iam:Get*",
                     "iam:List*",
+                    "identitystore:ListUsers",
+                    "identitystore:ListGroups",
                     "kinesis:DescribeStream",
                     "kinesis:ListStreams",
                     "memorydb:Describe*",
@@ -299,7 +308,7 @@ Resources:
                     "resource-explorer-2:ListIndexes",
                     "resource-explorer-2:Search",
                     "sso:List*",
-                    "sso:DescribeUser",
+                    "sso:Describe*",
                     "sso:GetInlinePolicyForPermissionSet",
                     "s3:Get*",
                     "s3:GetBucketPublicAccessBlock",
@@ -372,7 +381,7 @@ Resources:
     Type: Custom::InvokeCustomLambda
     Condition: DeployRoles
     Properties:
-      Version: 32
+      InvokeUpdate: !Ref InvokeUpdate
       ServiceToken: !GetAtt CreateRoleLambda.Arn
       TrustPrincipal: !Sub arn:${AWS::Partition}:iam::${AuditAccountID}:root
       SwitchRole: !Ref AcceleratorRole
@@ -398,6 +407,8 @@ Resources:
                 "cloudtrail:LookupEvents",
                 "codebuild:BatchGetProjects",
                 "codebuild:ListProjects",
+                "config:Describe*",
+                "config:Get*",
                 "config:PutEvaluations",
                 "dax:DescribeClusters",
                 "docdb-elastic:ListClusters",
@@ -672,6 +683,12 @@ Resources:
       Parameters:
         - ParameterKey: OrganizationName
           ParameterValue: !Ref OrganizationName
+        - ParameterKey: OrganizationId
+          ParameterValue: !Ref OrganizationId
+        - ParameterKey: DestBucketName
+          ParameterValue: !Ref DestBucketName
+        - ParameterKey: ExecutionName
+          ParameterValue: !Ref ExecutionName2
         - ParameterKey: AuditAccountID
           ParameterValue: !Ref AuditAccountID
         - ParameterKey: EvidenceBucketName
@@ -694,6 +711,10 @@ Resources:
           ParameterValue: !Ref AccelRolePrefix
         - ParameterKey: DefaultCloudProfile
           ParameterValue: !Ref DefaultCloudProfile
+        - ParameterKey: DeployVersion
+          ParameterValue: !Ref DeployVersion
+        - ParameterKey: InvokeUpdate
+          ParameterValue: !Ref InvokeUpdate
       PermissionModel: SERVICE_MANAGED
       StackInstancesGroup:
         - DeploymentTargets:
@@ -1121,7 +1142,9 @@ Resources:
             Action:
               - "redshift:DescribeClusters"
               - "redshift:DescribeClusterParameters"
-            Resource: !Sub "arn:${AWS::Partition}:redshift:*:*:cluster:*"
+            Resource: 
+              - !Sub "arn:${AWS::Partition}:redshift:*:*:cluster:*"
+              - !Sub "arn:${AWS::Partition}:redshift:*:*:parametergroup:*"
             Effect: Allow
           - Sid: AllowAPI
             Action:
@@ -1287,6 +1310,8 @@ Resources:
               - "cloudfront:List*"
               - "codebuild:BatchGetProjects"
               - "codebuild:ListProjects"
+              - "config:Describe*"
+              - "config:Get*"
               - "dax:DescribeClusters"
               - "docdb-elastic:ListClusters"
               - "docdb-elastic:ListClusterSnapshots"
@@ -1322,12 +1347,11 @@ Resources:
               - "s3:ListBucket"
               - "s3:GetBucketPublicAccessBlock"
               - "sso:ListInstances"
-              - "sso:ListUsers"
+              - "identitystore:ListUsers"
+              - "identitystore:ListGroups"
               - "sso:ListManagedPoliciesInPermissionSet"
               - "sso:ListAccountAssignmentsForPrincipal"
-              - "sso:ListGroups"
-              - "sso:DescribeUser"
-              - "sso:ListGroupMemberships"
+              - "sso:Describe*"
               - "sso:GetInlinePolicyForPermissionSet"
               - "sso:ListCustomerManagedPolicyReferencesInPermissionSet"
               - "sso:ListPermissionSetsProvisionedToAccount"
@@ -1488,6 +1512,8 @@ Resources:
     Type: AWS::Config::OrganizationConformancePack
     Properties:
       ConformancePackInputParameters:
+        - ParameterName: UpdateTriggerVersion
+          ParameterValue: "v3"
         - ParameterName: GCLambdaExecutionRoleName
           ParameterValue: !Sub "${AccelRolePrefix}GCLambdaExecutionRole"
         - ParameterName: GCLambdaExecutionRoleName2
@@ -1556,6 +1582,15 @@ Resources:
         - ParameterName: S3RoleAssignmentReviewDocumentPath
           ParameterValue: !Sub
             - "s3://${ClientEvidenceBucket}/gc-02/access_reviews_privileged_roles.pdf"
+            - ClientEvidenceBucket:
+                !If [
+                  GenerateEvidenceBucketName,
+                  !GetAtt GenerateEvidenceBucketName.EvidenceBucketName,
+                  !Ref EvidenceBucketName,
+                ]
+        - ParameterName: S3AccessManagementAttestationDocumentPath
+          ParameterValue: !Sub
+            - "s3://${ClientEvidenceBucket}/gc-02/access_management_attestation.pdf"
             - ClientEvidenceBucket:
                 !If [
                   GenerateEvidenceBucketName,
@@ -1637,15 +1672,6 @@ Resources:
         - ParameterName: S3LogBucketsPath
           ParameterValue: !Sub
             - "s3://${ClientEvidenceBucket}/gc-10/log_buckets.txt"
-            - ClientEvidenceBucket:
-                !If [
-                  GenerateEvidenceBucketName,
-                  !GetAtt GenerateEvidenceBucketName.EvidenceBucketName,
-                  !Ref EvidenceBucketName,
-                ]
-        - ParameterName: S3SignedMOUDocumentPath
-          ParameterValue: !Sub
-            - "s3://${ClientEvidenceBucket}/gc-10/signed_mou.pdf"
             - ClientEvidenceBucket:
                 !If [
                   GenerateEvidenceBucketName,
@@ -1740,6 +1766,8 @@ Resources:
           ParameterValue: !Ref AdditionalAssessmentAdminRoleARN
         - ParameterKey: RolePrefix
           ParameterValue: !Ref RolePrefix
+        - ParameterKey: DeployVersion
+          ParameterValue: !Ref DeployVersion
       PermissionModel: SERVICE_MANAGED
       StackInstancesGroup:
         - DeploymentTargets:

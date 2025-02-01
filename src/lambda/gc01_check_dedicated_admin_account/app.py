@@ -24,7 +24,7 @@ def fetch_sso_users(sso_admin_client, identity_store_client):
     instances = list_all_sso_admin_instances(sso_admin_client)
     users_by_instance = {}
     for i in instances:
-        if i.get("Status") != "Active":
+        if i.get("Status") != "ACTIVE":
             continue
 
         instance_id = i.get("IdentityStoreId")
@@ -411,7 +411,7 @@ def check_users(
 
 
 def policies_grant_admin_access(managed_policies, inline_policies):
-    return next((True for p in managed_policies if p.get("PolicyName", "") == "AdministratorAccess"), False) or next(
+    return next((True for p in managed_policies if p.get("PolicyName", p.get("Name", "")) == "AdministratorAccess"), False) or next(
         (True for p in inline_policies if policy_doc_gives_admin_access(p.get("PolicyDocument", "{}"))), False
     )
 
@@ -463,7 +463,7 @@ def lambda_handler(event, context):
     
     # If the guardrail is recommended
     if gr_requirement_type == GuardrailRequirementType.Recommended:
-        return submit_evaluations(aws_config_client, event["resultToken"], [build_evaluation(
+        return submit_evaluations(aws_config_client, event, [build_evaluation(
             aws_account_id,
             "COMPLIANT",
             event,
@@ -471,7 +471,7 @@ def lambda_handler(event, context):
         )])
     # If the guardrail is not required
     elif gr_requirement_type == GuardrailRequirementType.Not_Required:
-        return submit_evaluations(aws_config_client, event["resultToken"], [build_evaluation(
+        return submit_evaluations(aws_config_client, event, [build_evaluation(
             aws_account_id,
             "NOT_APPLICABLE",
             event,
@@ -503,4 +503,4 @@ def lambda_handler(event, context):
         )
 
     logger.info("AWS Config updating evaluations: %s", evaluations)
-    submit_evaluations(aws_config_client, event["resultToken"], evaluations)
+    submit_evaluations(aws_config_client, event, evaluations)

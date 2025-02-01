@@ -14,6 +14,7 @@ Parameters:
     Description: Subject to change, might not be used here
   DefaultCloudProfile:
     Type: String
+    Default: "3"
     AllowedValues: [ "1", "2", "3", "4", "5", "6"]
   OrganizationId:
     Type: String
@@ -29,6 +30,9 @@ Parameters:
   ExecutionName:
     Type: String
     Default: "gc-fedclient-copy-execution-role"
+  ExecutionName2:
+    Type: String
+    Default: "gc-fedclient-evidence-copy-execution-role"
   RootOUID:
     Type: String
     Default: "r-bv5z"
@@ -76,7 +80,7 @@ Parameters:
     AllowedValues: [true, false]
   DeployVersion:
     Type: String
-    Default: 1.0.0
+    Default: 2.0.0
 
 Resources:
   GuardRailsStack:
@@ -85,6 +89,7 @@ Resources:
       TemplateURL: !Sub https://${PipelineBucket}.s3.${AWS::Region}.amazonaws.com/${DeployVersion}/main.yaml
       Parameters:
         ExecutionName: !Ref ExecutionName
+        ExecutionName2: !Ref ExecutionName2
         OrganizationId: !Ref OrganizationId
         OrganizationName: !Ref OrganizationName
         TenantId: !Ref TenantId
@@ -99,6 +104,7 @@ Resources:
         DestBucketName: !Ref DestBucketName
         DeployRoles: !Ref DeployRoles
         DeployVersion: !Ref DeployVersion
+        InvokeUpdate: !Ref InvokeUpdate
         BGA1: !Ref BGA1
         BGA2: !Ref BGA2
       Tags:

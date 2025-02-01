@@ -1,7 +1,7 @@
 AWSTemplateFormatVersion: "2010-09-09"
 Transform: AWS::Serverless-2016-10-31
 Description: >
-  gc13_emergency_account_mgmt_approvals
+  gc13_check_emergency_account_alerts
 
 Globals:
   Function:
@@ -9,7 +9,7 @@ Globals:
     MemorySize: 128
 
 Resources:
-  GC13EmergencyAccountMgmtApprovalsLambda:
+  GC13CheckEmergencyAccountAlertsLambda:
     Type: AWS::Serverless::Function
     Properties:
       CodeUri: .
