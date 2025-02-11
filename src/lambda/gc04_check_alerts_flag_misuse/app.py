@@ -5,7 +5,15 @@
 import json
 import logging
 
-from utils import is_scheduled_notification, check_required_parameters, flatten_dict, check_guardrail_requirement_by_cloud_usage_profile, get_cloud_profile_from_tags, GuardrailType, GuardrailRequirementType
+from utils import (
+    is_scheduled_notification,
+    check_required_parameters,
+    flatten_dict,
+    check_guardrail_requirement_by_cloud_usage_profile,
+    get_cloud_profile_from_tags,
+    GuardrailType,
+    GuardrailRequirementType,
+)
 from boto_util.organizations import get_account_tags
 from boto_util.client import get_client
 from boto_util.config import build_evaluation, submit_evaluations
@@ -59,15 +67,27 @@ def rule_matches_against_cb_role_identity(rule_event_pattern, cb_role_arn):
 def get_role_arn(iam_client, cb_role: str) -> str | None:
     try:
         response = iam_client.get_role(RoleName=cb_role)
-        return response.get("Role").get("Arn")
-    except botocore.exceptions.ClientError as ex:
-        if "NoSuchEntity" in ex.response["Error"]["Code"]:
-            return None
-        elif "ServiceFailure" in ex.response["Error"]["Code"]:
-            ex.response["Error"]["Message"] = "get_role operation failed due to a Service Failure error."
-        else:
-            ex.response["Error"]["Message"] = "InternalError"
-            ex.response["Error"]["Code"] = "InternalError"
+        return response["Role"]["Arn"]
+
+    except iam_client.exceptions.NoSuchEntityException as ex:
+        logger.error("Message", "get_role operation failed. Resource not found. Attempting partial match.")
+        # Fallback to partial match if the exact role name was not found
+        list_response = iam_client.list_roles()
+        for role in list_response["Roles"]:
+            if cb_role in role["RoleName"]:
+                return role["Arn"]
+        return None
+
+    except iam_client.exceptions.InvalidInputException as ex:
+        logger.error("Message", "Failed to get subscription attributes. Invalid parameter.")
+        raise ex
+
+    except iam_client.exceptions.ServiceFailureException as ex:
+        logger.error("Message", "get_role operation failed due to a Service Failure error.")
+        raise ex
+
+    except Exception as ex:
+        logger.error("Message", "InternalError")
         raise ex
 
 
@@ -177,29 +197,27 @@ def lambda_handler(event, context):
     aws_sns_client = get_client("sns", aws_account_id, execution_role_name)
     aws_cloud_trail_client = get_client("cloudtrail", aws_account_id, execution_role_name)
     aws_iam_client = get_client("iam", aws_account_id, execution_role_name)
-    
+
     # Check cloud profile
     tags = get_account_tags(get_client("organizations", assume_role=False), aws_account_id)
     cloud_profile = get_cloud_profile_from_tags(tags)
     gr_requirement_type = check_guardrail_requirement_by_cloud_usage_profile(GuardrailType.Guardrail4, cloud_profile)
-    
+
     # If the guardrail is recommended
     if gr_requirement_type == GuardrailRequirementType.Recommended:
-        return submit_evaluations(aws_config_client, event, [build_evaluation(
-            aws_account_id,
-            "COMPLIANT",
+        return submit_evaluations(
+            aws_config_client,
             event,
-            gr_requirement_type=gr_requirement_type
-        )])
+            [build_evaluation(aws_account_id, "COMPLIANT", event, gr_requirement_type=gr_requirement_type)],
+        )
     # If the guardrail is not required
     elif gr_requirement_type == GuardrailRequirementType.Not_Required:
-        return submit_evaluations(aws_config_client, event, [build_evaluation(
-            aws_account_id,
-            "NOT_APPLICABLE",
+        return submit_evaluations(
+            aws_config_client,
             event,
-            gr_requirement_type=gr_requirement_type
-        )])
-        
+            [build_evaluation(aws_account_id, "NOT_APPLICABLE", event, gr_requirement_type=gr_requirement_type)],
+        )
+
     rules_are_compliant = False
     rules = list_all_event_bridge_rules(aws_event_bridge_client)
     cb_role = rule_parameters["IAM_Role_Name"]

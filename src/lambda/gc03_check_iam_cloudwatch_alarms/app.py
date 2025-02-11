@@ -23,6 +23,9 @@ def check_cloudwatch_alarms(
         "AWS-IAM-Authentication-From-Unapproved-IP",
         "AWS-SSO-Authentication-From-Unapproved-IP",
         "AWS-Console-SignIn-Without-MFA",
+        "AWSAccelerator-AWS-IAM-Authentication-From-Unapproved-IP",
+        "AWSAccelerator-AWS-SSO-Authentication-From-Unapproved-IP",
+        "AWSAccelerator-AWS-Console-SignIn-Without-MFA"        
     ],
 ):
     """Check CloudWatch alarms for compliance.
