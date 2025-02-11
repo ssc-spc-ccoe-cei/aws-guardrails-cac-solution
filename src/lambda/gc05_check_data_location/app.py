@@ -32,8 +32,17 @@ def is_allow_listed_resource(resource_name, resource_arn, asea_resource_arns):
     Returns True if it should be allow listed
     """
     bAllowList = False
-    allowlist_regex_rules = [".*asea-.*", ".*pbmm-.*", "^awscfncli-.+", "^awsconfigconforms-.+", "^cf-templates.+"]
-    allowlist_regex = "(?:% s)" % "|".join(allowlist_regex_rules)
+    allowlist_regex_rules = [
+        ".*asea-.*",
+        ".*pbmm-.*",
+        "^awscfncli-.+",
+        "^awsconfigconforms-.+",
+        "^cf-templates.+",
+        ".*cdk-.*",
+        ".*aws-accelerator-.*",  # NEW RULES for Landing Zone Resources (check conventions)
+    ]
+    allowlist_regex = "(?:%s)" % "|".join(allowlist_regex_rules)
+
     if re.match(allowlist_regex, resource_name.lower()) or (resource_arn in asea_resource_arns):
         logger.info("Resource '{}' meets requirements for allow listing.".format(resource_name))
         bAllowList = True
@@ -296,7 +305,11 @@ def get_asea_tagged_resource_arns(
     unauthorized_resource_types: dict[str, list[str]],
 ):
     result = []
-    tag_filters = [{"Key": "Accelerator", "Values": ["ASEA", "PBMM"]}]
+    tag_filters = [
+        {"Key": "Accelerator", "Values": ["ASEA", "PBMM"]},
+        {"Key": "Data Classification", "Values": ["Protected A", "Unclassified"]},
+    ]
+
     resource_type_filters = []
     for service in unauthorized_resource_types.keys():
         resource_type_filters.extend(unauthorized_resource_types.get(service))

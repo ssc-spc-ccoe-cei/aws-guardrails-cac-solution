@@ -1588,6 +1588,15 @@ Resources:
                   !GetAtt GenerateEvidenceBucketName.EvidenceBucketName,
                   !Ref EvidenceBucketName,
                 ]
+        - ParameterName: S3RoleAssignmentReviewDocumentPath
+          ParameterValue: !Sub
+            - "s3://${ClientEvidenceBucket}/gc-02/access_management_attestation.pdf"
+            - ClientEvidenceBucket:
+                !If [
+                  GenerateEvidenceBucketName,
+                  !GetAtt GenerateEvidenceBucketName.EvidenceBucketName,
+                  !Ref EvidenceBucketName,
+                ]
         - ParameterName: S3AccessManagementAttestationDocumentPath
           ParameterValue: !Sub
             - "s3://${ClientEvidenceBucket}/gc-02/access_management_attestation.pdf"

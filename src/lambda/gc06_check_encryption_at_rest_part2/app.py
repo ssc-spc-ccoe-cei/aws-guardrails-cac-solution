@@ -33,65 +33,91 @@ logger.setLevel(logging.INFO)
 # AWS ElasticSearch and OpenSearch specific support functions
 #   - ELASTICSEARCH_ENCRYPTED_AT_REST
 #   - OPEN_SEARCH_ENCRYPTED_AT_REST
-def assess_open_search_encryption_at_rest(open_search_client, event):
+def assess_open_search_encryption_at_rest(open_search_client, event): 
     """
-    Finds OpenSearch and ElasticSearch domains not encrypted at rest
+    Finds OpenSearch and Elasticsearch domains not encrypted at rest
     """
     local_evaluations = []
     domains = []
-    # we use a single call to list both OpenSearch and ElasticSearch domains
     try:
         response = open_search_client.list_domain_names()
         if response:
             domains = response.get("DomainNames", [])
         else:
-            # empty response
             logger.error("OpenSearch/ElasticSearch - Empty response while calling list_domain_names")
             NONCOMPLIANT_SERVICES.add("OpenSearch/ElasticSearch")
+            return local_evaluations
     except botocore.exceptions.ClientError as ex:
         logger.error("OpenSearch/ElasticSearch - Error while calling list_domain_names %s", ex)
         NONCOMPLIANT_SERVICES.add("OpenSearch/ElasticSearch")
+        return local_evaluations
     except ValueError:
         logger.error("OpenSearch/ElasticSearch - Error while calling list_domain_names")
         NONCOMPLIANT_SERVICES.add("OpenSearch/ElasticSearch")
-    logger.info("OpenSearch/ElasticSearch - %s Domains found.", len(domains))
+        return local_evaluations
+
+    logger.info("OpenSearch/ElasticSearch - %s domains found.", len(domains))
+
     for domain in domains:
         domain_name = domain.get("DomainName", "")
         engine_type = domain.get("EngineType", "")
         compliance_status = "NON_COMPLIANT"
         compliance_annotation = "Not encrypted at rest"
-        resource_type = "AWS::OpenSearch::Domain" if engine_type == "OpenSearch" else "AWS::Elasticsearch::Domain"
+
+        # Decide the resource type based on the engine type
+        if engine_type.lower() == "opensearch":
+            resource_type = "AWS::OpenSearch::Domain"
+        else:
+            # By default, treat everything else as Elasticsearch
+            resource_type = "AWS::Elasticsearch::Domain"
+
         if not domain_name:
             logger.error("OpenSearch/ElasticSearch - Invalid domain structure %s", domain)
             continue
+
         try:
             response = open_search_client.describe_domain(DomainName=domain_name)
             if response:
                 domain_status = response.get("DomainStatus", {})
-                if domain_status.get("EncryptionAtRestOptions", {}).get("Enabled") is True:
-                    # COMPLIANT
+
+                # If engine_type was not provided, grab it from the describe_domain response
+                if not engine_type:
+                    engine_type = domain_status.get("EngineType", "")
+                    if engine_type.lower() == "opensearch":
+                        resource_type = "AWS::OpenSearch::Domain"
+                    else:
+                        resource_type = "AWS::Elasticsearch::Domain"
+
+                if domain_status.get("EncryptionAtRestOptions", {}).get("Enabled") == True:
                     compliance_status = "COMPLIANT"
                     compliance_annotation = "Encrypted at rest"
             else:
-                # empty response
                 logger.error("OpenSearch/ElasticSearch - Empty response while calling describe_domain")
+                NONCOMPLIANT_SERVICES.add("OpenSearch/ElasticSearch")
+
         except botocore.exceptions.ClientError as ex:
             logger.error("OpenSearch/ElasticSearch - Error while calling describe_domain %s", ex)
+            compliance_status = "NON_COMPLIANT"
+            NONCOMPLIANT_SERVICES.add("OpenSearch/ElasticSearch")
         except ValueError:
             logger.error("OpenSearch/ElasticSearch - Error while calling describe_domain")
-        if compliance_status == "NON_COMPLIANT":
+            compliance_status = "NON_COMPLIANT"
             NONCOMPLIANT_SERVICES.add("OpenSearch/ElasticSearch")
-        # build evaluation
+
+        # Use the real ARN if present
+        domain_arn = domain_status.get("ARN", domain_name) if 'domain_status' in locals() else domain_name
         local_evaluations.append(
             build_evaluation(
-                domain.get("ARN", domain_name),
+                domain_arn,
                 compliance_status,
                 event,
                 resource_type,
-                annotation=compliance_annotation,
+                compliance_annotation,
             )
         )
+
     return local_evaluations
+
 
 
 ############################################################
