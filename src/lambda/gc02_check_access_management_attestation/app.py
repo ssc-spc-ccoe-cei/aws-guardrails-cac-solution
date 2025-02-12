@@ -77,21 +77,13 @@ def lambda_handler(event, context):
             event,
             [build_evaluation(aws_account_id, "NOT_APPLICABLE", event, gr_requirement_type=gr_requirement_type)],
         )
-    
-    pdf_paths = [ 
-        rule_parameters["S3AccessReviewDocumentPath"],
-        rule_parameters["S3AccessManagementAttestationDocumentPath"]
-    ]
 
-    missing_files = [path for path in pdf_paths if not check_s3_object_exists(aws_s3_client, path)]
-
-    if not missing_files:
+    if check_s3_object_exists(aws_s3_client, rule_parameters["s3ObjectPath"]):
         compliance_type = "COMPLIANT"
-        annotation = "Both required access management documents found"
+        annotation = "Access Management Attestation document found"
     else:
         compliance_type = "NON_COMPLIANT"
-        annotation = f"Missing documents: {', '.join(missing_files)}"
-
+        annotation = "Access Management Attestation document NOT found"
 
     logger.info(f"{compliance_type}: {annotation}")
     evaluations.append(build_evaluation(aws_account_id, compliance_type, event, annotation=annotation))
