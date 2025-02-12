@@ -1142,7 +1142,7 @@ Resources:
             Action:
               - "redshift:DescribeClusters"
               - "redshift:DescribeClusterParameters"
-            Resource: 
+            Resource:
               - !Sub "arn:${AWS::Partition}:redshift:*:*:cluster:*"
               - !Sub "arn:${AWS::Partition}:redshift:*:*:parametergroup:*"
             Effect: Allow
@@ -1582,15 +1582,6 @@ Resources:
         - ParameterName: S3RoleAssignmentReviewDocumentPath
           ParameterValue: !Sub
             - "s3://${ClientEvidenceBucket}/gc-02/access_reviews_privileged_roles.pdf"
-            - ClientEvidenceBucket:
-                !If [
-                  GenerateEvidenceBucketName,
-                  !GetAtt GenerateEvidenceBucketName.EvidenceBucketName,
-                  !Ref EvidenceBucketName,
-                ]
-        - ParameterName: S3RoleAssignmentReviewDocumentPath
-          ParameterValue: !Sub
-            - "s3://${ClientEvidenceBucket}/gc-02/access_management_attestation.pdf"
             - ClientEvidenceBucket:
                 !If [
                   GenerateEvidenceBucketName,
