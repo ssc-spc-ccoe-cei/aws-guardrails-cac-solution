@@ -479,12 +479,20 @@ Resources:
     Properties:
       ConfigRuleName: gc02_check_access_management_attestation
       Description: Checks S3 bucket for the access management attestation document.
+
       InputParameters:
-        s3ObjectPath:
+        S3AccessReviewDocumentPath:
           Fn::If:
-            - s3AccessManagementAttestationDocumentPath
+            - S3AccessReviewDocumentPath
+            - Ref: S3AccessReviewDocumentPath
+            - AWS::NoValue
+
+        S3AccessManagementAttestationDocumentPath:
+          Fn::If:
+            - S3AccessManagementAttestationDocumentPath
             - Ref: S3AccessManagementAttestationDocumentPath
-            - Ref: AWS::NoValue
+            - AWS::NoValue
+
         ExecutionRoleName:
           Fn::If:
             - GCLambdaExecutionRoleName

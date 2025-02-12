@@ -5,7 +5,14 @@
 import json
 import logging
 
-from utils import is_scheduled_notification, check_required_parameters, check_guardrail_requirement_by_cloud_usage_profile, get_cloud_profile_from_tags, GuardrailType, GuardrailRequirementType
+from utils import (
+    is_scheduled_notification,
+    check_required_parameters,
+    check_guardrail_requirement_by_cloud_usage_profile,
+    get_cloud_profile_from_tags,
+    GuardrailType,
+    GuardrailRequirementType,
+)
 from boto_util.organizations import get_account_tags
 from boto_util.client import get_client
 from boto_util.config import build_evaluation, submit_evaluations
@@ -33,7 +40,9 @@ def lambda_handler(event, context):
         logger.error("Skipping assessments as this is not a scheduled invocation")
         return
 
-    rule_parameters = check_required_parameters(json.loads(event.get("ruleParameters", "{}")), ["ExecutionRoleName", "s3ObjectPath"])
+    rule_parameters = check_required_parameters(
+        json.loads(event.get("ruleParameters", "{}")), ["ExecutionRoleName", "s3ObjectPath"]
+    )
     execution_role_name = rule_parameters.get("ExecutionRoleName")
     audit_account_id = rule_parameters.get("AuditAccountID", "")
     aws_account_id = event["accountId"]
@@ -49,35 +58,40 @@ def lambda_handler(event, context):
 
     aws_config_client = get_client("config")
     aws_s3_client = get_client("s3")
-        
+
     # Check cloud profile
     tags = get_account_tags(get_client("organizations", assume_role=False), aws_account_id)
     cloud_profile = get_cloud_profile_from_tags(tags)
     gr_requirement_type = check_guardrail_requirement_by_cloud_usage_profile(GuardrailType.Guardrail2, cloud_profile)
-    
+
     # If the guardrail is recommended
     if gr_requirement_type == GuardrailRequirementType.Recommended:
-        return submit_evaluations(aws_config_client, event, [build_evaluation(
-            aws_account_id,
-            "COMPLIANT",
+        return submit_evaluations(
+            aws_config_client,
             event,
-            gr_requirement_type=gr_requirement_type
-        )])
+            [build_evaluation(aws_account_id, "COMPLIANT", event, gr_requirement_type=gr_requirement_type)],
+        )
     # If the guardrail is not required
     elif gr_requirement_type == GuardrailRequirementType.Not_Required:
-        return submit_evaluations(aws_config_client, event, [build_evaluation(
-            aws_account_id,
-            "NOT_APPLICABLE",
+        return submit_evaluations(
+            aws_config_client,
             event,
-            gr_requirement_type=gr_requirement_type
-        )])
-        
-    if check_s3_object_exists(aws_s3_client, rule_parameters["s3ObjectPath"]):
+            [build_evaluation(aws_account_id, "NOT_APPLICABLE", event, gr_requirement_type=gr_requirement_type)],
+        )
+
+    pdf_paths = [
+        rule_parameters["S3AccessReviewDocumentPath"],
+        rule_parameters["S3AccessManagementAttestationDocumentPath"],
+    ]
+
+    missing_files = [path for path in pdf_paths if not check_s3_object_exists(aws_s3_client, path)]
+
+    if not missing_files:
         compliance_type = "COMPLIANT"
-        annotation = "Account management plan document found"
+        annotation = "Both required access management documents found"
     else:
         compliance_type = "NON_COMPLIANT"
-        annotation = "Account management plan document NOT found"
+        annotation = f"Missing documents: {', '.join(missing_files)}"
 
     logger.info(f"{compliance_type}: {annotation}")
     evaluations.append(build_evaluation(aws_account_id, compliance_type, event, annotation=annotation))
