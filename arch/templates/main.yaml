@@ -1142,7 +1142,7 @@ Resources:
             Action:
               - "redshift:DescribeClusters"
               - "redshift:DescribeClusterParameters"
-            Resource:
+            Resource: 
               - !Sub "arn:${AWS::Partition}:redshift:*:*:cluster:*"
               - !Sub "arn:${AWS::Partition}:redshift:*:*:parametergroup:*"
             Effect: Allow
