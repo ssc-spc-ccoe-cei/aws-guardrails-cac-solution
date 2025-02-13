@@ -42,11 +42,12 @@ logger.setLevel(logging.INFO)
 #   - OPEN_SEARCH_ENCRYPTED_AT_REST
 def assess_open_search_encryption_at_rest(open_search_client, event):
     """
-    Finds OpenSearch and ElasticSearch domains not encrypted at rest
+    Finds OpenSearch and ElasticSearch domains not encrypted at rest,
+    then marks them COMPLIANT if EncryptionAtRest is enabled.
     """
     local_evaluations = []
     domains = []
-    # we use a single call to list both OpenSearch and ElasticSearch domains
+    # we use a single call to list both OpenSearch and Elasticsearch domains
     try:
         response = open_search_client.list_domain_names()
         if response:
@@ -61,43 +62,62 @@ def assess_open_search_encryption_at_rest(open_search_client, event):
     except ValueError:
         logger.error("OpenSearch/ElasticSearch - Error while calling list_domain_names")
         NONCOMPLIANT_SERVICES.add("OpenSearch/ElasticSearch")
+
     logger.info("OpenSearch/ElasticSearch - %s Domains found.", len(domains))
+
     for domain in domains:
         domain_name = domain.get("DomainName", "")
-        engine_type = domain.get("EngineType", "")
+        engine_type = domain.get("EngineType", "")  # "Elasticsearch" or "OpenSearch"
         compliance_status = "NON_COMPLIANT"
         compliance_annotation = "Not encrypted at rest"
-        resource_type = "AWS::OpenSearch::Domain" if engine_type == "OpenSearch" else "AWS::Elasticsearch::Domain"
+
+        # Fix for AWS Config resource type:
+        #   - 'AWS::Elasticsearch::Domain' for ES domains
+        #   - 'AWS::OpenSearchService::Domain' for OpenSearch domains
+        if engine_type == "OpenSearch":
+            resource_type = "AWS::OpenSearchService::Domain"
+        else:
+            resource_type = "AWS::Elasticsearch::Domain"
+
         if not domain_name:
             logger.error("OpenSearch/ElasticSearch - Invalid domain structure %s", domain)
             continue
+
+        # Describe domain to get the EncryptionAtRest status and the ARN
         try:
             response = open_search_client.describe_domain(DomainName=domain_name)
             if response:
                 domain_status = response.get("DomainStatus", {})
+                # Correctly pull out the domain ARN from describe_domain
+                domain_arn = domain_status.get("ARN", domain_name)
+
                 if domain_status.get("EncryptionAtRestOptions", {}).get("Enabled") is True:
-                    # COMPLIANT
                     compliance_status = "COMPLIANT"
                     compliance_annotation = "Encrypted at rest"
             else:
                 # empty response
                 logger.error("OpenSearch/ElasticSearch - Empty response while calling describe_domain")
+                domain_arn = domain_name
         except botocore.exceptions.ClientError as ex:
             logger.error("OpenSearch/ElasticSearch - Error while calling describe_domain %s", ex)
+            domain_arn = domain_name
         except ValueError:
             logger.error("OpenSearch/ElasticSearch - Error while calling describe_domain")
+            domain_arn = domain_name
+
         if compliance_status == "NON_COMPLIANT":
             NONCOMPLIANT_SERVICES.add("OpenSearch/ElasticSearch")
-        # build evaluation
+
         local_evaluations.append(
             build_evaluation(
-                domain.get("ARN", domain_name),
+                domain_arn,
                 compliance_status,
                 event,
                 resource_type,
                 annotation=compliance_annotation,
             )
         )
+
     return local_evaluations
 
 
@@ -119,31 +139,40 @@ def assess_kinesis_encryption_at_rest(kinesis_client, event):
     except ValueError:
         logger.error("Kinesis - Error while calling kinesis_get_streams_list")
         NONCOMPLIANT_SERVICES.add("Kinesis")
+
     logger.info("Kinesis - %s streams found.", len(stream_names))
+
     for stream_name in stream_names:
         compliance_status = "NON_COMPLIANT"
         compliance_annotation = "Not encrypted at rest using KMS"
         encryption_type = "NONE"
         stream_arn = ""
+
         try:
             response = kinesis_client.describe_stream(StreamName=stream_name, Limit=1)
         except botocore.exceptions.ClientError as ex:
             logger.error("Kinesis - Error while calling describe_stream %s", ex)
+            response = {}
         except ValueError:
             logger.error("Kinesis - Error while calling describe_stream")
+            response = {}
+
         if response:
             stream_arn = response.get("StreamDescription", {}).get("StreamARN", "")
             encryption_type = response.get("StreamDescription", {}).get("EncryptionType", "NONE")
+
         if encryption_type == "KMS":
             compliance_status = "COMPLIANT"
             compliance_annotation = "Encrypted at rest using KMS"
+
         logger.info("Kinesis - Stream %s is %s", stream_arn, compliance_status)
-        # build evaluation
+
         local_evaluations.append(
             build_evaluation(stream_arn, compliance_status, event, resource_type, annotation=compliance_annotation)
         )
         if compliance_status == "NON_COMPLIANT":
             NONCOMPLIANT_SERVICES.add("Kinesis")
+
     logger.info("Kinesis - reporting %s evaluations.", len(local_evaluations))
     return local_evaluations
 
@@ -157,8 +186,10 @@ def assess_efs_encryption_at_rest(efs_client, event):
     local_evaluations = []
     # Assess File Systems
     resource_type = "AWS::EFS::FileSystem"
+
     efs_filesystems = describe_all_efs_file_systems(efs_client, PAGE_SIZE, INTERVAL_BETWEEN_API_CALLS)
     logger.info("EFS - %s File systems found.", len(efs_filesystems))
+
     for filesystem in efs_filesystems:
         if filesystem.get("Encrypted", "") is True:
             compliance_status = "COMPLIANT"
@@ -177,6 +208,7 @@ def assess_efs_encryption_at_rest(efs_client, event):
                 annotation,
             )
         )
+
     logger.info("EFS - reporting %s evaluations.", len(local_evaluations))
     return local_evaluations
 
@@ -184,22 +216,22 @@ def assess_efs_encryption_at_rest(efs_client, event):
 #################################################################
 # Amazon EKS specific support functions
 #   - EKS_SECRETS_ENCRYPTED
-
-
 def assess_eks_encryption_at_rest(eks_client, event):
     """
-    Finds Amazon EKS resources that are not encrypted at rest
+    Finds Amazon EKS clusters that do not have secrets encrypted at rest
     """
     local_evaluations = []
     # Assess EKS Clusters
     resource_type = "AWS::EKS::Cluster"
     eks_clusters = list_all_eks_clusters(eks_client, PAGE_SIZE, INTERVAL_BETWEEN_API_CALLS)
     logger.info("EKS - %s clusters found.", len(eks_clusters))
+
     for cluster in eks_clusters:
         try:
             compliance_status = "NON_COMPLIANT"
             compliance_annotation = "Unable to assess"
             response = eks_client.describe_cluster(name=cluster)
+
             if response:
                 encryption_config = response.get("cluster", {}).get("encryptionConfig", [])
                 if encryption_config:
@@ -212,21 +244,26 @@ def assess_eks_encryption_at_rest(eks_client, event):
                             break
                 else:
                     compliance_annotation = "Empty encryptionConfig"
+
             if compliance_status == "NON_COMPLIANT":
                 NONCOMPLIANT_SERVICES.add("EKS")
+
+            cluster_arn = response.get("cluster", {}).get("arn", response.get("cluster", {}).get("name", "INVALID"))
         except botocore.exceptions.ClientError as ex:
             logger.error("EKS - Error trying to describe_cluster %s", ex)
             NONCOMPLIANT_SERVICES.add("EKS")
-        # build evaluation for the cluster
+            cluster_arn = "INVALID"
+
         local_evaluations.append(
             build_evaluation(
-                response.get("cluster", {}).get("arn", response.get("cluster", {}).get("name", "INVALID")),
+                cluster_arn,
                 compliance_status,
                 event,
                 resource_type,
                 annotation=compliance_annotation,
             )
         )
+
     logger.info("EKS - reporting %s evaluations.", len(local_evaluations))
     return local_evaluations
 
@@ -235,17 +272,17 @@ def assess_eks_encryption_at_rest(eks_client, event):
 # RDS specific support functions
 #  - RDS_SNAPSHOT_ENCRYPTED
 #  - RDS_STORAGE_ENCRYPTED
-
-
 def assess_rds_encryption_at_rest(rds_client, event):
     """
     Finds Amazon RDS resources that are not encrypted at rest
     """
     local_evaluations = []
+
     # Assess DB Clusters
     resource_type = "AWS::RDS::DBCluster"
     db_clusters = describe_all_rds_db_clusters(rds_client, PAGE_SIZE, INTERVAL_BETWEEN_API_CALLS)
     logger.info("RDS - %s DB Clusters found.", len(db_clusters))
+
     for cluster in db_clusters:
         # let's check the cluster storage
         if cluster.get("StorageEncrypted", "") is True:
@@ -265,10 +302,12 @@ def assess_rds_encryption_at_rest(rds_client, event):
                 annotation,
             )
         )
+
     # Assess DB Cluster Snapshots
     resource_type = "AWS::RDS::DBClusterSnapshot"
     snapshots = describe_all_rds_db_cluster_snapshots(rds_client, PAGE_SIZE, INTERVAL_BETWEEN_API_CALLS)
     logger.info("RDS - %s DB Cluster Snapshots found.", len(snapshots))
+
     for snapshot in snapshots:
         if snapshot.get("StorageEncrypted", "") is True:
             compliance_status = "COMPLIANT"
@@ -287,10 +326,12 @@ def assess_rds_encryption_at_rest(rds_client, event):
                 annotation,
             )
         )
+
     # Assess DB Instances
     db_instances = describe_all_rds_db_instances(rds_client, PAGE_SIZE, INTERVAL_BETWEEN_API_CALLS)
     resource_type = "AWS::RDS::DBInstance"
     logger.info("RDS - %s DB Instances found.", len(db_instances))
+
     for instance in db_instances:
         # let's check the cluster storage
         if instance.get("StorageEncrypted", "") is True:
@@ -310,10 +351,12 @@ def assess_rds_encryption_at_rest(rds_client, event):
                 annotation,
             )
         )
+
     # Assess DB Snapshots
     resource_type = "AWS::RDS::DBSnapshot"
     snapshots = describe_all_rds_db_snapshots(rds_client, PAGE_SIZE, INTERVAL_BETWEEN_API_CALLS)
     logger.info("RDS - %s DB Instance Snapshots found.", len(snapshots))
+
     for snapshot in snapshots:
         if snapshot.get("StorageEncrypted", "") is True:
             compliance_status = "COMPLIANT"
@@ -332,6 +375,7 @@ def assess_rds_encryption_at_rest(rds_client, event):
                 annotation,
             )
         )
+
     logger.info("RDS - reporting %s evaluations.", len(local_evaluations))
     return local_evaluations
 
@@ -339,15 +383,13 @@ def assess_rds_encryption_at_rest(rds_client, event):
 ############################################################
 # S3 specific support functions
 #  - S3_BUCKET_SERVER_SIDE_ENCRYPTION_ENABLED
-
-
 def assess_s3_encryption_at_rest(s3_client, event):
     """
-    Finds Amazon S3 resources that do not have a server side encryption enabled
+    Finds Amazon S3 buckets that do not have server-side encryption enabled
     """
     local_evaluations = []
-    # list the buckets
     resource_type = "AWS::S3::Bucket"
+
     try:
         buckets = list_all_s3_buckets(s3_client, PAGE_SIZE, INTERVAL_BETWEEN_API_CALLS)
         if buckets:
@@ -358,6 +400,7 @@ def assess_s3_encryption_at_rest(s3_client, event):
                 annotation = "Unable to assess"
                 i_retries = 0
                 b_success = False
+
                 while (not b_success) and (i_retries < MAXIMUM_API_RETRIES):
                     try:
                         response2 = s3_client.get_bucket_encryption(Bucket=bucket_name)
@@ -372,10 +415,13 @@ def assess_s3_encryption_at_rest(s3_client, event):
                                 )
                         else:
                             annotation = "Empty response when trying to get_bucket_encryption"
+
                         if compliance_status == "NON_COMPLIANT":
                             NONCOMPLIANT_SERVICES.add("S3")
+
                         b_success = True
                         time.sleep(INTERVAL_BETWEEN_API_CALLS)
+
                     except botocore.exceptions.ClientError as ex:
                         b_success = True
                         if "AccessDenied" in ex.response["Error"]["Code"]:
@@ -404,12 +450,14 @@ def assess_s3_encryption_at_rest(s3_client, event):
                 local_evaluations.append(
                     build_evaluation(bucket_arn, compliance_status, event, resource_type, annotation)
                 )
+
     except botocore.exceptions.ClientError as ex:
         NONCOMPLIANT_SERVICES.add("S3")
         if "AccessDenied" in ex.response["Error"]["Code"]:
             logger.error("AccessDenied when trying to list_buckets - assess_s3_encryption_at_rest: %s", ex)
         else:
             logger.error("S3 - Error while calling list_buckets %s", ex)
+
     logger.info("S3 - reporting %s evaluations.", len(local_evaluations))
     return local_evaluations
 
@@ -423,9 +471,11 @@ def assess_sns_encryption_at_rest(sns_client, event):
     """
     local_evaluations = []
     resource_type = "AWS::SNS::Topic"
+
     try:
         sns_topics = list_all_sns_topics(sns_client, INTERVAL_BETWEEN_API_CALLS)
         logger.info("SNS - %s topics found.", len(sns_topics))
+
         for topic in sns_topics:
             # back off the API between vaults
             time.sleep(INTERVAL_BETWEEN_API_CALLS)
@@ -433,8 +483,10 @@ def assess_sns_encryption_at_rest(sns_client, event):
             if not topic_arn:
                 logger.error("SNS - Faulty structure - %s", topic)
                 continue
+
             compliance_status = "NON_COMPLIANT"
             compliance_annotation = "Unable to assess"
+
             try:
                 response = sns_client.get_topic_attributes(TopicArn=topic_arn)
                 if response:
@@ -445,31 +497,34 @@ def assess_sns_encryption_at_rest(sns_client, event):
                         compliance_annotation = "Not encrypted at rest"
                 else:
                     compliance_annotation = "Unable to assess - empty attributes"
+
             except botocore.exceptions.ClientError as ex:
                 logger.error("SNS - Error when trying to get_topic_attributes %s", ex)
-            # build evaluation
+
             local_evaluations.append(
                 build_evaluation(topic_arn, compliance_status, event, resource_type, annotation=compliance_annotation)
             )
+
             if compliance_status == "NON_COMPLIANT":
                 NONCOMPLIANT_SERVICES.add("SNS")
+
     except botocore.exceptions.ClientError as ex:
         logger.error("SNS - Error while calling sns_get_topics_list %s", ex)
         NONCOMPLIANT_SERVICES.add("SNS")
+
     logger.info("SNS - reporting %s evaluations.", len(local_evaluations))
     return local_evaluations
 
 
 ########################################
 # Account evaluation result
-
-
 def get_account_evaluation(aws_account_id, event):
     """
     Returns an evaluation for the account based on whether there were non-compliant services.
     """
     compliance_type = "COMPLIANT"
     annotation = "No issues found"
+
     if len(NONCOMPLIANT_SERVICES) > 0:
         annotation = "Non-compliant resources found in {}".format(", ".join(sorted(NONCOMPLIANT_SERVICES)))
         compliance_type = "NON_COMPLIANT"
@@ -483,9 +538,7 @@ def lambda_handler(event, context):
     This function is the main entry point for Lambda.
 
     Keyword arguments:
-
     event -- the event variable given in the lambda handler
-
     context -- the context variable given in the lambda handler
     """
     logger.info("Received Event: %s", json.dumps(event, indent=2))
@@ -520,14 +573,7 @@ def lambda_handler(event, context):
     aws_config_client = get_client("config", aws_account_id, execution_role_name, is_not_audit_account)
     aws_efs_client = get_client("efs", aws_account_id, execution_role_name, is_not_audit_account)
     aws_eks_client = get_client("eks", aws_account_id, execution_role_name, is_not_audit_account)
-    aws_open_search_client = get_client(
-        "opensearch",
-        aws_account_id,
-        execution_role_name,
-        is_not_audit_account,
-        region_name="ca-central-1"
-    )
-
+    aws_open_search_client = get_client("opensearch", aws_account_id, execution_role_name, is_not_audit_account)
     aws_kinesis_client = get_client("kinesis", aws_account_id, execution_role_name, is_not_audit_account)
     aws_rds_client = get_client("rds", aws_account_id, execution_role_name, is_not_audit_account)
     aws_s3_client = get_client("s3", aws_account_id, execution_role_name, is_not_audit_account)
@@ -543,14 +589,29 @@ def lambda_handler(event, context):
         return submit_evaluations(
             aws_config_client,
             event,
-            [build_evaluation(aws_account_id, "COMPLIANT", event, gr_requirement_type=gr_requirement_type)],
+            [
+                build_evaluation(
+                    aws_account_id,
+                    "COMPLIANT",
+                    event,
+                    gr_requirement_type=gr_requirement_type
+                )
+            ],
         )
+
     # If the guardrail is not required
     elif gr_requirement_type == GuardrailRequirementType.Not_Required:
         return submit_evaluations(
             aws_config_client,
             event,
-            [build_evaluation(aws_account_id, "NOT_APPLICABLE", event, gr_requirement_type=gr_requirement_type)],
+            [
+                build_evaluation(
+                    aws_account_id,
+                    "NOT_APPLICABLE",
+                    event,
+                    gr_requirement_type=gr_requirement_type
+                )
+            ],
         )
 
     # EFS
