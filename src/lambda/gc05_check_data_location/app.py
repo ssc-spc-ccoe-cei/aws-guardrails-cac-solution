@@ -39,7 +39,7 @@ def is_allow_listed_resource(resource_name, resource_arn, asea_resource_arns):
         "^awsconfigconforms-.+",
         "^cf-templates.+",
         ".*cdk-.*",
-        ".*aws-accelerator-.*",  # NEW RULES for Landing Zone Resources (check conventions)
+        ".*aws-accelerator-.*",  # rule for Landing Zone Resources (check conventions)
     ]
     allowlist_regex = "(?:%s)" % "|".join(allowlist_regex_rules)
 
@@ -305,39 +305,63 @@ def get_asea_tagged_resource_arns(
     unauthorized_resource_types: dict[str, list[str]],
 ):
     result = []
-    tag_filters = [
-        {"Key": "Accelerator", "Values": ["ASEA", "PBMM"]},
-        {"Key": "Data Classification", "Values": ["Protected A", "Unclassified"]},
-    ]
+
+    # Tag keys 
+    TAG_KEY_ACCELERATOR = "Accelerator"
+    TAG_KEY_DATA_CLASS = "Data classification"
+
+    # Allowed tag values for each key
+    ALLOWED_ACCELERATOR_VALUES = ["ASEA", "PBMM"]
+    ALLOWED_DATA_CLASS_VALUES = ["Protected A", "Unclassified"]
 
     resource_type_filters = []
     for service in unauthorized_resource_types.keys():
         resource_type_filters.extend(unauthorized_resource_types.get(service))
+
+    # For each unauthorized region, get all resources of the specified types,
+    # then in-memory check if they have allowed tags.
     for region in unauthorized_region_list:
         try:
-            aws_resource_groups_tagging_api_client = get_client(
-                "resourcegroupstaggingapi", aws_account_id, execution_role_name, region=region
+            tagging_client = get_client(
+                "resourcegroupstaggingapi", 
+                aws_account_id, 
+                execution_role_name, 
+                region=region
             )
-            response = aws_resource_groups_tagging_api_client.get_resources(
-                ResourceTypeFilters=resource_type_filters,
-                TagFilters=tag_filters,
+
+            response = tagging_client.get_resources(
+                ResourceTypeFilters=resource_type_filters
             )
             bMoreData = True
             while bMoreData:
                 if response:
-                    for resource in response.get("ResourceTagMappingList"):
-                        result.append(resource.get("ResourceARN"))
-                    if response.get("PaginationToken"):
-                        response = aws_resource_groups_tagging_api_client.get_resources(
-                            PaginationToken=response.get("PaginationToken"),
+                    for resource in response.get("ResourceTagMappingList", []):
+                        resource_arn = resource.get("ResourceARN")
+                        tags_dict = {t["Key"]: t["Value"] for t in resource.get("Tags", [])}
+
+                        # Check if the resource has allowed Accelerator tag or Data Classification tag
+                        accel_value = tags_dict.get(TAG_KEY_ACCELERATOR)
+                        data_class_value = tags_dict.get(TAG_KEY_DATA_CLASS)
+
+                        if (
+                            (accel_value in ALLOWED_ACCELERATOR_VALUES) or
+                            (data_class_value in ALLOWED_DATA_CLASS_VALUES)
+                        ):
+                            result.append(resource_arn)
+
+                    # Handle pagination
+                    pagination_token = response.get("PaginationToken")
+                    if pagination_token:
+                        response = tagging_client.get_resources(
                             ResourceTypeFilters=resource_type_filters,
-                            TagFilters=tag_filters,
+                            PaginationToken=pagination_token
                         )
                     else:
                         bMoreData = False
         except botocore.exceptions.ClientError as ex:
-            logger.error("Failed to get_asea_tagged_resource_arns with exception {}".format(ex))
+            logger.error("Failed to get_asea_tagged_resource_arns with exception %s", ex)
             pass
+
     return result
 
 

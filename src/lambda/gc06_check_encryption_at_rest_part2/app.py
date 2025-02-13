@@ -6,7 +6,14 @@ import json
 import logging
 import time
 
-from utils import is_scheduled_notification, check_required_parameters, check_guardrail_requirement_by_cloud_usage_profile, get_cloud_profile_from_tags, GuardrailType, GuardrailRequirementType
+from utils import (
+    is_scheduled_notification,
+    check_required_parameters,
+    check_guardrail_requirement_by_cloud_usage_profile,
+    get_cloud_profile_from_tags,
+    GuardrailType,
+    GuardrailRequirementType,
+)
 from boto_util.organizations import get_account_tags
 from boto_util.client import get_client, is_throttling_exception
 from boto_util.config import build_evaluation, submit_evaluations
@@ -33,91 +40,65 @@ logger.setLevel(logging.INFO)
 # AWS ElasticSearch and OpenSearch specific support functions
 #   - ELASTICSEARCH_ENCRYPTED_AT_REST
 #   - OPEN_SEARCH_ENCRYPTED_AT_REST
-def assess_open_search_encryption_at_rest(open_search_client, event): 
+def assess_open_search_encryption_at_rest(open_search_client, event):
     """
-    Finds OpenSearch and Elasticsearch domains not encrypted at rest
+    Finds OpenSearch and ElasticSearch domains not encrypted at rest
     """
     local_evaluations = []
     domains = []
+    # we use a single call to list both OpenSearch and ElasticSearch domains
     try:
         response = open_search_client.list_domain_names()
         if response:
             domains = response.get("DomainNames", [])
         else:
+            # empty response
             logger.error("OpenSearch/ElasticSearch - Empty response while calling list_domain_names")
             NONCOMPLIANT_SERVICES.add("OpenSearch/ElasticSearch")
-            return local_evaluations
     except botocore.exceptions.ClientError as ex:
         logger.error("OpenSearch/ElasticSearch - Error while calling list_domain_names %s", ex)
         NONCOMPLIANT_SERVICES.add("OpenSearch/ElasticSearch")
-        return local_evaluations
     except ValueError:
         logger.error("OpenSearch/ElasticSearch - Error while calling list_domain_names")
         NONCOMPLIANT_SERVICES.add("OpenSearch/ElasticSearch")
-        return local_evaluations
-
-    logger.info("OpenSearch/ElasticSearch - %s domains found.", len(domains))
-
+    logger.info("OpenSearch/ElasticSearch - %s Domains found.", len(domains))
     for domain in domains:
         domain_name = domain.get("DomainName", "")
         engine_type = domain.get("EngineType", "")
         compliance_status = "NON_COMPLIANT"
         compliance_annotation = "Not encrypted at rest"
-
-        # Decide the resource type based on the engine type
-        if engine_type.lower() == "opensearch":
-            resource_type = "AWS::OpenSearch::Domain"
-        else:
-            # By default, treat everything else as Elasticsearch
-            resource_type = "AWS::Elasticsearch::Domain"
-
+        resource_type = "AWS::OpenSearch::Domain" if engine_type == "OpenSearch" else "AWS::Elasticsearch::Domain"
         if not domain_name:
             logger.error("OpenSearch/ElasticSearch - Invalid domain structure %s", domain)
             continue
-
         try:
             response = open_search_client.describe_domain(DomainName=domain_name)
             if response:
                 domain_status = response.get("DomainStatus", {})
-
-                # If engine_type was not provided, grab it from the describe_domain response
-                if not engine_type:
-                    engine_type = domain_status.get("EngineType", "")
-                    if engine_type.lower() == "opensearch":
-                        resource_type = "AWS::OpenSearch::Domain"
-                    else:
-                        resource_type = "AWS::Elasticsearch::Domain"
-
-                if domain_status.get("EncryptionAtRestOptions", {}).get("Enabled") == True:
+                if domain_status.get("EncryptionAtRestOptions", {}).get("Enabled") is True:
+                    # COMPLIANT
                     compliance_status = "COMPLIANT"
                     compliance_annotation = "Encrypted at rest"
             else:
+                # empty response
                 logger.error("OpenSearch/ElasticSearch - Empty response while calling describe_domain")
-                NONCOMPLIANT_SERVICES.add("OpenSearch/ElasticSearch")
-
         except botocore.exceptions.ClientError as ex:
             logger.error("OpenSearch/ElasticSearch - Error while calling describe_domain %s", ex)
-            compliance_status = "NON_COMPLIANT"
-            NONCOMPLIANT_SERVICES.add("OpenSearch/ElasticSearch")
         except ValueError:
             logger.error("OpenSearch/ElasticSearch - Error while calling describe_domain")
-            compliance_status = "NON_COMPLIANT"
+        if compliance_status == "NON_COMPLIANT":
             NONCOMPLIANT_SERVICES.add("OpenSearch/ElasticSearch")
-
-        # Use the real ARN if present
-        domain_arn = domain_status.get("ARN", domain_name) if 'domain_status' in locals() else domain_name
+        # build evaluation
         local_evaluations.append(
             build_evaluation(
-                domain_arn,
+                domain.get("ARN", domain_name),
                 compliance_status,
                 event,
                 resource_type,
-                compliance_annotation,
+                annotation=compliance_annotation,
             )
         )
-
     return local_evaluations
-
 
 
 ############################################################
@@ -539,34 +520,39 @@ def lambda_handler(event, context):
     aws_config_client = get_client("config", aws_account_id, execution_role_name, is_not_audit_account)
     aws_efs_client = get_client("efs", aws_account_id, execution_role_name, is_not_audit_account)
     aws_eks_client = get_client("eks", aws_account_id, execution_role_name, is_not_audit_account)
-    aws_open_search_client = get_client("opensearch", aws_account_id, execution_role_name, is_not_audit_account)
+    aws_open_search_client = get_client(
+        "opensearch",
+        aws_account_id,
+        execution_role_name,
+        is_not_audit_account,
+        region_name="ca-central-1"
+    )
+
     aws_kinesis_client = get_client("kinesis", aws_account_id, execution_role_name, is_not_audit_account)
     aws_rds_client = get_client("rds", aws_account_id, execution_role_name, is_not_audit_account)
     aws_s3_client = get_client("s3", aws_account_id, execution_role_name, is_not_audit_account)
     aws_sns_client = get_client("sns", aws_account_id, execution_role_name, is_not_audit_account)
-    
+
     # Check cloud profile
     tags = get_account_tags(get_client("organizations", assume_role=False), aws_account_id)
     cloud_profile = get_cloud_profile_from_tags(tags)
     gr_requirement_type = check_guardrail_requirement_by_cloud_usage_profile(GuardrailType.Guardrail6, cloud_profile)
-    
+
     # If the guardrail is recommended
     if gr_requirement_type == GuardrailRequirementType.Recommended:
-        return submit_evaluations(aws_config_client, event, [build_evaluation(
-            aws_account_id,
-            "COMPLIANT",
+        return submit_evaluations(
+            aws_config_client,
             event,
-            gr_requirement_type=gr_requirement_type
-        )])
+            [build_evaluation(aws_account_id, "COMPLIANT", event, gr_requirement_type=gr_requirement_type)],
+        )
     # If the guardrail is not required
     elif gr_requirement_type == GuardrailRequirementType.Not_Required:
-        return submit_evaluations(aws_config_client, event, [build_evaluation(
-            aws_account_id,
-            "NOT_APPLICABLE",
+        return submit_evaluations(
+            aws_config_client,
             event,
-            gr_requirement_type=gr_requirement_type
-        )])
-        
+            [build_evaluation(aws_account_id, "NOT_APPLICABLE", event, gr_requirement_type=gr_requirement_type)],
+        )
+
     # EFS
     evaluations.extend(assess_efs_encryption_at_rest(aws_efs_client, event))
 
