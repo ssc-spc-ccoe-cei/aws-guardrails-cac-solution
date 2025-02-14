@@ -7,7 +7,14 @@ import logging
 
 import botocore.exceptions
 
-from utils import is_scheduled_notification, check_required_parameters, check_guardrail_requirement_by_cloud_usage_profile, get_cloud_profile_from_tags, GuardrailType, GuardrailRequirementType
+from utils import (
+    is_scheduled_notification,
+    check_required_parameters,
+    check_guardrail_requirement_by_cloud_usage_profile,
+    get_cloud_profile_from_tags,
+    GuardrailType,
+    GuardrailRequirementType,
+)
 from boto_util.organizations import get_account_tags, get_organizations_mgmt_account_id, organizations_list_all_accounts
 from boto_util.client import get_client
 from boto_util.config import build_evaluation, submit_evaluations
@@ -21,31 +28,21 @@ logger.setLevel(logging.INFO)
 
 
 def fetch_sso_users(sso_admin_client, identity_store_client):
-    instances = list_all_sso_admin_instances(sso_admin_client)
+    sso_admin_instances = sso_admin_client.list_instances()
     users_by_instance = {}
-    for i in instances:
-        if i.get("Status") != "ACTIVE":
-            continue
 
-        instance_id = i.get("IdentityStoreId")
-        instance_arn = i.get("InstanceArn")
-        users_by_instance[instance_arn] = []
-        nextToken = None
-        try:
-            while True:
-                response = (
-                    identity_store_client.list_users(IdentityStoreId=instance_id, NextToken=nextToken)
-                    if nextToken
-                    else identity_store_client.list_users(IdentityStoreId=instance_id)
-                )
-                users_by_instance[instance_arn] = users_by_instance[instance_arn] + response.get("Users", [])
-                nextToken = response.get("NextToken")
-                if not nextToken:
-                    break
-        except botocore.exceptions.ClientError as ex:
-            ex.response["Error"]["Message"] = "InternalError"
-            ex.response["Error"]["Code"] = "InternalError"
-            raise ex
+    for i in sso_admin_instances.get("Instances", []):
+        if i.get("Status") == "ACTIVE":
+            instance_id = i.get("IdentityStoreId")
+            instance_arn = i.get("InstanceArn")
+
+            # Collect all the users for this instance
+            users_list = []
+            response = identity_store_client.list_users(IdentityStoreId=instance_id)
+            users_list.extend(response.get("Users", []))
+
+            users_by_instance[instance_arn] = {"instance_id": instance_id, "users": users_list}
+
     return users_by_instance
 
 
@@ -366,22 +363,54 @@ def check_users(
 
     # Identity Center Check
     for instance_arn in sso_users_by_instance.keys():
+        data = sso_users_by_instance[instance_arn]
+        instance_id = data["instance_id"]
+
         admin_permission_sets_by_account = get_admin_permission_sets_for_instance_by_account(
             iam_client, sso_admin_client, instance_arn, organizations_client
         )
-        for user in sso_users_by_instance[instance_arn]:
-            user_name = user.get("UserName")
-            logger.info(f"Checking sso instance user f{user_name}")
+
+        for user in data["users"]:
+            user_name = user.get("Username")
+            logger.info(f"checking sso instance user {user_name}")
             user_id = user.get("UserId")
+
             if user_name in privileged_user_list:
                 if at_least_one_privileged_user_has_admin_access == True:
                     continue
 
+                at_least_one_privileged_user_has_admin_access = True
+
+            elif user_name in non_privileged_user_list:
+                pass
+
+            else:
                 for a_id in admin_permission_sets_by_account.keys():
                     for p_arn in admin_permission_sets_by_account[a_id]:
                         if user_assigned_to_permission_set(sso_admin_client, user_id, instance_arn, a_id, p_arn):
                             at_least_one_privileged_user_has_admin_access = True
                             break
+                    if at_least_one_privileged_user_has_admin_access:
+                        break
+
+            if not at_least_one_privileged_user_has_admin_access:
+                group_memberships_resp = identity_store_client.list_group_memberships(
+                    IdentityStoreId=instance_id,  
+                    Filter={"MemberId": {"UserId": user_id}},
+                )
+                for membership in group_memberships_resp.get("GroupMemberships", []):
+                    group_id = membership.get("GroupId")
+                    for a_id in admin_permission_sets_by_account.keys():
+                        for p_arn in admin_permission_sets_by_account[a_id]:
+                            if user_assigned_to_permission_set(
+                                sso_admin_client, group_id, instance_arn, a_id, p_arn 
+                            ):
+                                at_least_one_privileged_user_has_admin_access = True
+                                break
+                        if at_least_one_privileged_user_has_admin_access:
+                            break
+                    if at_least_one_privileged_user_has_admin_access:
+                        break
 
             elif user_name in non_privileged_user_list:
                 for a_id in admin_permission_sets_by_account.keys():
@@ -411,9 +440,9 @@ def check_users(
 
 
 def policies_grant_admin_access(managed_policies, inline_policies):
-    return next((True for p in managed_policies if p.get("PolicyName", p.get("Name", "")) == "AdministratorAccess"), False) or next(
-        (True for p in inline_policies if policy_doc_gives_admin_access(p.get("PolicyDocument", "{}"))), False
-    )
+    return next(
+        (True for p in managed_policies if p.get("PolicyName", p.get("Name", "")) == "AdministratorAccess"), False
+    ) or next((True for p in inline_policies if policy_doc_gives_admin_access(p.get("PolicyDocument", "{}"))), False)
 
 
 def lambda_handler(event, context):
@@ -434,7 +463,8 @@ def lambda_handler(event, context):
         return
 
     rule_parameters = check_required_parameters(
-        json.loads(event.get("ruleParameters", "{}")), ["ExecutionRoleName", "PrivilegedUsersFilePath", "NonPrivilegedUsersFilePath"]
+        json.loads(event.get("ruleParameters", "{}")),
+        ["ExecutionRoleName", "PrivilegedUsersFilePath", "NonPrivilegedUsersFilePath"],
     )
     execution_role_name = rule_parameters.get("ExecutionRoleName")
     audit_account_id = rule_parameters.get("AuditAccountID", "")
@@ -453,31 +483,29 @@ def lambda_handler(event, context):
     aws_sso_admin_client = get_client("sso-admin", aws_account_id, execution_role_name, is_not_audit_account)
     aws_identity_store_client = get_client("identitystore", aws_account_id, execution_role_name, is_not_audit_account)
     aws_s3_client = get_client("s3")
-    
+
     evaluations = []
-    
+
     # Check cloud profile
     tags = get_account_tags(get_client("organizations", assume_role=False), aws_account_id)
     cloud_profile = get_cloud_profile_from_tags(tags)
     gr_requirement_type = check_guardrail_requirement_by_cloud_usage_profile(GuardrailType.Guardrail1, cloud_profile)
-    
+
     # If the guardrail is recommended
     if gr_requirement_type == GuardrailRequirementType.Recommended:
-        return submit_evaluations(aws_config_client, event, [build_evaluation(
-            aws_account_id,
-            "COMPLIANT",
+        return submit_evaluations(
+            aws_config_client,
             event,
-            gr_requirement_type=gr_requirement_type
-        )])
+            [build_evaluation(aws_account_id, "COMPLIANT", event, gr_requirement_type=gr_requirement_type)],
+        )
     # If the guardrail is not required
     elif gr_requirement_type == GuardrailRequirementType.Not_Required:
-        return submit_evaluations(aws_config_client, event, [build_evaluation(
-            aws_account_id,
-            "NOT_APPLICABLE",
+        return submit_evaluations(
+            aws_config_client,
             event,
-            gr_requirement_type=gr_requirement_type
-        )])
-    
+            [build_evaluation(aws_account_id, "NOT_APPLICABLE", event, gr_requirement_type=gr_requirement_type)],
+        )
+
     privileged_users_file_path = rule_parameters.get("PrivilegedUsersFilePath", "")
     non_privileged_users_file_path = rule_parameters.get("NonPrivilegedUsersFilePath", "")
 

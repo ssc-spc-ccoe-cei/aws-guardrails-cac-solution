@@ -516,6 +516,7 @@ Resources:
       ConfigRuleName: gc02_check_group_access_configuration
       Description: Checks that access configurations and policies are implemented for different classes of users.
       InputParameters:
+        InvokeUpdate: !Ref UpdateTriggerVersion
         s3ObjectPath:
           Fn::If:
             - s3AdminAccountListPath
