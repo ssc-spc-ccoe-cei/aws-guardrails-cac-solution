@@ -450,7 +450,7 @@ def lambda_handler(event, context):
                 else:
                     has_non_admin_group = True
 
-            if has_non_admin_group:
+            if not has_non_admin_group:
                 is_compliant = False
                 annotation = (
                     "Account does not have an Identity Center group that does not provide administrator access."
