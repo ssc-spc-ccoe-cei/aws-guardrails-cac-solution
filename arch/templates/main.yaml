@@ -302,6 +302,8 @@ Resources:
                     "organizations:ListTagsForResource",
                     "organizations:Describe*",
                     "organizations:List*",
+                    "iam:Simulate*",
+                    "iam:GetContextKeysForPrincipalPolicy",
                     "qldb:DescribeLedger",
                     "qldb:ListLedgers",
                     "rds:Describe*",
@@ -492,6 +494,8 @@ Resources:
               - "organizations:RegisterDelegatedAdministrator"
               - "organizations:Describe*"
               - "organizations:List*"
+              - "iam:Simulate*"
+              - "iam:GetContextKeysForPrincipalPolicy"
             Resource: "*"
             Effect: Allow
       PolicyName: gc_setup_config_lambda_execution_role_policy
@@ -567,6 +571,8 @@ Resources:
               - "organizations:RegisterDelegatedAdministrator"
               - "organizations:Describe*"
               - "organizations:List*"
+              - "iam:Simulate*"
+              - "iam:GetContextKeysForPrincipalPolicy"
             Resource: "*"
             Effect: Allow
       PolicyName: !Sub "${OrganizationName}setup_auditmanager_lambda_execution_role_policy"

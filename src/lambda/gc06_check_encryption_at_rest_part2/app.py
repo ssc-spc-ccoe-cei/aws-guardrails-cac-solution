@@ -75,7 +75,7 @@ def assess_open_search_encryption_at_rest(open_search_client, event):
         #   - 'AWS::Elasticsearch::Domain' for ES domains
         #   - 'AWS::OpenSearchService::Domain' for OpenSearch domains
         if engine_type == "OpenSearch":
-            resource_type = "AWS::OpenSearchService::Domain"
+            resource_type = "AWS::Elasticsearch::Domain"
         else:
             resource_type = "AWS::Elasticsearch::Domain"
 

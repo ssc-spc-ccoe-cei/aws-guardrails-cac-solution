@@ -48,7 +48,7 @@ def private_marketplace_is_configured(marketplace_catalog_client) -> bool:
     return False
 
 
-def policy_restricts_marketplace_access(iam_client, policy_content: str, interval_between_calls: float = 0.1) -> bool:
+def policy_restricts_marketplace_access(iam_client, policy_content: str, interval_between_calls: float = "0.1") -> bool:
     args = {
         "PolicyInputList": [policy_content],
         "ActionNames": ["aws-marketplace-management:*", "aws-marketplace:*"],
@@ -72,7 +72,7 @@ def policy_restricts_marketplace_access(iam_client, policy_content: str, interva
 
 
 def get_policies_that_restrict_marketplace_access(
-    organizations_client, iam_client, interval_between_calls: float = 0.1
+    organizations_client, iam_client, interval_between_calls: float = "0.1"
 ):
     policies = organizations_list_all_service_control_policies(organizations_client, interval_between_calls)
     selected_policy_summaries = []
@@ -92,7 +92,7 @@ def get_policies_that_restrict_marketplace_access(
 
 
 def policy_is_attached(
-    organizations_client, target_id: str, policy_ids: list[str], interval_between_calls: float = 0.1
+    organizations_client, target_id: str, policy_ids: list[str], interval_between_calls: float = "0.1"
 ) -> bool:
     policies = organizations_list_all_policies_for_target(
         organizations_client, target_id, interval_between_calls=interval_between_calls
@@ -121,7 +121,7 @@ def is_policy_attached_in_ancestry(organizations_client, child_id: str, policy_i
 
 
 def assess_policy_attachment(
-    organizations_client, policy_summaries: list[dict], current_account_id: str, interval_between_calls: float = 0.1
+    organizations_client, policy_summaries: list[dict], current_account_id: str, interval_between_calls: float = "0.1"
 ) -> tuple[str, str]:
     policy_ids = [x.get("Id") for x in policy_summaries]
     mgmt_account_id = get_organizations_mgmt_account_id(organizations_client)
@@ -131,7 +131,11 @@ def assess_policy_attachment(
                 "NON_COMPLIANT",
                 "The restricting policy is attached to the Management Account, which is not allowed.",
             )
-        ou_list = organizations_list_all_organizational_units(organizations_client, interval_between_calls)
+        parents = organizations_client.list_parents(ChildId=current_account_id).get("Parents")
+        if not parents:
+            return False
+        parent_id = parents[0["Id"]]
+        ou_list = organizations_list_all_organizational_units(organizations_client, parent_id, interval_between_calls,)
         missing_ous = []
         for ou in ou_list:
             ou_id = ou["Id"]
@@ -158,7 +162,7 @@ def lambda_handler(event, context):
     audit_account_id = rule_parameters.get("AuditAccountID", "")
     aws_account_id = event["accountId"]
     is_not_audit_account = aws_account_id != audit_account_id
-    interval_between_calls = 0.1
+    interval_between_calls = float("0.1")
     aws_config_client = get_client("config", aws_account_id, execution_role_name, is_not_audit_account)
     aws_iam_client = get_client("iam", aws_account_id, execution_role_name, is_not_audit_account)
     aws_orgs_client = get_client("organizations", aws_account_id, execution_role_name, is_not_audit_account)
@@ -172,7 +176,7 @@ def lambda_handler(event, context):
         evaluation = build_evaluation(aws_account_id, "NOT_APPLICABLE", event, gr_requirement_type=gr_requirement_type)
         return submit_evaluations(aws_config_client, event, [evaluation])
     restricting_policies = get_policies_that_restrict_marketplace_access(
-        aws_orgs_client, aws_iam_client, interval_between_calls
+        aws_orgs_client, aws_iam_client, float(interval_between_calls)
     )
     if not restricting_policies:
         compliance_type = "NON_COMPLIANT"
@@ -195,3 +199,4 @@ def lambda_handler(event, context):
     logger.info(f"{compliance_type}: {annotation}")
     final_eval = build_evaluation(aws_account_id, compliance_type, event, annotation=annotation)
     submit_evaluations(aws_config_client, event, [final_eval])
+
