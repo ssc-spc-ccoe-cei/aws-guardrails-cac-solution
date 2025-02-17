@@ -313,6 +313,7 @@ Resources:
                     "sso:Describe*",
                     "sso:GetInlinePolicyForPermissionSet",
                     "s3:Get*",
+                    "s3:GetBucketTaggin*",
                     "s3:GetBucketPublicAccessBlock",
                     "s3:List*",
                     "sns:GetSubscriptionAttributes",
@@ -321,6 +322,7 @@ Resources:
                     "tag:GetResources",
                     "timestream:DescribeEndpoints",
                     "timestream:List*",
+                    "identitystore:List*",
                     "iam:Simulate*"
                   ],
                   "Resource": [
@@ -1209,6 +1211,7 @@ Resources:
               - "s3:GetObjectVersionAttributes"
               - "s3:GetObjectVersionForReplication"
               - "s3:GetObjectVersionTagging"
+              - "s3:GetBucketTagging"
               - "s3:GetObjectVersionTorrent"
               - "s3:GetBucketPublicAccessBlock"
               - "s3:ListBucket"
