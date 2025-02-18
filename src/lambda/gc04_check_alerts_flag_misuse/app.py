@@ -5,15 +5,7 @@
 import json
 import logging
 
-from utils import (
-    is_scheduled_notification,
-    check_required_parameters,
-    flatten_dict,
-    check_guardrail_requirement_by_cloud_usage_profile,
-    get_cloud_profile_from_tags,
-    GuardrailType,
-    GuardrailRequirementType,
-)
+from utils import is_scheduled_notification, check_required_parameters, flatten_dict, check_guardrail_requirement_by_cloud_usage_profile, get_cloud_profile_from_tags, GuardrailType, GuardrailRequirementType
 from boto_util.organizations import get_account_tags
 from boto_util.client import get_client
 from boto_util.config import build_evaluation, submit_evaluations
@@ -33,7 +25,7 @@ def subscription_is_confirmed(sns_client, subscription_arn):
         attributes = response.get("Attributes")
         logger.info("Subscription attributes: %s", attributes)
 
-        if attributes is None:
+        if attributes == None:
             return False
 
         return attributes.get("PendingConfirmation") == "false"
@@ -52,7 +44,7 @@ def subscription_is_confirmed(sns_client, subscription_arn):
 
 def rule_matches_against_cb_role_identity(rule_event_pattern, cb_role_arn):
     logger.info("rule_event_pattern: %s", rule_event_pattern)
-    if rule_event_pattern is None:
+    if rule_event_pattern == None:
         return False
 
     event_pattern_dict = json.loads(rule_event_pattern)
@@ -64,31 +56,23 @@ def rule_matches_against_cb_role_identity(rule_event_pattern, cb_role_arn):
     ) and "Role" in ep_detail.get("userIdentity.sessionContext.sessionIssuer.type", [])
 
 
-def get_role_arn(iam_client, cb_role_pattern: str) -> str | None:
-    """
-    aws iam list-roles --query "Roles[?contains(RoleName, 'CloudBrokering')].[RoleName, Arn]"
-    """
+def get_role_arn(iam_client, cb_role: str) -> str | None:
     try:
-        paginator = iam_client.get_paginator("list_roles")
-        matched_roles = []
-
-        for page in paginator.paginate():
-            for role in page["Roles"]:
-                if cb_role_pattern in role["RoleName"]:
-                    matched_roles.append(role)
-
-        if not matched_roles:
-            return None
-
-        # Return the ARN of the first matched role
-        return matched_roles[0]["Arn"]
+        response = iam_client.get_role(RoleName=cb_role)
+        return response.get("Role").get("Arn")
     except botocore.exceptions.ClientError as ex:
-        ex.response["Error"]["Message"] = "Error listing or matching roles."
-        ex.response["Error"]["Code"] = "InternalError"
+        if "NoSuchEntity" in ex.response["Error"]["Code"]:
+            return None
+        elif "ServiceFailure" in ex.response["Error"]["Code"]:
+            ex.response["Error"]["Message"] = "get_role operation failed due to a Service Failure error."
+        else:
+            ex.response["Error"]["Message"] = "InternalError"
+            ex.response["Error"]["Code"] = "InternalError"
         raise ex
 
 
 def check_cb_role(cloud_trail_client, cb_role, event, aws_account_id):
+    """Checks cloudtrail events to see if the CloudBroker role has been changed. Build evaluation based on discovery."""
 
     role_change_events = [
         "DeleteRolePolicy",
@@ -133,8 +117,8 @@ def check_rule_sns_target_is_setup(sns_client, event_bridge_client, rule, event)
 
     for target in targets:
         logger.info("Checking rule target: %s", target)
-        target_arn: str = target.get("Arn")
         # is target an SNS input transformer?
+        target_arn: str = target.get("Arn")
         if target_arn.startswith("arn:aws:sns:"):
             # yes, get a list of topic subscriptions
             subscriptions = list_all_sns_subscriptions_by_topic(sns_client, target_arn)
@@ -184,6 +168,7 @@ def lambda_handler(event, context):
     execution_role_name = rule_parameters.get("ExecutionRoleName")
     audit_account_id = rule_parameters.get("AuditAccountID", "")
     aws_account_id = event["accountId"]
+    is_not_audit_account = aws_account_id != audit_account_id
 
     evaluations = []
 
@@ -192,60 +177,44 @@ def lambda_handler(event, context):
     aws_sns_client = get_client("sns", aws_account_id, execution_role_name)
     aws_cloud_trail_client = get_client("cloudtrail", aws_account_id, execution_role_name)
     aws_iam_client = get_client("iam", aws_account_id, execution_role_name)
-
+    
     # Check cloud profile
     tags = get_account_tags(get_client("organizations", assume_role=False), aws_account_id)
     cloud_profile = get_cloud_profile_from_tags(tags)
     gr_requirement_type = check_guardrail_requirement_by_cloud_usage_profile(GuardrailType.Guardrail4, cloud_profile)
-
+    
     # If the guardrail is recommended
     if gr_requirement_type == GuardrailRequirementType.Recommended:
-        return submit_evaluations(
-            aws_config_client,
+        return submit_evaluations(aws_config_client, event, [build_evaluation(
+            aws_account_id,
+            "COMPLIANT",
             event,
-            [
-                build_evaluation(
-                    aws_account_id,
-                    "COMPLIANT",
-                    event,
-                    gr_requirement_type=gr_requirement_type,
-                )
-            ],
-        )
+            gr_requirement_type=gr_requirement_type
+        )])
     # If the guardrail is not required
     elif gr_requirement_type == GuardrailRequirementType.Not_Required:
-        return submit_evaluations(
-            aws_config_client,
+        return submit_evaluations(aws_config_client, event, [build_evaluation(
+            aws_account_id,
+            "NOT_APPLICABLE",
             event,
-            [
-                build_evaluation(
-                    aws_account_id,
-                    "NOT_APPLICABLE",
-                    event,
-                    gr_requirement_type=gr_requirement_type,
-                )
-            ],
-        )
-
+            gr_requirement_type=gr_requirement_type
+        )])
+        
+    rules_are_compliant = False
     rules = list_all_event_bridge_rules(aws_event_bridge_client)
-    cb_role_pattern = rule_parameters["IAM_Role_Name"]
+    cb_role = rule_parameters["IAM_Role_Name"]
 
-    # Now we lookup the CloudBroker role by partial match
-    cb_role_arn = get_role_arn(aws_iam_client, cb_role_pattern)
+    cb_role_arn = get_role_arn(aws_iam_client, cb_role)
 
     if not cb_role_arn:
         compliance_type = "NON_COMPLIANT"
-        annotation = f"Cloud Broker Role containing '{cb_role_pattern}' in the name was not found."
+        annotation = f"Cloud Broker Role with name '{cb_role}' not found."
         evaluation = build_evaluation(aws_account_id, compliance_type, event, annotation=annotation)
         logger.info(f"{compliance_type}: {annotation}")
         submit_evaluations(aws_config_client, event, [evaluation])
         return
 
-    cb_rules = [
-        rule
-        for rule in rules
-        if rule_matches_against_cb_role_identity(rule.get("EventPattern"), cb_role_arn)
-    ]
+    cb_rules = [rule for rule in rules if rule_matches_against_cb_role_identity(rule.get("EventPattern"), cb_role_arn)]
 
     if len(cb_rules) == 0:
         evaluations.append(
@@ -257,7 +226,6 @@ def lambda_handler(event, context):
             )
         )
     else:
-        rules_are_compliant = False
         for rule in cb_rules:
             logger.info(f"Checking rule: {rule}")
             rule_evaluation = check_rule_sns_target_is_setup(aws_sns_client, aws_event_bridge_client, rule, event)
@@ -266,8 +234,7 @@ def lambda_handler(event, context):
             evaluations.append(rule_evaluation)
 
         if rules_are_compliant:
-            extracted_role_name = cb_role_arn.split("/")[-1] if "/" in cb_role_arn else cb_role_arn
-            evaluations.append(check_cb_role(aws_cloud_trail_client, extracted_role_name, event, aws_account_id))
+            evaluations.append(check_cb_role(aws_cloud_trail_client, cb_role, event, aws_account_id))
         else:
             evaluations.append(
                 build_evaluation(
