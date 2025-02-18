@@ -166,7 +166,7 @@ Parameters:
     Description: Bucket to which evidence will be shared
   GC04EnterpriseMonitoringIAMRoleName:
     Type: String
-    Default: "CloudBrokering"
+    Description: Enter the IAM Role Name for enterprise Monitoring
   GC04EnterpriseMonitoringIAMTrustedPrincipal:
     Type: String
     Default: "arn:aws:iam::939755092653:root"
