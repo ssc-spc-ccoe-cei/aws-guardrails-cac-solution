@@ -21,7 +21,6 @@ Metadata:
           - RootOUID
           - SecurityOUID
           - TenantId
-          - GC04EnterpriseMonitoringIAMRoleName
           - DefaultCloudProfile
       - Label:
           default: Optional Parameters
@@ -167,7 +166,7 @@ Parameters:
     Description: Bucket to which evidence will be shared
   GC04EnterpriseMonitoringIAMRoleName:
     Type: String
-    Description: Enter the IAM Role Name for enterprise Monitoring
+    Default: "CloudBrokering"
   GC04EnterpriseMonitoringIAMTrustedPrincipal:
     Type: String
     Default: "arn:aws:iam::939755092653:root"
