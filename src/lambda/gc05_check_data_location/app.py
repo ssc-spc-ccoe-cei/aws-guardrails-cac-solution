@@ -135,6 +135,30 @@ def get_qldb_resources(aws_account_id, execution_role_name, RegionName=None, eve
     return results
 
 
+def s3_has_approved_tags(bucket_tags):
+    """Checks if s3 bucket has approved tags attached for location exemption
+    Args:
+        output from an s3 client get_bucket_tagging(Bucket='bucket_name')
+
+    Returns:
+        True if bucket is tagged with approved tag(s)
+        False otherwise
+    """
+    # Tag keys 
+    TAG_KEY_DATA_CLASS = "Data classification"
+    # Allowed tag values for each key
+    ALLOWED_DATA_CLASS_VALUES = ["Protected A", "Unclassified"]
+
+    if bucket_tags == None:
+        return False
+    elif 'TagSet' in bucket_tags:
+        for tag in bucket_tags['TagSet']:
+            if tag['Key'] == TAG_KEY_DATA_CLASS and tag['Value'] in ALLOWED_DATA_CLASS_VALUES:
+                return True
+            else:
+                pass        
+    return False
+    
 def get_s3_resources(aws_s3_client, UnauthorizedRegionsList=[]):
     """
     Finds Amazon S3 resources in the specified region
@@ -147,25 +171,39 @@ def get_s3_resources(aws_s3_client, UnauthorizedRegionsList=[]):
             for bucket in response.get("Buckets"):
                 bucket_name = bucket.get("Name")
                 bucket_arn = "arn:aws:s3:::{}".format(bucket_name)
-                response2 = aws_s3_client.get_bucket_location(Bucket=bucket_name)
-                if response2:
-                    LocationConstraint = response2.get("LocationConstraint")
+                bucket_location = aws_s3_client.get_bucket_location(Bucket=bucket_name)
+
+                # bucket may not have tags
+                try:
+                    bucket_tags = aws_s3_client.get_bucket_tagging(Bucket=bucket_name)
+                except Exception as e:
+                    if "NoSuchTagSet" in e.response["Error"]["Code"]:
+                        bucket_tags = None
+                
+                if bucket_location:
+                    LocationConstraint = bucket_location.get("LocationConstraint")
                     if LocationConstraint:
                         if LocationConstraint in UnauthorizedRegionsList:
-                            if results.get(LocationConstraint):
+                            # if bucket does not have the proper tags for exemption,
+                            # add bucket info to results[LocationConstraint] dict
+                            if not s3_has_approved_tags(bucket_tags) and results.get(LocationConstraint):
+                                # results[LocationConstraint] exists, then just append
                                 results[LocationConstraint].append(
                                     {"Arn": bucket_arn, "Id": bucket.get("Name"), "ResourceType": ResourceType}
                                 )
-                            else:
+                            elif not s3_has_approved_tags(bucket_tags) and not results.get(LocationConstraint):
+                                # results[LocationConstraint] doesn't exist, so start one
                                 results[LocationConstraint] = [
                                     {"Arn": bucket_arn, "Id": bucket.get("Name"), "ResourceType": ResourceType}
                                 ]
                     else:
-                        if results.get("global"):
+                        if not s3_has_approved_tags(bucket_tags) and results.get("global"):
+                            # results["global"] exists, then just append
                             results["global"].append(
                                 {"Arn": bucket_arn, "Id": bucket.get("Name"), "ResourceType": ResourceType}
                             )
-                        else:
+                        elif not s3_has_approved_tags(bucket_tags) and not results.get("global"):
+                            # results["global"] doesn't exist, so start one
                             results["global"] = [
                                 {"Arn": bucket_arn, "Id": bucket.get("Name"), "ResourceType": ResourceType}
                             ]
