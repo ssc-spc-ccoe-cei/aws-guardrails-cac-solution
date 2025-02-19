@@ -16,47 +16,69 @@ import botocore.exceptions
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
 
+def get_role_arn(iam_client, cb_role_pattern: str) -> str | None:
+    """
+    aws iam list-roles --query "Roles[?contains(RoleName, 'CloudBrokering')].[RoleName, Arn]"
+    """
+    try:
+        paginator = iam_client.get_paginator("list_roles")
+        matched_roles = []
 
-def check_enterprise_monitoring_accounts(aws_iam_client, trusted_principal, role_name):
-    """
-    This function checks if the Enterprise Monitoring Account is configured
-    """
+        for page in paginator.paginate():
+            for role in page["Roles"]:
+                if cb_role_pattern in role["RoleName"]:
+                    matched_roles.append(role)
+
+        if not matched_roles:
+            return None
+
+        # Return the ARN of the first matched role
+        return matched_roles[0]["Arn"]
+    except botocore.exceptions.ClientError as ex:
+        ex.response["Error"]["Message"] = "Error listing or matching roles."
+        ex.response["Error"]["Code"] = "InternalError"
+        raise ex
+
+
+
+def check_enterprise_monitoring_accounts(aws_iam_client, trusted_principal, role_pattern): 
     b_role_found = False
     b_trust_policy_found = False
     try:
-        response = aws_iam_client.list_roles()
-        for role in response.get("Roles",[]):
-            if role_name in role.get("RoleName",""):
-                actual_role_name = role["RoleName"]
-                b_role_found = True
-                break
-        response = aws_iam_client.get_role(RoleName=actual_role_name)
-                    
-        policy_document = response.get("Role", {}).get("AssumeRolePolicyDocument", {})
+        matched_arn = get_role_arn(aws_iam_client, role_pattern)
+        if not matched_arn:
+            # No matching role found
+            return {"RoleFound": False, "TrustPolicyFound": False}
+
+        # Extract the actual role name from the ARN
+        actual_role_name = matched_arn.split('/')[-1]
+        b_role_found = True
+
+        # Retrieve the role and its trust policy
+        role_response = aws_iam_client.get_role(RoleName=actual_role_name)
+        policy_document = role_response["Role"].get("AssumeRolePolicyDocument", {})
+
         if isinstance(policy_document, str):
             policy_document = json.loads(policy_document)
 
-            if policy_document:
-                for statement in policy_document.get("Statement", []):
-                    # check Principal
-                    principal = statement.get("Principal", {})
-                    if principal:
-                        aws = principal.get("AWS", "")
-                        if (
-                            aws
-                            and aws == trusted_principal
-                            and (statement.get("Effect") == "Allow")
-                            and (statement.get("Action") == "sts:AssumeRole")
-                        ):
-                            b_trust_policy_found = True
-                            logger.info("Trust policy validated for role %s", role_name)
-                            break
-    
-    if not b_role_found:
+        for statement in policy_document.get("Statement", []):
+            principal = statement.get("Principal", {})
+            if principal:
+                aws = principal.get("AWS", "")
+                if (
+                    aws == trusted_principal
+                    and statement.get("Effect") == "Allow"
+                    and "sts:AssumeRole" in statement.get("Action", [])
+                ):
+                    b_trust_policy_found = True
+                    break
+
+    except Exception as e:
+        logger.error("Error checking enterprise monitoring accounts: %s", e)
         return {"RoleFound": False, "TrustPolicyFound": False}
 
+    return {"RoleFound": b_role_found, "TrustPolicyFound": b_trust_policy_found} 
 
-    return {"RoleFound": b_role_found, "TrustPolicyFound": b_trust_policy_found}
 
 
 def lambda_handler(event, context):
