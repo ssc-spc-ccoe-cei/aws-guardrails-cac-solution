@@ -24,16 +24,20 @@ def check_enterprise_monitoring_accounts(aws_iam_client, trusted_principal, role
     b_role_found = False
     b_trust_policy_found = False
     try:
-        response = aws_iam_client.get_role(RoleName=role_name)
-        if response and response.get("Role", {}).get("RoleName") == role_name:
-            b_role_found = True
-            try:
-                policy_document = response.get("Role", {}).get("AssumeRolePolicyDocument")
-            except ValueError:
-                # invalid or empty policy
-                policy_document = {}
+        response = aws_iam_client.list_roles()
+        for role in response.get("Roles",[]):
+            if role_name in role.get("RoleName",""):
+                actual_role_name = role["RoleName"]
+                b_role_found = True
+                break
+        response = aws_iam_client.get_role(RoleName=actual_role_name)
+                    
+        policy_document = response.get("Role", {}).get("AssumeRolePolicyDocument", {})
+        if isinstance(policy_document, str):
+            policy_document = json.loads(policy_document)
+
             if policy_document:
-                for statement in policy_document.get("Statement"):
+                for statement in policy_document.get("Statement", []):
                     # check Principal
                     principal = statement.get("Principal", {})
                     if principal:
@@ -47,11 +51,11 @@ def check_enterprise_monitoring_accounts(aws_iam_client, trusted_principal, role
                             b_trust_policy_found = True
                             logger.info("Trust policy validated for role %s", role_name)
                             break
-    except botocore.exceptions.ClientError as err:
-        if "NoSuchEntity" in err.response["Error"]["Code"]:
-            b_role_found = False
-        else:
-            raise err
+    
+    if not b_role_found:
+        return {"RoleFound": False, "TrustPolicyFound": False}
+
+
     return {"RoleFound": b_role_found, "TrustPolicyFound": b_trust_policy_found}
 
 

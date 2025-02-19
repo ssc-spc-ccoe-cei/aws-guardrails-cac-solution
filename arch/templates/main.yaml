@@ -445,7 +445,14 @@ Resources:
                 "sns:ListTopics",
                 "tag:GetResources",
                 "timestream:DescribeEndpoints",
-                "timestream:List*"
+                "timestream:List*",
+                "iam:GetContextKeysForPrincipalPolicy",
+                "iam:SimulatePrincipalPolicy",
+                "aws-marketplace:Li*",
+                "aws-marketplace:D*",
+                "s3:GetBucket*",
+                "aws-marketplace:GetResourcePolicy",
+                "aws-marketplace:ListTagsForResource"
               ],
               "Resource": [
                 "*"

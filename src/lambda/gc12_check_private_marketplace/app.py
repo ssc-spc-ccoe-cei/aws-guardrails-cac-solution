@@ -30,7 +30,109 @@ logger = logging.getLogger()
 logger.setLevel(logging.INFO)
 
 
-def private_marketplace_is_configured(marketplace_catalog_client) -> bool:
+def private_marketplace_is_configured(aws_account_id,execution_role_name,is_not_audit_account):
+    # -----------------------------------
+    import logging
+
+    import boto3
+    import botocore.exceptions
+
+    logger = logging.getLogger()
+    logger.setLevel(logging.INFO)
+
+
+    # This gets the client after assuming the Config service role
+    # either in the same AWS account or cross-account.
+    def get_clientt(
+        service: str,
+        account_id: str | None = None,
+        role_name: str | None = None,
+        assume_role: bool = True,
+        region: str | None = None,
+        endpoint_url: str | None = None,
+
+    ):
+        """
+        Return the service boto client. It should be used instead of directly calling the client.
+        This gets the client after assuming the Config service role for the provided account.
+        If no account_id or role_name is provided, the client is configured for the current credentials and account.
+
+        Keyword arguments:
+
+        service -- the service name used for calling the boto.client(service)
+
+        account_id -- the id of the account for the assumed role
+
+        role_name -- the name of the role to assume when creating the client
+        """
+        if not role_name or not account_id or not assume_role:
+            return boto3.client(service,endpoint_url=endpoint_url)
+
+        credentials = get_assume_role_credentials(f"arn:aws:iam::{account_id}:role/{role_name}", region)
+        return boto3.client(
+            service,
+            endpoint_url=endpoint_url,
+            aws_access_key_id=credentials["AccessKeyId"],
+            aws_secret_access_key=credentials["SecretAccessKey"],
+            aws_session_token=credentials["SessionToken"],
+        )
+
+
+    def get_assume_role_credentials(role_arn: str, region: str = None) -> dict:
+        """
+        Returns the credentials required to assume the passed role.
+
+        Keyword arguments:
+
+        role_arn -- the arn of the role to assume
+        """
+        sts_client = boto3.client("sts", region_name=region) if region else boto3.client("sts")
+        try:
+            assume_role_response = sts_client.assume_role(RoleArn=role_arn, RoleSessionName="configLambdaExecution")
+            return assume_role_response["Credentials"]
+        except botocore.exceptions.ClientError as ex:
+            # Scrub error message for any internal account info leaks
+            if "AccessDenied" in ex.response["Error"]["Code"]:
+                ex.response["Error"]["Message"] = "AWS Config does not have permission to assume the IAM role."
+            else:
+                ex.response["Error"]["Message"] = "InternalError"
+                ex.response["Error"]["Code"] = "InternalError"
+            logger.error("ERROR assuming role. %s", ex.response["Error"])
+            raise ex
+
+
+    def is_throttling_exception(e):
+        """Returns True if the exception code is one of the throttling exception codes we have"""
+        b_is_throttling = False
+        throttling_exception_codes = [
+            "ConcurrentModificationException",
+            "InsufficientDeliveryPolicyException",
+            "NoAvailableDeliveryChannelException",
+            "ConcurrentModifications",
+            "LimitExceededException",
+            "OperationNotPermittedException",
+            "TooManyRequestsException",
+            "Throttling",
+            "ThrottlingException",
+            "InternalErrorException",
+            "InternalException",
+            "ECONNRESET",
+            "EPIPE",
+            "ETIMEDOUT",
+        ]
+
+        for throttling_code in throttling_exception_codes:
+            if throttling_code in e.response["Error"]["Code"]:
+                b_is_throttling = True
+                break
+
+        return b_is_throttling
+
+        # -----------------------------------
+    marketplace_catalog_client = get_clientt(
+            "marketplace-catalog", aws_account_id, execution_role_name, is_not_audit_account, region='us-east-1', endpoint_url="https://catalog.marketplace.us-east-1.amazonaws.com/ListEntities"
+        )
+    
     try:
         response = marketplace_catalog_client.list_entities(
             Catalog="AWSMarketplace",
@@ -48,11 +150,12 @@ def private_marketplace_is_configured(marketplace_catalog_client) -> bool:
     return False
 
 
-def policy_restricts_marketplace_access(iam_client, policy_content: str, interval_between_calls: float = "0.1") -> bool:
+def policy_restricts_marketplace_access(iam_client, policy_content: str, interval_between_calls: str = "0.1") -> bool:
     args = {
         "PolicyInputList": [policy_content],
-        "ActionNames": ["aws-marketplace-management:*", "aws-marketplace:*"],
+        "ActionNames": ["aws-marketplace:As*", "aws-marketplace:CreateP*", "aws-marketplace:DescribePri*", "aws-marketplace:Di*", "aws-marketplace:ListP*", "aws-marketplace:Start*"],
     }
+
     resources: list[dict] = []
     while True:
         response = iam_client.simulate_custom_policy(**args)
@@ -64,7 +167,7 @@ def policy_restricts_marketplace_access(iam_client, policy_content: str, interva
         if not args.get("Marker"):
             break
         else:
-            time.sleep(interval_between_calls)
+            time.sleep(float(interval_between_calls))
     for eval_result in resources:
         if eval_result.get("EvalDecision") == "allowed":
             return False
@@ -72,7 +175,7 @@ def policy_restricts_marketplace_access(iam_client, policy_content: str, interva
 
 
 def get_policies_that_restrict_marketplace_access(
-    organizations_client, iam_client, interval_between_calls: float = "0.1"
+    organizations_client, iam_client, interval_between_calls: str = "0.1"
 ):
     policies = organizations_list_all_service_control_policies(organizations_client, interval_between_calls)
     selected_policy_summaries = []
@@ -92,10 +195,10 @@ def get_policies_that_restrict_marketplace_access(
 
 
 def policy_is_attached(
-    organizations_client, target_id: str, policy_ids: list[str], interval_between_calls: float = "0.1"
+    organizations_client, target_id: str, policy_ids: list[str], interval_between_calls: float = 0.1
 ) -> bool:
     policies = organizations_list_all_policies_for_target(
-        organizations_client, target_id, interval_between_calls=interval_between_calls
+        organizations_client, target_id, interval_between_calls=float(interval_between_calls)
     )
     logger.info("Policies found for target '%s': %s", target_id, policies)
     return any(x.get("Id") in policy_ids for x in policies)
@@ -106,7 +209,7 @@ def is_policy_attached_in_ancestry(organizations_client, child_id: str, policy_i
     while True:
         if policy_is_attached(organizations_client, current_id, policy_ids):
             return True
-        parents = organizations_client.list_parents(ChildId=current_id).get("Parents", [])
+        parents = organizations_client.list_parents(ChildId=str(current_id)).get("Parents", [])
         if not parents:
             break
         parent_id = parents[0].get("Id")
@@ -121,7 +224,7 @@ def is_policy_attached_in_ancestry(organizations_client, child_id: str, policy_i
 
 
 def assess_policy_attachment(
-    organizations_client, policy_summaries: list[dict], current_account_id: str, interval_between_calls: float = "0.1"
+    organizations_client, policy_summaries: list[dict], current_account_id: str, interval_between_calls: float = 0.1
 ) -> tuple[str, str]:
     policy_ids = [x.get("Id") for x in policy_summaries]
     mgmt_account_id = get_organizations_mgmt_account_id(organizations_client)
@@ -131,14 +234,14 @@ def assess_policy_attachment(
                 "NON_COMPLIANT",
                 "The restricting policy is attached to the Management Account, which is not allowed.",
             )
-        parents = organizations_client.list_parents(ChildId=current_account_id).get("Parents")
+        parents = organizations_client.list_parents(ChildId=str(current_account_id)).get("Parents")
         if not parents:
             return False
-        parent_id = parents[0["Id"]]
-        ou_list = organizations_list_all_organizational_units(organizations_client, parent_id, interval_between_calls,)
+        parent_id = parents[0]["Id"]
+        ou_list = organizations_list_all_organizational_units(organizations_client, parent_id, interval_between_calls)
         missing_ous = []
         for ou in ou_list:
-            ou_id = ou["Id"]
+            ou_id = str(ou["Id"])
             if not policy_is_attached(organizations_client, ou_id, policy_ids, interval_between_calls):
                 missing_ous.append(ou_id)
         if missing_ous:
@@ -162,7 +265,7 @@ def lambda_handler(event, context):
     audit_account_id = rule_parameters.get("AuditAccountID", "")
     aws_account_id = event["accountId"]
     is_not_audit_account = aws_account_id != audit_account_id
-    interval_between_calls = float("0.1")
+    interval_between_calls = 0.1
     aws_config_client = get_client("config", aws_account_id, execution_role_name, is_not_audit_account)
     aws_iam_client = get_client("iam", aws_account_id, execution_role_name, is_not_audit_account)
     aws_orgs_client = get_client("organizations", aws_account_id, execution_role_name, is_not_audit_account)
@@ -185,13 +288,15 @@ def lambda_handler(event, context):
         eval_ = build_evaluation(aws_account_id, compliance_type, event, annotation=annotation)
         return submit_evaluations(aws_config_client, event, [eval_])
     compliance_type, annotation = assess_policy_attachment(
-        aws_orgs_client, restricting_policies, aws_account_id, interval_between_calls
+        aws_orgs_client, restricting_policies, aws_account_id, float(interval_between_calls)
     )
     if compliance_type == "COMPLIANT":
-        aws_marketplace_catalog_client = get_client(
-            "marketplace-catalog", aws_account_id, execution_role_name, is_not_audit_account, region="us-east-1"
-        )
-        if not private_marketplace_is_configured(aws_marketplace_catalog_client):
+        # aws_marketplace_catalog_client = get_client(
+        #     "marketplace-catalog", aws_account_id, execution_role_name, is_not_audit_account, region='us-east-1'
+        # )
+        if not private_marketplace_is_configured(aws_account_id,execution_role_name,is_not_audit_account):
+        # if not private_marketplace_is_configured(aws_marketplace_catalog_client):
+
             compliance_type = "NON_COMPLIANT"
             annotation = "Private Marketplace NOT found."
         else:
@@ -199,4 +304,3 @@ def lambda_handler(event, context):
     logger.info(f"{compliance_type}: {annotation}")
     final_eval = build_evaluation(aws_account_id, compliance_type, event, annotation=annotation)
     submit_evaluations(aws_config_client, event, [final_eval])
-
