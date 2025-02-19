@@ -99,22 +99,22 @@ def lambda_handler(event, context):
         return
 
     rule_parameters = check_required_parameters(
-        json.loads(event.get("ruleParameters", "{}")), ["ExecutionRoleName", "IAM_Role_Name", "IAM_Trusted_Principal"]
+        json.loads(event.get("ruleParameters", "{}")),
+        ["ExecutionRoleName", "IAM_Role_Name", "IAM_Trusted_Principal"]
     )
     execution_role_name = rule_parameters.get("ExecutionRoleName")
-    audit_account_id = rule_parameters.get("AuditAccountID", "")
     aws_account_id = event["accountId"]
-    is_not_audit_account = aws_account_id != audit_account_id
-
     evaluations = []
-
     aws_organizations_client = get_client("organizations", aws_account_id, execution_role_name)
-
-    if aws_account_id != get_organizations_mgmt_account_id(aws_organizations_client):
+    mgmt_account_id = get_organizations_mgmt_account_id(aws_organizations_client)
+    # lets skip if not mngt acc
+    if aws_account_id != mgmt_account_id:
         logger.info(
-            "Enterprise Monitoring Accounts not checked in account %s as this is not the Management Account",
-            aws_account_id,
+            "Account %s is not the management account (%s). skipping checks.",
+            aws_account_id, mgmt_account_id
         )
+        return
+
 
     aws_config_client = get_client("config", aws_account_id, execution_role_name)
     aws_iam_client = get_client("iam", aws_account_id, execution_role_name)
