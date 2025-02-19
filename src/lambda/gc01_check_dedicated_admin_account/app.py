@@ -498,6 +498,7 @@ def check_users(
     2) Check all SSO users (direct assignment & group-based assignment to Permission Sets).
     """
     evaluations = []
+    admin_users_detected = set()  # CHANGED: track all users that have admin privileges
     at_least_one_privileged_user_has_admin_access = False
     non_privileged_user_with_admin_access = []
 
@@ -510,14 +511,9 @@ def check_users(
         managed_policies = fetch_aws_managed_user_policies(iam_client, user_name)
         inline_policies = fetch_inline_user_policies(iam_client, user_name)
 
-        if user_name in privileged_user_list:
-            # If we haven't yet found a privileged user with admin access, check now
-            if not at_least_one_privileged_user_has_admin_access:
-                if policies_grant_admin_access(managed_policies, inline_policies):
-                    at_least_one_privileged_user_has_admin_access = True
-        elif user_name in non_privileged_user_list:
-            if policies_grant_admin_access(managed_policies, inline_policies):
-                non_privileged_user_with_admin_access.append(user_name)
+        #  If this user has admin privileges, add them to admin_users_detected
+        if policies_grant_admin_access(managed_policies, inline_policies):
+            admin_users_detected.add(user_name)
 
     # === SSO (Identity Center) Checks ===
     for instance_arn, sso_users in sso_users_by_instance.items():
@@ -533,42 +529,73 @@ def check_users(
             user_group_ids = fetch_sso_group_ids_for_user(identity_store_client, instance_id, user_id)
 
             logger.info(f"Checking SSO user: {user_name}")
+            
             if user_name in privileged_user_list:
                 if at_least_one_privileged_user_has_admin_access:
                     continue
 
-                # Check if user or user's groups is assigned to an admin permission set
-                for a_id, perm_sets in admin_permission_sets_by_account.items():
-                    for p_arn in perm_sets:
-                        if user_assigned_to_permission_set(sso_admin_client, user_id, user_group_ids, instance_arn, a_id, p_arn):
-                            at_least_one_privileged_user_has_admin_access = True
-                            break
-                    if at_least_one_privileged_user_has_admin_access:
+                # # Check if user or user's groups is assigned to an admin permission set
+                # for a_id, perm_sets in admin_permission_sets_by_account.items():
+                #     for p_arn in perm_sets:
+                #         if user_assigned_to_permission_set(sso_admin_client, user_id, user_group_ids, instance_arn, a_id, p_arn):
+                #             at_least_one_privileged_user_has_admin_access = True
+                #             break
+                #     if at_least_one_privileged_user_has_admin_access:
+                #         break
+            #  If user is assigned to any admin permission set, add to admin_users_detected
+            # for a_id, perm_sets in admin_permission_sets_by_account.items():
+            #     for p_arn in perm_sets:
+            #         if user_assigned_to_permission_set(sso_admin_client, user_id, user_group_ids, instance_arn, a_id, p_arn):
+            #             admin_users_detected.add(user_name)
+            #             break
+
+            # elif user_name in non_privileged_user_list:
+            #     # Check if user or user's groups is assigned to an admin permission set
+            #     for a_id, perm_sets in admin_permission_sets_by_account.items():
+            #         for p_arn in perm_sets:
+            #             if user_assigned_to_permission_set(sso_admin_client, user_id, user_group_ids, instance_arn, a_id, p_arn):
+            #                 non_privileged_user_with_admin_access.append(user_name)
+            #                 break
+            #  If user is assigned to any admin permission set, add to admin_users_detected
+            for a_id, perm_sets in admin_permission_sets_by_account.items():
+                for p_arn in perm_sets:
+                    if user_assigned_to_permission_set(sso_admin_client, user_id, user_group_ids, instance_arn, a_id, p_arn):
+                        admin_users_detected.add(user_name)
                         break
 
-            elif user_name in non_privileged_user_list:
-                # Check if user or user's groups is assigned to an admin permission set
-                for a_id, perm_sets in admin_permission_sets_by_account.items():
-                    for p_arn in perm_sets:
-                        if user_assigned_to_permission_set(sso_admin_client, user_id, user_group_ids, instance_arn, a_id, p_arn):
-                            non_privileged_user_with_admin_access.append(user_name)
-                            break
-
     # === Final evaluations ===
-    if at_least_one_privileged_user_has_admin_access and len(non_privileged_user_with_admin_access) == 0:
+    # if at_least_one_privileged_user_has_admin_access and len(non_privileged_user_with_admin_access) == 0:
+    #     evaluations.append(build_evaluation(aws_account_id, "COMPLIANT", event))
+    # else:
+    #     failed_check_strings = []
+    #     if not at_least_one_privileged_user_has_admin_access:
+    #         failed_check_strings.append("no privileged user with admin access was found")
+    #     if len(non_privileged_user_with_admin_access) > 0:
+    #         failed_check_strings.append(
+    #             f"non_privileged users {non_privileged_user_with_admin_access} have admin access"
+    #         )
+
+    #     annotation = " and ".join([e for e in failed_check_strings if e]).capitalize()
+    #     evaluations.append(build_evaluation(aws_account_id, "NON_COMPLIANT", event, annotation=annotation))
+        
+        
+            # New exact-match logic
+    priv_set = set(privileged_user_list)
+    nonpriv_set = set(non_privileged_user_list)
+    if admin_users_detected == priv_set and admin_users_detected.isdisjoint(nonpriv_set):
         evaluations.append(build_evaluation(aws_account_id, "COMPLIANT", event))
     else:
-        failed_check_strings = []
-        if not at_least_one_privileged_user_has_admin_access:
-            failed_check_strings.append("no privileged user with admin access was found")
-        if len(non_privileged_user_with_admin_access) > 0:
-            failed_check_strings.append(
-                f"non_privileged users {non_privileged_user_with_admin_access} have admin access"
+        reasons = []
+        if admin_users_detected != priv_set:
+            reasons.append(
+                f"Admin users found {admin_users_detected} do not exactly match the provided privileged list {priv_set}"
             )
+        overlap = admin_users_detected.intersection(nonpriv_set)
+        if overlap:
+            reasons.append(f"Non-privileged users have admin access: {overlap}")
 
-        annotation = " and ".join([e for e in failed_check_strings if e]).capitalize()
+        annotation = " and ".join(reasons).capitalize() if reasons else "No match"
         evaluations.append(build_evaluation(aws_account_id, "NON_COMPLIANT", event, annotation=annotation))
-
     return evaluations
 
 

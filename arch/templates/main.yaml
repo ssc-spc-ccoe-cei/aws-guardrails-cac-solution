@@ -321,7 +321,19 @@ Resources:
                     "tag:GetResources",
                     "timestream:DescribeEndpoints",
                     "timestream:List*",
-                    "iam:Simulate*"
+                    "iam:Simulate*",
+                    "timestream:DescribeEndpoints",
+                    "timestream:List*",
+                    "iam:GetContextKeysForPrincipalPolicy",
+                    "iam:SimulatePrincipalPolicy",
+                    "aws-marketplace:Li*",
+                    "aws-marketplace:D*",
+                    "s3:GetBucket*",
+                    "aws-marketplace:GetResourcePolicy",
+                    "aws-marketplace:ListTagsForResource",
+                    "identitystore:List*",
+                    "es:Describe*",
+                    "es:ListDomainNames"
                   ],
                   "Resource": [
                     "*"
@@ -452,7 +464,9 @@ Resources:
                 "aws-marketplace:D*",
                 "s3:GetBucket*",
                 "aws-marketplace:GetResourcePolicy",
-                "aws-marketplace:ListTagsForResource"
+                "aws-marketplace:ListTagsForResource",
+                "identitystore:List*"
+
               ],
               "Resource": [
                 "*"
