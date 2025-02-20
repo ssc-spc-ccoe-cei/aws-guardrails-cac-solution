@@ -47,51 +47,8 @@ $(info --- Checking dependencies [DONE] ---)
 ## Make all, build and deploy
 all: configure mb build-code package-code setup-organizations deploy-stack backup-config
 
-# Define variables 
-TIMESTAMP := $(shell date +%s)
-TEMPLATE_DIR := arch/templates
-YAML_FILES := $(shell find $(TEMPLATE_DIR) -type f -name "*.yaml")
-
-# Update only the "UpdateTriggerVersion" parameter description
-update-parameter-description:
-		@echo "Updating 'UpdateTriggerVersion' parameter descriptions in $(TEMPLATE_DIR)..."
-		@for file in $(YAML_FILES); do \
-            if grep -q "Parameters:" $$file; then \
-                  if grep -q "UpdateTriggerVersion:" $$file; then \
-                        if grep -q "Description:" $$file; then \
-                              # Update existing description for UpdateTriggerVersion
-                              sed -i '/UpdateTriggerVersion:/,/^ *Type:/ s/\(Description: \).*/\1"Forcing CloudFormation update: '$(TIMESTAMP)'"/' $$file; \
-                              echo "Updated 'UpdateTriggerVersion' description in $$file"; \
-                        else \
-                              # Add Description if missing (insert after UpdateTriggerVersion)
-                              sed -i '/UpdateTriggerVersion:/a\    Description: "Forcing CloudFormation update: '$(TIMESTAMP)'"' $$file; \
-                              echo "Added 'Description' to 'UpdateTriggerVersion' in $$file"; \
-                        fi \
-                  else \
-                        echo "Skipping $$file (No 'UpdateTriggerVersion' parameter found)"; \
-                  fi \
-            else \
-                  echo "Skipping $$file (No 'Parameters' section found)"; \
-            fi \
-      done
-      @echo "'UpdateTriggerVersion' parameter descriptions updated successfully."
-
-# Validate YAML syntax before applying changes
-validate-yaml:
-      @echo "Validating YAML syntax..."
-      @for file in $(YAML_FILES); do \
-            yq eval . $$file > /dev/null || { echo "Error in $$file"; exit 1; }; \
-      done
-      @echo "All CloudFormation YAML files in $(TEMPLATE_DIR) are valid."
-
-# Main target to update the description safely
-prepare-offline-update: update-parameter-description validate-yaml
-      @echo "YAML files updated and validated successfully. Ready for packaging." 
-
-
-
 ## Build a cloudshell package, build code and package for cloudshell
-build-cloudshell-package: force-conformence build-code create-cloudshell-package
+build-cloudshell-package: build-code create-cloudshell-package
 ## Build and package code
 build: build-code package-code
 ## Build and deploy code
