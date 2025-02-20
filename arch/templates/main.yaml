@@ -2,6 +2,7 @@ AWSTemplateFormatVersion: 2010-09-09
 Description: Deploys the Government of Canada Guardrails Assessment Package
 
 Metadata:
+  ForceUpdateTimeStamp: !Sub "${AWS::Timestamp}"
   AWS::CloudFormation::Interface:
     ParameterGroups:
       - Label:
@@ -1547,7 +1548,7 @@ Resources:
     Properties:
       ConformancePackInputParameters:
         - ParameterName: UpdateTriggerVersion
-          ParameterValue: !Ref InvokeUpdate
+          ParameterValue: "v3"
         - ParameterName: GCLambdaExecutionRoleName
           ParameterValue: !Sub "${AccelRolePrefix}GCLambdaExecutionRole"
         - ParameterName: GCLambdaExecutionRoleName2
