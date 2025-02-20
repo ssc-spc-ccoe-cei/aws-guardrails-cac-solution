@@ -46,8 +46,48 @@ $(info --- Checking dependencies [DONE] ---)
 
 ## Make all, build and deploy
 all: configure mb build-code package-code setup-organizations deploy-stack backup-config
+
+# Define variables
+TIMESTAMP := $(shell date +%s)
+TEMPLATE_DIR := arch/templates
+YAML_FILES := $(shell find $(TEMPLATE_DIR) -type f -name "*.yaml")
+
+# Add force update metadata only to CloudFormation templates
+force-update-yaml:
+	@echo "Processing CloudFormation YAML templates in $(TEMPLATE_DIR)..."
+	@for file in $(YAML_FILES); do \
+	if grep -q "Resources:" $$file; then \
+	if grep -q "Metadata:" $$file; then \
+# Metadata exists, append ForceUpdate inside Metadata block
+	sed -i '/Metadata:/a\  ForceUpdate: '$(TIMESTAMP)'' $$file; \
+	echo "Updated Metadata in $$file"; \
+	else \
+# Metadata doesn't exist, insert it correctly
+	awk '/Resources:/ {print "Metadata:\n  ForceUpdate: '$(TIMESTAMP)'"}1' $$file > $$file.tmp && mv $$file.tmp $$file; \
+	echo "Added Metadata to $$file"; \
+	fi \
+	else \
+	echo "Skipping $$file (Not a CloudFormation template)"; \
+	fi \
+	done
+	@echo "CloudFormation YAML templates updated successfully."
+
+# Validate YAML syntax before packaging
+validate-yaml:
+	@echo "Validating YAML syntax..."
+	@for file in $(YAML_FILES); do \
+	yq eval . $$file > /dev/null || { echo "Error in $$file"; exit 1; }; \
+	done
+	@echo "All CloudFormation YAML files in $(TEMPLATE_DIR) are valid."
+
+# Main target to prepare YAMLs for forced update
+force-conformence: force-update-yaml validate-yaml
+	@echo "YAML files updated and validated successfully. Ready for packaging."
+
+
+
 ## Build a cloudshell package, build code and package for cloudshell
-build-cloudshell-package: build-code create-cloudshell-package
+build-cloudshell-package: force-conformence build-code create-cloudshell-package
 ## Build and package code
 build: build-code package-code
 ## Build and deploy code

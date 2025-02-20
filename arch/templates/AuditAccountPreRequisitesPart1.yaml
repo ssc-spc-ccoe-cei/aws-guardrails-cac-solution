@@ -61,6 +61,8 @@ Conditions:
     - !Ref AWS::AccountId
     - !Ref AuditAccountID
 
+Metadata:
+  ForceUpdate: 1740069923
 Resources:
   CloudGuardrailsCommonLayer:
     Type: AWS::Lambda::LayerVersion

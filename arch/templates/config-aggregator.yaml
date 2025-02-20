@@ -1,6 +1,8 @@
 AWSTemplateFormatVersion: 2010-09-09
 Description: Deploys the Government of Canada Guardrails Assessment Package Configuration Aggregator
 
+Metadata:
+  ForceUpdate: 1740069923
 Resources:
   ConfigurationAggregator:
       Type: 'AWS::Config::ConfigurationAggregator'

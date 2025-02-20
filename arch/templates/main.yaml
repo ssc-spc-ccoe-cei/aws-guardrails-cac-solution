@@ -2,7 +2,7 @@ AWSTemplateFormatVersion: 2010-09-09
 Description: Deploys the Government of Canada Guardrails Assessment Package
 
 Metadata:
-  ForceUpdateTimeStamp: !Sub "${AWS::Timestamp}"
+  ForceUpdate: 1740069923
   AWS::CloudFormation::Interface:
     ParameterGroups:
       - Label:

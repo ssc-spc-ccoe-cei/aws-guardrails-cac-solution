@@ -8,9 +8,6 @@ Parameters:
   UpdateTriggerVersion:
     Type: String
     Default: "v1"
-  TemplateVersion:
-    Type: String
-    Default: !Sub "${AWS::StackName}-v3-${AWS::Timestamp}"
   GCLambdaExecutionRoleName:
     Type: String
   GCLambdaExecutionRoleName2:
@@ -115,15 +112,9 @@ Parameters:
   S3EmergencyAccountAlertsRuleNamesPath:
     Type: String
 
+Metadata:
+  ForceUpdate: 1740069923
 Resources:
-  # Force Update
-  ForceUpdateFunction:
-    Type: AWS::SSM::Parameter
-    Properties:
-      Name: !Sub "/force-update/${AWS::StackName}/${TemplateVersion}"
-      Type: String
-      Value: !Ref TemplateVersion
-      
   # GC01
   GC01CheckAttestationLetterConfigRule:
     Type: "AWS::Config::ConfigRule"
