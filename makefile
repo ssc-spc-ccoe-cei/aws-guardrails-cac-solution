@@ -46,7 +46,6 @@ $(info --- Checking dependencies [DONE] ---)
 
 ## Make all, build and deploy
 all: configure mb build-code package-code setup-organizations deploy-stack backup-config
-
 ## Build a cloudshell package, build code and package for cloudshell
 build-cloudshell-package: build-code create-cloudshell-package
 ## Build and package code
