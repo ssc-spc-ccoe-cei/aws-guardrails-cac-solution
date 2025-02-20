@@ -115,6 +115,13 @@ Parameters:
 
 Resources:
   # GC01
+  DummyUpdateResource: 
+    Type: AWS::S3::Bucket
+    Properties:
+      Tags:
+        - Key: ConformancePackVersion
+          Value: "v1"
+    DeletionPolicy: Delete 
   GC01CheckAttestationLetterConfigRule:
     Type: "AWS::Config::ConfigRule"
     Properties:
