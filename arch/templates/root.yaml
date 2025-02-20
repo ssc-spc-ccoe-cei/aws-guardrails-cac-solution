@@ -82,8 +82,6 @@ Parameters:
     Type: String
     Default: 2.0.0
 
-Metadata:
-  ForceUpdate: 1740069923
 Resources:
   GuardRailsStack:
     Type: AWS::CloudFormation::Stack

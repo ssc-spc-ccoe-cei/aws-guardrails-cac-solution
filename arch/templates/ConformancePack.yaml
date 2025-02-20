@@ -112,8 +112,6 @@ Parameters:
   S3EmergencyAccountAlertsRuleNamesPath:
     Type: String
 
-Metadata:
-  ForceUpdate: 1740069923
 Resources:
   # GC01
   GC01CheckAttestationLetterConfigRule:

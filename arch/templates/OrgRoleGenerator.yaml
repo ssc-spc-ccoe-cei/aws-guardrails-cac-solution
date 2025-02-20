@@ -38,8 +38,6 @@ Parameters:
     Description:
       The python runtime to use for the compliance dashboard
 
-Metadata:
-  ForceUpdate: 1740069923
 Resources:
   LambdaCreateRole:
     Type: "AWS::IAM::Role"

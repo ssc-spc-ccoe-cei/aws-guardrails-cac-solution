@@ -47,42 +47,46 @@ $(info --- Checking dependencies [DONE] ---)
 ## Make all, build and deploy
 all: configure mb build-code package-code setup-organizations deploy-stack backup-config
 
-# Define variables
+# Define variables 
 TIMESTAMP := $(shell date +%s)
 TEMPLATE_DIR := arch/templates
 YAML_FILES := $(shell find $(TEMPLATE_DIR) -type f -name "*.yaml")
 
-# Add force update metadata only to CloudFormation templates
-force-update-yaml:
-	@echo "Processing CloudFormation YAML templates in $(TEMPLATE_DIR)..."
-	@for file in $(YAML_FILES); do \
-	if grep -q "Resources:" $$file; then \
-	if grep -q "Metadata:" $$file; then \
-# Metadata exists, append ForceUpdate inside Metadata block
-	sed -i '/Metadata:/a\  ForceUpdate: '$(TIMESTAMP)'' $$file; \
-	echo "Updated Metadata in $$file"; \
-	else \
-# Metadata doesn't exist, insert it correctly
-	awk '/Resources:/ {print "Metadata:\n  ForceUpdate: '$(TIMESTAMP)'"}1' $$file > $$file.tmp && mv $$file.tmp $$file; \
-	echo "Added Metadata to $$file"; \
-	fi \
-	else \
-	echo "Skipping $$file (Not a CloudFormation template)"; \
-	fi \
-	done
-	@echo "CloudFormation YAML templates updated successfully."
+# Update only the "UpdateTriggerVersion" parameter description
+update-parameter-description:
+		@echo "Updating 'UpdateTriggerVersion' parameter descriptions in $(TEMPLATE_DIR)..."
+		@for file in $(YAML_FILES); do \
+            if grep -q "Parameters:" $$file; then \
+                  if grep -q "UpdateTriggerVersion:" $$file; then \
+                        if grep -q "Description:" $$file; then \
+                              # Update existing description for UpdateTriggerVersion
+                              sed -i '/UpdateTriggerVersion:/,/^ *Type:/ s/\(Description: \).*/\1"Forcing CloudFormation update: '$(TIMESTAMP)'"/' $$file; \
+                              echo "Updated 'UpdateTriggerVersion' description in $$file"; \
+                        else \
+                              # Add Description if missing (insert after UpdateTriggerVersion)
+                              sed -i '/UpdateTriggerVersion:/a\    Description: "Forcing CloudFormation update: '$(TIMESTAMP)'"' $$file; \
+                              echo "Added 'Description' to 'UpdateTriggerVersion' in $$file"; \
+                        fi \
+                  else \
+                        echo "Skipping $$file (No 'UpdateTriggerVersion' parameter found)"; \
+                  fi \
+            else \
+                  echo "Skipping $$file (No 'Parameters' section found)"; \
+            fi \
+      done
+      @echo "'UpdateTriggerVersion' parameter descriptions updated successfully."
 
-# Validate YAML syntax before packaging
+# Validate YAML syntax before applying changes
 validate-yaml:
-	@echo "Validating YAML syntax..."
-	@for file in $(YAML_FILES); do \
-	yq eval . $$file > /dev/null || { echo "Error in $$file"; exit 1; }; \
-	done
-	@echo "All CloudFormation YAML files in $(TEMPLATE_DIR) are valid."
+      @echo "Validating YAML syntax..."
+      @for file in $(YAML_FILES); do \
+            yq eval . $$file > /dev/null || { echo "Error in $$file"; exit 1; }; \
+      done
+      @echo "All CloudFormation YAML files in $(TEMPLATE_DIR) are valid."
 
-# Main target to prepare YAMLs for forced update
-force-conformence: force-update-yaml validate-yaml
-	@echo "YAML files updated and validated successfully. Ready for packaging."
+# Main target to update the description safely
+prepare-offline-update: update-parameter-description validate-yaml
+      @echo "YAML files updated and validated successfully. Ready for packaging." 
 
 
 

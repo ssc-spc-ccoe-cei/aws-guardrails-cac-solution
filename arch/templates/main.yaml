@@ -2,7 +2,6 @@ AWSTemplateFormatVersion: 2010-09-09
 Description: Deploys the Government of Canada Guardrails Assessment Package
 
 Metadata:
-  ForceUpdate: 1740069923
   AWS::CloudFormation::Interface:
     ParameterGroups:
       - Label:
