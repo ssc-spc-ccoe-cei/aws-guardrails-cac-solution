@@ -7,8 +7,7 @@ Parameters:
   # Common
   UpdateTriggerVersion:
     Type: String
-    Default: "v1"
-    Description: Forcing update 3444332234
+    Default: "v1.1"
   GCLambdaExecutionRoleName:
     Type: String
   GCLambdaExecutionRoleName2:
@@ -115,18 +114,11 @@ Parameters:
 
 Resources:
   # GC01
-  DummyUpdateResource: 
-    Type: AWS::S3::Bucket
-    Properties:
-      Tags:
-        - Key: ConformancePackVersion
-          Value: "v1"
-    DeletionPolicy: Delete 
   GC01CheckAttestationLetterConfigRule:
     Type: "AWS::Config::ConfigRule"
     Properties:
       ConfigRuleName: gc01_check_attestation_letter
-      Description: Checks S3 bucket for the attestation letter
+      Description: Checks S3 bucket for the attestation letter. What ever
       InputParameters:
         s3ObjectPath:
           Fn::If:

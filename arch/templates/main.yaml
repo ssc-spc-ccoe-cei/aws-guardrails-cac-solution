@@ -1547,7 +1547,7 @@ Resources:
     Properties:
       ConformancePackInputParameters:
         - ParameterName: UpdateTriggerVersion
-          ParameterValue: "v3"
+          ParameterValue: !Ref DeployVersion
         - ParameterName: GCLambdaExecutionRoleName
           ParameterValue: !Sub "${AccelRolePrefix}GCLambdaExecutionRole"
         - ParameterName: GCLambdaExecutionRoleName2
