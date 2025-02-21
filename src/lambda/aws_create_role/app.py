@@ -427,7 +427,58 @@ def lambda_handler(event, context):
 
             # If we get this far, cancel further reinvocations
             stop_reinvocation = True
-
+"""
+            # Handle Delete
+            elif request_type == 'Delete':
+                logger.info(f"CFN {request_type} request received")
+                for account in accounts:
+                    # Skip the management account
+                    if account_id in account['Id']:
+                        continue
+    
+                    try:
+                        sts_session = assume_role(session=session, account_id=account['Id'], role_name=switch_role)
+                    except Exception as err:
+                        logger.error(f"Error assuming role: {err}")
+                        response_data['Error'] = f"Error assuming role: {err}"
+                        send(cfn_event, context, FAILED, response_data)
+                        raise err
+    
+                    # Detach all policies, delete the role
+                    try:
+                        detach_all_policies_from_role(session=sts_session, role_name=role_name)
+                        delete_role(session=sts_session, role_name=role_name)
+                    except Exception as err:
+                        logger.info(f"Error deleting role {role_name}. Exception: {err}")
+    
+                    # Delete each custom policy in policy_package["Docs"]
+                    for policy_doc in policy_package["Docs"]:
+                        try:
+                            delete_iam_policy(
+                                session=sts_session,
+                                policy_arn=f"arn:aws:iam::{account['Id']}:policy/{policy_doc['Statement'][0]['Sid']}"
+                            )
+                        except Exception as err:
+                            logger.info(
+                                f"Deleting Policy {policy_doc} in {account['Id']} failed. Exception: {err}"
+                            )
+    
+                    rs = cfn_event['PhysicalResourceId']
+                    response_data['lower'] = rs.lower() if rs else ''
+                    send(cfn_event, context, SUCCESS, response_data)
+    
+                # Cancel further reinvocations on success
+                stop_reinvocation = True
+    
+            else:
+                # Unknown RequestType
+                send(cfn_event, context, FAILED, response_data, response_data.get('lower', None))
+                stop_reinvocation = True
+    except Exception as err:
+        logger.Error(f"Error occurred: {err}")
+        t.join()
+        raise err
+"""
     except Exception as err:
         logger.Error(f"Error occurred: {err}")
         t.join()

@@ -118,7 +118,7 @@ Resources:
     Type: "AWS::Config::ConfigRule"
     Properties:
       ConfigRuleName: gc01_check_attestation_letter
-      Description: Checks S3 bucket for the attestation letter. What ever
+      Description: Checks S3 bucket for the attestation letter.
       InputParameters:
         s3ObjectPath:
           Fn::If:

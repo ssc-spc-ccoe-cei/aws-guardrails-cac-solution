@@ -580,6 +580,8 @@ def check_users(
         
         
             # New exact-match logic
+    admin_users_detected = set([user.lower() for user in admin_users_detected])
+
     priv_set = set(privileged_user_list)
     nonpriv_set = set(non_privileged_user_list)
     if admin_users_detected == priv_set and admin_users_detected.isdisjoint(nonpriv_set):
@@ -692,8 +694,8 @@ def lambda_handler(event, context):
         evaluations.append(build_evaluation(aws_account_id, "NON_COMPLIANT", event, annotation=annotation))
     else:
         # Fetch user lists from S3
-        privileged_users_list = get_lines_from_s3_file(aws_s3_client, privileged_users_file_path)
-        non_privileged_users_list = get_lines_from_s3_file(aws_s3_client, non_privileged_users_file_path)
+        privileged_users_list = [user.lower() for user in get_lines_from_s3_file(aws_s3_client, privileged_users_file_path)]
+        non_privileged_users_list = [user.lower() for user in get_lines_from_s3_file(aws_s3_client, non_privileged_users_file_path)]
 
         # Fetch SSO info
         sso_users_by_instance, sso_instance_id_by_arn = fetch_sso_users(aws_sso_admin_client, aws_identity_store_client)
