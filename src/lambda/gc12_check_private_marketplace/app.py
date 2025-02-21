@@ -30,17 +30,17 @@ logger = logging.getLogger()
 logger.setLevel(logging.INFO)
 
 
-def private_marketplace_is_configured(aws_account_id,execution_role_name,is_not_audit_account):
-    # -----------------------------------
+def private_marketplace_is_configured(mgmt_account_id,execution_role_name,is_not_audit_account):
+    """
+    Wrapper
+    """
+    import os
     import logging
-
     import boto3
     import botocore.exceptions
-
     logger = logging.getLogger()
     logger.setLevel(logging.INFO)
-
-
+    os.environ["AWS_DEFAULT_REGION"] = "us-east-1"
     # This gets the client after assuming the Config service role
     # either in the same AWS account or cross-account.
     def get_clientt(
@@ -49,44 +49,34 @@ def private_marketplace_is_configured(aws_account_id,execution_role_name,is_not_
         role_name: str | None = None,
         assume_role: bool = True,
         region: str | None = None,
-        endpoint_url: str | None = None,
-
     ):
         """
         Return the service boto client. It should be used instead of directly calling the client.
         This gets the client after assuming the Config service role for the provided account.
         If no account_id or role_name is provided, the client is configured for the current credentials and account.
-
         Keyword arguments:
-
         service -- the service name used for calling the boto.client(service)
-
         account_id -- the id of the account for the assumed role
-
         role_name -- the name of the role to assume when creating the client
         """
-        if not role_name or not account_id or not assume_role:
-            return boto3.client(service,endpoint_url=endpoint_url)
+        # if not role_name or not account_id or not assume_role:
+        #     return boto3.client(service)
+        credentials = get_assume_role_credentials(f"arn:aws:iam::{account_id}:role/{role_name}")
 
-        credentials = get_assume_role_credentials(f"arn:aws:iam::{account_id}:role/{role_name}", region)
         return boto3.client(
             service,
-            endpoint_url=endpoint_url,
+            region_name="us-east-1",
             aws_access_key_id=credentials["AccessKeyId"],
             aws_secret_access_key=credentials["SecretAccessKey"],
             aws_session_token=credentials["SessionToken"],
         )
-
-
-    def get_assume_role_credentials(role_arn: str, region: str = None) -> dict:
+    def get_assume_role_credentials(role_arn: str) -> dict:
         """
         Returns the credentials required to assume the passed role.
-
         Keyword arguments:
-
         role_arn -- the arn of the role to assume
         """
-        sts_client = boto3.client("sts", region_name=region) if region else boto3.client("sts")
+        sts_client = boto3.client("sts", region_name="us-east-1")
         try:
             assume_role_response = sts_client.assume_role(RoleArn=role_arn, RoleSessionName="configLambdaExecution")
             return assume_role_response["Credentials"]
@@ -99,8 +89,6 @@ def private_marketplace_is_configured(aws_account_id,execution_role_name,is_not_
                 ex.response["Error"]["Code"] = "InternalError"
             logger.error("ERROR assuming role. %s", ex.response["Error"])
             raise ex
-
-
     def is_throttling_exception(e):
         """Returns True if the exception code is one of the throttling exception codes we have"""
         b_is_throttling = False
@@ -120,29 +108,41 @@ def private_marketplace_is_configured(aws_account_id,execution_role_name,is_not_
             "EPIPE",
             "ETIMEDOUT",
         ]
-
         for throttling_code in throttling_exception_codes:
             if throttling_code in e.response["Error"]["Code"]:
                 b_is_throttling = True
                 break
-
         return b_is_throttling
-
-        # -----------------------------------
+    """
+    Wrapper
+    """
     marketplace_catalog_client = get_clientt(
-            "marketplace-catalog", aws_account_id, execution_role_name, is_not_audit_account, region='us-east-1', endpoint_url="https://catalog.marketplace.us-east-1.amazonaws.com/ListEntities"
+            "marketplace-catalog",
+            mgmt_account_id,
+            execution_role_name,
+            is_not_audit_account,
+            region="us-east-1"
         )
-    
+    logger.info(marketplace_catalog_client.meta.region_name)
+    sts_client = get_client(
+        "sts",
+        mgmt_account_id,
+        execution_role_name,
+        is_not_audit_account,
+        region="us-east-1"
+    )
+    identity = sts_client.get_caller_identity()
+    logger.info(identity)
     try:
         response = marketplace_catalog_client.list_entities(
             Catalog="AWSMarketplace",
-            EntityType="Experience",
-            FilterList=[{"Name": "Scope", "ValueList": ["SharedWithMe"]}],
+            EntityType="Experience"
         )
     except botocore.exceptions.ClientError as err:
         raise ValueError(f"Error in AWS Marketplace Catalog: {err}") from err
     if not response:
         raise ValueError("No response from AWS Marketplace Catalog")
+    logger.info("Entities Returned: %s", response)
     entity_summary_list = response.get("EntitySummaryList") or []
     for entity in entity_summary_list:
         if entity.get("EntityType") == "Experience":
@@ -153,7 +153,12 @@ def private_marketplace_is_configured(aws_account_id,execution_role_name,is_not_
 def policy_restricts_marketplace_access(iam_client, policy_content: str, interval_between_calls: str = "0.1") -> bool:
     args = {
         "PolicyInputList": [policy_content],
-        "ActionNames": ["aws-marketplace:As*", "aws-marketplace:CreateP*", "aws-marketplace:DescribePri*", "aws-marketplace:Di*", "aws-marketplace:ListP*", "aws-marketplace:Start*"],
+        "ActionNames": ["aws-marketplace:As*",
+                        "aws-marketplace:CreateP*",
+                        "aws-marketplace:DescribePri*",
+                        "aws-marketplace:Di*",
+                        "aws-marketplace:ListP*",
+                        "aws-marketplace:Start*"],
     }
 
     resources: list[dict] = []
@@ -294,7 +299,10 @@ def lambda_handler(event, context):
         # aws_marketplace_catalog_client = get_client(
         #     "marketplace-catalog", aws_account_id, execution_role_name, is_not_audit_account, region='us-east-1'
         # )
-        if not private_marketplace_is_configured(aws_account_id,execution_role_name,is_not_audit_account):
+
+        mgmt_account_id = get_organizations_mgmt_account_id(aws_orgs_client)
+
+        if not private_marketplace_is_configured(mgmt_account_id,execution_role_name,is_not_audit_account):
         # if not private_marketplace_is_configured(aws_marketplace_catalog_client):
 
             compliance_type = "NON_COMPLIANT"
