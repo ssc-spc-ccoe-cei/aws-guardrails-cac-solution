@@ -124,8 +124,15 @@ def policy_doc_gives_admin_access(policy_doc: str) -> bool:
             statement_component.get("Effect", "") == "Allow"
             and statement_component.get("Action", "") == "*"
             and statement_component.get("Resource", "") == "*"
+            and "Principal" in statement_component
         ):
-            return True
+            principal = statement_component["Principal"]
+            if isinstance(principal, dict) and "AWS" in principal:
+                aws_principal = principal["AWS"]
+                if isinstance(aws_principal, str) and aws_principal == f"arn:aws:iam::{mane_id}:root":
+                    return True
+                elif isinstance(aws_principal, list) and f"arn:aws:iam::{mane_id}:root" in aws_principal:
+                    return True
     return False
 
 
@@ -409,10 +416,17 @@ def get_admin_permission_sets_for_instance_by_account(iam_client, sso_admin_clie
     """
     permission_sets = {}
     try:
+        target_accounts = mane_id
         accounts = organizations_list_all_accounts(organizations_client)
+        if target_accounts:
+            accounts = [a for a in accounts if a.get("Id") in target_accounts]
+            
+            
         for a in accounts:
             account_id = a.get("Id")
             permission_sets[account_id] = []
+            
+            
             next_token = None
             while True:
                 response = (
@@ -588,9 +602,17 @@ def check_users(
         evaluations.append(build_evaluation(aws_account_id, "COMPLIANT", event))
     else:
         reasons = []
-        if admin_users_detected != priv_set:
+        if admin_users_detected > priv_set:
             reasons.append(
-                f"Admin users found {admin_users_detected} do not exactly match the provided privileged list {priv_set}"
+                # f"Admin users found {admin_users_detected} do not exactly match the provided privileged list {priv_set}"
+                f"Admin users {admin_users_detected - priv_set} do not exists in the provided privileged list"
+
+            )
+        if admin_users_detected < priv_set:
+            reasons.append(
+                # f"Admin users found {admin_users_detected} do not exactly match the provided privileged list {priv_set}"
+                f"Users {priv_set - admin_users_detected} in the provided privileged list do not have admin access"
+
             )
         overlap = admin_users_detected.intersection(nonpriv_set)
         if overlap:
@@ -635,7 +657,10 @@ def lambda_handler(event, context):
     is_not_audit_account = aws_account_id != audit_account_id
 
     aws_organizations_client = get_client("organizations", aws_account_id, execution_role_name, is_not_audit_account)
-
+    
+    
+    global mane_id
+    mane_id = get_organizations_mgmt_account_id(aws_organizations_client)
     # Ensure we are in the Management Account
     if aws_account_id != get_organizations_mgmt_account_id(aws_organizations_client):
         logger.info("Not checked in account %s as this is not the Management Account", aws_account_id)
