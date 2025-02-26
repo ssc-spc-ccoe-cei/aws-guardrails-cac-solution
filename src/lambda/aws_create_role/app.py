@@ -427,7 +427,7 @@ def lambda_handler(event, context):
 
             # If we get this far, cancel further reinvocations
             stop_reinvocation = True
-"""
+            """
             # Handle Delete
             elif request_type == 'Delete':
                 logger.info(f"CFN {request_type} request received")
@@ -478,7 +478,7 @@ def lambda_handler(event, context):
         logger.Error(f"Error occurred: {err}")
         t.join()
         raise err
-"""
+    """
     except Exception as err:
         logger.Error(f"Error occurred: {err}")
         t.join()
