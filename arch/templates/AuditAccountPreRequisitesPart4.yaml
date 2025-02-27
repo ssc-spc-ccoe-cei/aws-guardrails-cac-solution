@@ -269,24 +269,6 @@ Resources:
         Variables:
           DEFAULT_CLOUD_PROFILE: !Ref DefaultCloudProfile
 
-  GC03CheckIAMCloudWatchAlarmsLambda:
-    Condition: IsAuditAccount
-    Type: AWS::Lambda::Function
-    Properties:
-      FunctionName: !Sub "${OrganizationName}gc03_check_iam_cloudwatch_alarms"
-      Code: "../../src/lambda/gc03_check_iam_cloudwatch_alarms/build/GC03CheckIAMCloudWatchAlarmsLambda/"
-      Handler: app.lambda_handler
-      Role: !Sub "arn:aws:iam::${AuditAccountID}:role/${RolePrefix}default_assessment_role"
-      Runtime: !Ref PythonRuntime
-      Timeout: 180
-      Layers:
-        - !Ref CloudGuardrailsCommonLayer
-      LoggingConfig:
-        LogGroup: !Sub "${OrganizationName}gc_guardrails"
-        LogFormat: "JSON"
-      Environment:
-        Variables:
-          DEFAULT_CLOUD_PROFILE: !Ref DefaultCloudProfile
 
   GC03CheckTrustedDevicesAdminAccessLambda:
     Condition: IsAuditAccount

@@ -691,38 +691,6 @@ Resources:
         SourceDetails:
           - EventSource: "aws.config"
             MessageType: "ScheduledNotification"
-  GC03CheckIAMCloudWatchAlarmsConfigRule:
-    Type: "AWS::Config::ConfigRule"
-    Properties:
-      ConfigRuleName: gc03_check_iam_cloudwatch_alarms
-      Description: Confirms if the ASEA CloudWatch Alarms for Unauthorized IPs and Sign-in without MFA are enabled
-      InputParameters:
-        ExecutionRoleName:
-          Fn::If:
-            - GCLambdaExecutionRoleName
-            - Ref: GCLambdaExecutionRoleName
-            - Ref: AWS::NoValue
-        AuditAccountID:
-          Fn::If:
-            - auditAccountID
-            - Ref: AuditAccountID
-            - Ref: AWS::NoValue
-        AlarmList: !Ref GC03AlarmList
-      Scope:
-        ComplianceResourceTypes:
-          - AWS::Account
-      MaximumExecutionFrequency: TwentyFour_Hours
-      Source:
-        Owner: CUSTOM_LAMBDA
-        SourceIdentifier:
-          Fn::Join:
-            - ""
-            - - "arn:aws:lambda:ca-central-1:"
-              - Ref: AuditAccountID
-              - !Sub ":function:${OrganizationName}gc03_check_iam_cloudwatch_alarms"
-        SourceDetails:
-          - EventSource: "aws.config"
-            MessageType: "ScheduledNotification"
   GC03CheckTrustedDevicesAdminAccessConfigRule:
     Type: "AWS::Config::ConfigRule"
     Properties:
