@@ -290,27 +290,6 @@ frameworks_data = [
                         ],
                         "tags": {},
                     },
-                    {
-                        "type": "Custom",
-                        "name": "gc02_check_privileged_roles_review",
-                        "description": "Verifies that a review of role assignment for root or global administrator accounts is performed at least every 12 months.Source: https://github.com/canada-ca/cloud-guardrails/blob/master/EN/02_Manage-Access.md",
-                        "testingInformation": "",
-                        "actionPlanTitle": "Provide an Access Review Management document that meets GC requirements",
-                        "actionPlanInstructions": "Upload the file to an S3 bucket and provide the path to the AWS Config control.",
-                        "controlSources": "AWS Config",
-                        "controlMappingSources": [
-                            {
-                                "sourceName": "IAMPrivilegedRolesReview-check",
-                                "sourceSetUpOption": "System_Controls_Mapping",
-                                "sourceType": "AWS_Config",
-                                "sourceKeyword": {
-                                    "keywordInputType": "SELECT_FROM_LIST",
-                                    "keywordValue": "Custom_gc02_check_privileged_roles_review-conformance-pack",
-                                },
-                            }
-                        ],
-                        "tags": {},
-                    },
                 ],
             },
             {
