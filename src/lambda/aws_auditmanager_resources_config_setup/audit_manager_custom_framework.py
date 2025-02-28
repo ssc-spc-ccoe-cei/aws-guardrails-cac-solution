@@ -834,27 +834,6 @@ frameworks_data = [
                         ],
                         "tags": {},
                     },
-                    {
-                        "type": "Custom",
-                        "name": "gc11_check_trail_logging",
-                        "description": "Confirms that AWS CloudTrail trails have been created and are actively logging.Source: https://github.com/canada-ca/cloud-guardrails/blob/master/EN/11_Logging-and-Monitoring.md",
-                        "testingInformation": "",
-                        "actionPlanTitle": "Ensure AWS CloudTrail has been properly configured",
-                        "actionPlanInstructions": "Review the AWS CloudTrail trails configuration and ensure these are logging.",
-                        "controlSources": "AWS Config",
-                        "controlMappingSources": [
-                            {
-                                "sourceName": "AWS Account - CloudTrail Status",
-                                "sourceSetUpOption": "System_Controls_Mapping",
-                                "sourceType": "AWS_Config",
-                                "sourceKeyword": {
-                                    "keywordInputType": "SELECT_FROM_LIST",
-                                    "keywordValue": "Custom_gc11_check_trail_logging-conformance-pack",
-                                },
-                            }
-                        ],
-                        "tags": {},
-                    },
                 ],
             },
             {

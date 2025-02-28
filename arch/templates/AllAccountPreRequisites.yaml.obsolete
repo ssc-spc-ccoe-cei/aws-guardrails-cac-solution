@@ -347,11 +347,6 @@ Resources:
               - "sts:AssumeRole"
           - Effect: "Allow"
             Principal:
-              AWS: !Sub "arn:aws:iam::${AuditAccountID}:assumed-role/${RolePrefix}default_assessment_role/${OrganizationName}gc11_check_trail_logging"
-            Action:
-              - "sts:AssumeRole"
-          - Effect: "Allow"
-            Principal:
               AWS: !Sub "arn:aws:iam::${AuditAccountID}:assumed-role/${RolePrefix}default_assessment_role/${OrganizationName}gc12_check_marketplace"
             Action:
               - "sts:AssumeRole"
