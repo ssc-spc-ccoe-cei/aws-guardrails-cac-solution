@@ -41,26 +41,6 @@ Resources:
   # Part 2 - Continued
   #############################################
 
-  ## GC07
-  GC07CheckSecureNetworkTransmissionPolicyLambda:
-    Condition: IsAuditAccount
-    Type: AWS::Lambda::Function
-    Properties:
-      FunctionName: !Sub "${OrganizationName}gc07_check_secure_network_transmission_policy"
-      Code: "../../src/lambda/gc07_check_secure_network_transmission_policy/build/GC07CheckSecureNetworkTransmissionPolicyLambda/"
-      Handler: app.lambda_handler
-      Role: !Sub "arn:aws:iam::${AuditAccountID}:role/${RolePrefix}default_assessment_role"
-      Runtime: !Ref PythonRuntime
-      Timeout: 90
-      Layers:
-        - !Ref CloudGuardrailsCommonLayer
-      LoggingConfig:
-        LogGroup: !Sub "${OrganizationName}gc_guardrails"
-        LogFormat: "JSON"
-      Environment:
-        Variables:
-          DEFAULT_CLOUD_PROFILE: !Ref DefaultCloudProfile
-
   ## GC08
   GC08CheckTargetNetworkArchitectureLambda:
     Condition: IsAuditAccount

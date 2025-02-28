@@ -932,42 +932,6 @@ Resources:
           - EventSource: "aws.config"
             MessageType: "ScheduledNotification"
   # GC07
-  GC07CheckSecureNetworkTransmissionPolicyConfigRule:
-    Type: "AWS::Config::ConfigRule"
-    Properties:
-      ConfigRuleName: gc07_check_secure_network_transmission_policy
-      Description: Checks S3 bucket for the secure network transmission policy
-      InputParameters:
-        s3ObjectPath:
-          Fn::If:
-            - s3SecureNetworkTransmissionPolicyPath
-            - Ref: S3SecureNetworkTransmissionPolicyPath
-            - Ref: AWS::NoValue
-        ExecutionRoleName:
-          Fn::If:
-            - GCLambdaExecutionRoleName
-            - Ref: GCLambdaExecutionRoleName
-            - Ref: AWS::NoValue
-        AuditAccountID:
-          Fn::If:
-            - auditAccountID
-            - Ref: AuditAccountID
-            - Ref: AWS::NoValue
-      Scope:
-        ComplianceResourceTypes:
-          - AWS::Account
-      MaximumExecutionFrequency: TwentyFour_Hours
-      Source:
-        Owner: CUSTOM_LAMBDA
-        SourceIdentifier:
-          Fn::Join:
-            - ""
-            - - "arn:aws:lambda:ca-central-1:"
-              - Ref: AuditAccountID
-              - !Sub ":function:${OrganizationName}gc07_check_secure_network_transmission_policy"
-        SourceDetails:
-          - EventSource: "aws.config"
-            MessageType: "ScheduledNotification"
   GC07CheckCertificateAuthoritiesConfigRule:
     Type: "AWS::Config::ConfigRule"
     Properties:

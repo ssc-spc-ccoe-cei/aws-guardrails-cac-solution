@@ -545,7 +545,7 @@ frameworks_data = [
                             }
                         ],
                         "tags": {},
-                    },
+                    },,
                 ],
             },
             {
