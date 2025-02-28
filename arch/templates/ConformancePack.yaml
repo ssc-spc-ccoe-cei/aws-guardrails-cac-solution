@@ -114,43 +114,6 @@ Parameters:
 
 Resources:
   # GC01
-  GC01CheckAttestationLetterConfigRule:
-    Type: "AWS::Config::ConfigRule"
-    Properties:
-      ConfigRuleName: gc01_check_attestation_letter
-      Description: Checks S3 bucket for the attestation letter.
-      InputParameters:
-        s3ObjectPath:
-          Fn::If:
-            - s3AttestationLetterPath
-            - Ref: S3AttestationLetterPath
-            - Ref: AWS::NoValue
-        ExecutionRoleName:
-          Fn::If:
-            - GCLambdaExecutionRoleName
-            - Ref: GCLambdaExecutionRoleName
-            - Ref: AWS::NoValue
-        AuditAccountID:
-          Fn::If:
-            - auditAccountID
-            - Ref: AuditAccountID
-            - Ref: AWS::NoValue
-      Scope:
-        ComplianceResourceTypes:
-          - AWS::Account
-      MaximumExecutionFrequency: TwentyFour_Hours
-      Source:
-        Owner: CUSTOM_LAMBDA
-        SourceIdentifier:
-          Fn::Join:
-            - ""
-            - - "arn:aws:lambda:ca-central-1:"
-              - Ref: AuditAccountID
-              - !Sub ":function:${OrganizationName}gc01_check_attestation_letter"
-        SourceDetails:
-          - EventSource: "aws.config"
-            MessageType: "ScheduledNotification"
-
   GC01CheckRootAccountMFAEnabled:
     Type: "AWS::Config::ConfigRule"
     Properties:

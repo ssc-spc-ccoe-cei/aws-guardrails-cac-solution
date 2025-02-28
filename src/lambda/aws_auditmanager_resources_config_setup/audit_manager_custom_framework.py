@@ -35,27 +35,6 @@ frameworks_data = [
                     },
                     {
                         "type": "Custom",
-                        "name": "gc01_check_attestation_letter",
-                        "description": "Confirm that an attestation letter of the emergency break glass procedure has been provided by the Departmental CIO and CSO. Source: https://github.com/canada-ca/cloud-guardrails/blob/master/EN/01_Protect-user-accounts-and-identities.md",
-                        "testingInformation": "",
-                        "actionPlanTitle": "Provide an Attestation Letter of the Emergency Break Glass Procedure",
-                        "actionPlanInstructions": "Ensure an emergency break glass procedure has been developed and attested by the Departmental CIO and CSO.",
-                        "controlSources": "AWS Config",
-                        "controlMappingSources": [
-                            {
-                                "sourceName": "S3-check",
-                                "sourceSetUpOption": "System_Controls_Mapping",
-                                "sourceType": "AWS_Config",
-                                "sourceKeyword": {
-                                    "keywordInputType": "SELECT_FROM_LIST",
-                                    "keywordValue": "Custom_gc01_check_attestation_letter-conformance-pack",
-                                },
-                            }
-                        ],
-                        "tags": {},
-                    },
-                    {
-                        "type": "Custom",
                         "name": "gc01_check_dedicated_admin_account",
                         "description": "Provides evidence that there are dedicated user accounts for administration.Source: https://github.com/canada-ca/cloud-guardrails/blob/master/EN/01_Protect-user-accounts-and-identities.md",
                         "testingInformation": "Checks that there is at least 1 privileged IAM or SSO identity store user with administrator access to an account and that there are no non-privileged IAM or SSO identity store users with administrator acess.",
