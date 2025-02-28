@@ -16,43 +16,69 @@ import botocore.exceptions
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
 
+def get_role_arn(iam_client, cb_role_pattern: str) -> str | None:
+    """
+    aws iam list-roles --query "Roles[?contains(RoleName, 'CloudBrokering')].[RoleName, Arn]"
+    """
+    try:
+        paginator = iam_client.get_paginator("list_roles")
+        matched_roles = []
 
-def check_enterprise_monitoring_accounts(aws_iam_client, trusted_principal, role_name):
-    """
-    This function checks if the Enterprise Monitoring Account is configured
-    """
+        for page in paginator.paginate():
+            for role in page["Roles"]:
+                if cb_role_pattern in role["RoleName"]:
+                    matched_roles.append(role)
+
+        if not matched_roles:
+            return None
+
+        # Return the ARN of the first matched role
+        return matched_roles[0]["Arn"]
+    except botocore.exceptions.ClientError as ex:
+        ex.response["Error"]["Message"] = "Error listing or matching roles."
+        ex.response["Error"]["Code"] = "InternalError"
+        raise ex
+
+
+
+def check_enterprise_monitoring_accounts(aws_iam_client, trusted_principal, role_pattern): 
     b_role_found = False
     b_trust_policy_found = False
     try:
-        response = aws_iam_client.get_role(RoleName=role_name)
-        if response and response.get("Role", {}).get("RoleName") == role_name:
-            b_role_found = True
-            try:
-                policy_document = response.get("Role", {}).get("AssumeRolePolicyDocument")
-            except ValueError:
-                # invalid or empty policy
-                policy_document = {}
-            if policy_document:
-                for statement in policy_document.get("Statement"):
-                    # check Principal
-                    principal = statement.get("Principal", {})
-                    if principal:
-                        aws = principal.get("AWS", "")
-                        if (
-                            aws
-                            and aws == trusted_principal
-                            and (statement.get("Effect") == "Allow")
-                            and (statement.get("Action") == "sts:AssumeRole")
-                        ):
-                            b_trust_policy_found = True
-                            logger.info("Trust policy validated for role %s", role_name)
-                            break
-    except botocore.exceptions.ClientError as err:
-        if "NoSuchEntity" in err.response["Error"]["Code"]:
-            b_role_found = False
-        else:
-            raise err
-    return {"RoleFound": b_role_found, "TrustPolicyFound": b_trust_policy_found}
+        matched_arn = get_role_arn(aws_iam_client, role_pattern)
+        if not matched_arn:
+            # No matching role found
+            return {"RoleFound": False, "TrustPolicyFound": False}
+
+        # Extract the actual role name from the ARN
+        actual_role_name = matched_arn.split('/')[-1]
+        b_role_found = True
+
+        # Retrieve the role and its trust policy
+        role_response = aws_iam_client.get_role(RoleName=actual_role_name)
+        policy_document = role_response["Role"].get("AssumeRolePolicyDocument", {})
+
+        if isinstance(policy_document, str):
+            policy_document = json.loads(policy_document)
+
+        for statement in policy_document.get("Statement", []):
+            principal = statement.get("Principal", {})
+            if principal:
+                aws = principal.get("AWS", "")
+                if (
+                    aws == trusted_principal
+                    and statement.get("Effect") == "Allow"
+                    and "sts:AssumeRole" in statement.get("Action", [])
+                ):
+                    b_trust_policy_found = True
+                    break
+
+    except Exception as e:
+        logger.error("Error checking enterprise monitoring accounts: %s", e)
+        return {"RoleFound": False, "TrustPolicyFound": False}
+
+    return {"RoleFound": b_role_found, "TrustPolicyFound": b_trust_policy_found} 
+
 
 
 def lambda_handler(event, context):
@@ -73,22 +99,22 @@ def lambda_handler(event, context):
         return
 
     rule_parameters = check_required_parameters(
-        json.loads(event.get("ruleParameters", "{}")), ["ExecutionRoleName", "IAM_Role_Name", "IAM_Trusted_Principal"]
+        json.loads(event.get("ruleParameters", "{}")),
+        ["ExecutionRoleName", "IAM_Role_Name", "IAM_Trusted_Principal"]
     )
     execution_role_name = rule_parameters.get("ExecutionRoleName")
-    audit_account_id = rule_parameters.get("AuditAccountID", "")
     aws_account_id = event["accountId"]
-    is_not_audit_account = aws_account_id != audit_account_id
-
     evaluations = []
-
     aws_organizations_client = get_client("organizations", aws_account_id, execution_role_name)
-
-    if aws_account_id != get_organizations_mgmt_account_id(aws_organizations_client):
+    mgmt_account_id = get_organizations_mgmt_account_id(aws_organizations_client)
+    # lets skip if not mngt acc
+    if aws_account_id != mgmt_account_id:
         logger.info(
-            "Enterprise Monitoring Accounts not checked in account %s as this is not the Management Account",
-            aws_account_id,
+            "Account %s is not the management account (%s). skipping checks.",
+            aws_account_id, mgmt_account_id
         )
+        return
+
 
     aws_config_client = get_client("config", aws_account_id, execution_role_name)
     aws_iam_client = get_client("iam", aws_account_id, execution_role_name)

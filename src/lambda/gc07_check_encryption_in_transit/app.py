@@ -320,6 +320,114 @@ def assess_elb_v2_ssl_enforcement(elb_v2_client, event: dict):
     # logger.info("ELBv2 - reporting %s evaluations.", len(local_evaluations))
     return local_evaluations
 
+def assess_elb_v1_ssl_enforcement(elb_client, event: dict):
+    """
+    Evaluate whether SSL is enforced on Classic Load Balancers (ELB v1).
+    """
+    local_evaluations = []
+    load_balancers = []
+
+    try:
+        response = elb_client.describe_load_balancers()
+        b_more_data = True
+        i_retries = 0
+        while b_more_data and i_retries < MAXIMUM_API_RETRIES:
+            if response:
+                next_marker = response.get("NextMarker", "")
+                for load_balancer in response.get("LoadBalancerDescriptions", []):
+                    load_balancers.append(
+                        {
+                            "LoadBalancerName": load_balancer.get("LoadBalancerName"),
+                            "DNSName": load_balancer.get("DNSName"),
+                            "ListenerDescriptions": load_balancer.get("ListenerDescriptions", []),
+                        }
+                    )
+                if next_marker:
+                    time.sleep(INTERVAL_BETWEEN_API_CALLS)
+                    try:
+                        response = elb_client.describe_load_balancers(Marker=next_marker)
+                    except botocore.exceptions.ClientError as ex:
+                        i_retries += 1
+                        if is_throttling_exception(ex):
+                            time.sleep(THROTTLE_BACKOFF)
+                        else:
+                            raise ex
+                else:
+                    b_more_data = False
+            else:
+                logger.error("ELBv1 - Empty response while trying to describe_load_balancers")
+                b_more_data = False
+    except botocore.exceptions.ClientError as ex:
+        raise ex
+
+    #logger.info(f"Found {len(load_balancers)} Classic Load Balancers: {[lb['LoadBalancerName'] for lb in load_balancers]}")
+
+    for load_balancer in load_balancers:
+        try:
+            for listener in load_balancer.get("ListenerDescriptions", []):
+                listener_compliance = ""
+                listener_annotation = ""
+                listener_port = listener.get("Listener", {}).get("LoadBalancerPort", "")
+                listener_protocol = listener.get("Listener", {}).get("Protocol", "")
+                
+                if listener_protocol.lower() not in ["https", "ssl"]:
+                    listener_compliance = "NON_COMPLIANT"
+                    listener_annotation = f"Port {listener_port} uses non TLS 1.2 compliant listener protocol {listener_protocol}"
+                else:
+                    policy_names = listener.get("PolicyNames", [])
+                        
+                    if not policy_names:  # No policy found for the listener
+                        listener_compliance = "NON_COMPLIANT"
+                        listener_annotation = f"Port {listener_port} has no TLS 1.2 compliant policy attached for {listener_protocol}"
+                    else:
+
+                        for policy_name in policy_names:
+
+                            try:
+                                policy_response = elb_client.describe_load_balancer_policies(LoadBalancerName=load_balancer.get('LoadBalancerName'), PolicyNames=[policy_name])
+                                listener_security_policy = next(
+                                    (attr["AttributeValue"] for attr in policy_response.get("PolicyDescriptions", [{}])[0].get("PolicyAttributeDescriptions", []) 
+                                    if attr.get("AttributeName") == "Reference-Security-Policy"), 
+                                    None
+                                )
+                                
+                                if listener_security_policy:  # Only log if a value is found
+                                    if listener_security_policy == "ELBSecurityPolicy-TLS-1-2-2017-01":
+                                        listener_compliance = "COMPLIANT"
+                                        listener_annotation = (
+                                            f"Port {listener_port} uses TLS 1.2 compliant {listener_protocol} security policy {listener_security_policy}"
+                                        )
+                                    else:
+                                        listener_compliance = "NON_COMPLIANT"
+                                        listener_annotation = (
+                                            f"Port {listener_port} uses non-TLS 1.2 compliant {listener_protocol} security policy {listener_security_policy}"
+                                        )
+                                else:
+                                    # If Reference-Security-Policy is not found, mark as NON_COMPLIANT
+                                    listener_compliance = "NON_COMPLIANT"
+                                    listener_annotation = (
+                                        f"Port {listener_port} is missing the Reference-Security-Policy: ELBSecurityPolicy-TLS-1-2-2017-01"
+                                )
+                            except botocore.exceptions.ClientError as ex:
+                                logger.error(f"Error retrieving policy details for {policy_name}: {str(ex)}")
+                
+                local_evaluations.append(
+                    build_evaluation(
+                        load_balancer.get("DNSName", ""),
+                        listener_compliance,
+                        event,
+                        "AWS::ElasticLoadBalancing::LoadBalancer",
+                        annotation=listener_annotation,
+                    )
+                )
+        except botocore.exceptions.ClientError as ex:
+            i_retries += 1
+            if is_throttling_exception(ex):
+                time.sleep(THROTTLE_BACKOFF)
+            else:
+                raise ex
+
+    return local_evaluations
 
 def assess_rest_api_stages_ssl_enforcement(api_gw_client, event: dict):
     """
@@ -624,6 +732,7 @@ def lambda_handler(event, context):
     execution_role_name = rule_parameters.get("ExecutionRoleName")
     audit_account_id = rule_parameters.get("AuditAccountID", "")
     aws_account_id = event["accountId"]
+    logger.info(f"AWS Account ID: {aws_account_id}, Audit Account ID: {audit_account_id}")
     is_not_audit_account = aws_account_id != audit_account_id
 
     evaluations = []
@@ -641,6 +750,7 @@ def lambda_handler(event, context):
     aws_config_client = get_client("config", aws_account_id, execution_role_name, is_not_audit_account)
     aws_s3_client = get_client("s3", aws_account_id, execution_role_name, is_not_audit_account)
     aws_redshift_client = get_client("redshift", aws_account_id, execution_role_name, is_not_audit_account)
+    aws_elb_v1_client = get_client("elb", aws_account_id, execution_role_name, is_not_audit_account)
     aws_elb_v2_client = get_client("elbv2", aws_account_id, execution_role_name, is_not_audit_account)
     aws_api_gw_client = get_client("apigateway", aws_account_id, execution_role_name, is_not_audit_account)
     aws_open_search_client = get_client("opensearch", aws_account_id, execution_role_name, is_not_audit_account)
@@ -678,6 +788,7 @@ def lambda_handler(event, context):
     evaluations.extend(assess_s3_buckets_ssl_enforcement(aws_s3_client, event))
     evaluations.extend(assess_redshift_clusters_ssl_enforcement(aws_redshift_client, event))
     evaluations.extend(assess_elb_v2_ssl_enforcement(aws_elb_v2_client, event))
+    evaluations.extend(assess_elb_v1_ssl_enforcement(aws_elb_v1_client, event))
     evaluations.extend(assess_rest_api_stages_ssl_enforcement(aws_api_gw_client, event))
     evaluations.extend(assess_open_search_node_to_node_ssl_enforcement(aws_open_search_client, event))
     evaluations.extend(assess_cloud_front_ssl_enforcement(aws_cloud_front_client, event))

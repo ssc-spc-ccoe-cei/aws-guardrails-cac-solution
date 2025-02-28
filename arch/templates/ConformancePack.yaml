@@ -7,7 +7,7 @@ Parameters:
   # Common
   UpdateTriggerVersion:
     Type: String
-    Default: "v1"
+    Default: "v1.1"
   GCLambdaExecutionRoleName:
     Type: String
   GCLambdaExecutionRoleName2:
@@ -111,13 +111,14 @@ Parameters:
     Type: String
   S3EmergencyAccountAlertsRuleNamesPath:
     Type: String
+
 Resources:
   # GC01
   GC01CheckAttestationLetterConfigRule:
     Type: "AWS::Config::ConfigRule"
     Properties:
       ConfigRuleName: gc01_check_attestation_letter
-      Description: Checks S3 bucket for the attestation letter
+      Description: Checks S3 bucket for the attestation letter.
       InputParameters:
         s3ObjectPath:
           Fn::If:
@@ -687,38 +688,6 @@ Resources:
             - - "arn:aws:lambda:ca-central-1:"
               - Ref: AuditAccountID
               - !Sub ":function:${OrganizationName}gc03_check_endpoint_access_config"
-        SourceDetails:
-          - EventSource: "aws.config"
-            MessageType: "ScheduledNotification"
-  GC03CheckIAMCloudWatchAlarmsConfigRule:
-    Type: "AWS::Config::ConfigRule"
-    Properties:
-      ConfigRuleName: gc03_check_iam_cloudwatch_alarms
-      Description: Confirms if the ASEA CloudWatch Alarms for Unauthorized IPs and Sign-in without MFA are enabled
-      InputParameters:
-        ExecutionRoleName:
-          Fn::If:
-            - GCLambdaExecutionRoleName
-            - Ref: GCLambdaExecutionRoleName
-            - Ref: AWS::NoValue
-        AuditAccountID:
-          Fn::If:
-            - auditAccountID
-            - Ref: AuditAccountID
-            - Ref: AWS::NoValue
-        AlarmList: !Ref GC03AlarmList
-      Scope:
-        ComplianceResourceTypes:
-          - AWS::Account
-      MaximumExecutionFrequency: TwentyFour_Hours
-      Source:
-        Owner: CUSTOM_LAMBDA
-        SourceIdentifier:
-          Fn::Join:
-            - ""
-            - - "arn:aws:lambda:ca-central-1:"
-              - Ref: AuditAccountID
-              - !Sub ":function:${OrganizationName}gc03_check_iam_cloudwatch_alarms"
         SourceDetails:
           - EventSource: "aws.config"
             MessageType: "ScheduledNotification"

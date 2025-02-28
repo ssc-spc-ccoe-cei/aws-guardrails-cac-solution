@@ -339,27 +339,6 @@ frameworks_data = [
                     },
                     {
                         "type": "Custom",
-                        "name": "gc03_check_iam_cloudwatch_alarms",
-                        "description": "Confirm ASEA CloudWatch Alarms are configured for access from Unauthorized IP addresses and sign-in without MFA..Source: https://github.com/canada-ca/cloud-guardrails/blob/master/EN/03_Secure-Endpoints.md",
-                        "testingInformation": "",
-                        "actionPlanTitle": "Review CloudWatch Alarms",
-                        "actionPlanInstructions": "Go to AWS CloudWatch Alarms, and ensure alarms have been configured as required.",
-                        "controlSources": "AWS Config",
-                        "controlMappingSources": [
-                            {
-                                "sourceName": "CW-check",
-                                "sourceSetUpOption": "System_Controls_Mapping",
-                                "sourceType": "AWS_Config",
-                                "sourceKeyword": {
-                                    "keywordInputType": "SELECT_FROM_LIST",
-                                    "keywordValue": "Custom_gc03_check_iam_cloudwatch_alarms-conformance-pack",
-                                },
-                            }
-                        ],
-                        "tags": {},
-                    },
-                    {
-                        "type": "Custom",
                         "name": "gc03_check_trusted_devices_admin_access",
                         "description": "Confirm ASEA CloudWatch Alarms are configured for access from Unauthorized IP addresses and sign-in without MFA..Source: https://github.com/canada-ca/cloud-guardrails/blob/master/EN/03_Secure-Endpoints.md",
                         "testingInformation": "",

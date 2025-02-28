@@ -414,6 +414,10 @@ def lambda_handler(event, context):
     annotation = ""
     management_account_id = get_organizations_mgmt_account_id(aws_organizations_client)
     admin_accounts = get_lines_from_s3_file(aws_s3_client, admin_accounts_s3_path)
+    if not admin_accounts:
+        evaluations.append(build_evaluation(aws_account_id,"NON_COMPLIANT",event,annotation="Admin accounts file is empty.",gr_requirement_type=gr_requirement_type))
+        submit_evaluations(aws_config_client, event, evaluations)
+        return
     instances = list_all_sso_admin_instances(aws_sso_admin_client)
     identity_center_enabled = len([i for i in instances if i.get("Status", "") == "ACTIVE"]) > 0
 
@@ -450,7 +454,7 @@ def lambda_handler(event, context):
                 else:
                     has_non_admin_group = True
 
-            if has_non_admin_group:
+            if not has_non_admin_group:
                 is_compliant = False
                 annotation = (
                     "Account does not have an Identity Center group that does not provide administrator access."

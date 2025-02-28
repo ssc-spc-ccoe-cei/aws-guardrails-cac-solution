@@ -302,6 +302,8 @@ Resources:
                     "organizations:ListTagsForResource",
                     "organizations:Describe*",
                     "organizations:List*",
+                    "iam:Simulate*",
+                    "iam:GetContextKeysForPrincipalPolicy",
                     "qldb:DescribeLedger",
                     "qldb:ListLedgers",
                     "rds:Describe*",
@@ -318,7 +320,20 @@ Resources:
                     "sns:List*",
                     "tag:GetResources",
                     "timestream:DescribeEndpoints",
-                    "timestream:List*"
+                    "timestream:List*",
+                    "iam:Simulate*",
+                    "timestream:DescribeEndpoints",
+                    "timestream:List*",
+                    "iam:GetContextKeysForPrincipalPolicy",
+                    "iam:SimulatePrincipalPolicy",
+                    "aws-marketplace:Li*",
+                    "aws-marketplace:D*",
+                    "s3:GetBucket*",
+                    "aws-marketplace:GetResourcePolicy",
+                    "aws-marketplace:ListTagsForResource",
+                    "identitystore:List*",
+                    "es:Describe*",
+                    "es:ListDomainNames"
                   ],
                   "Resource": [
                     "*"
@@ -393,6 +408,7 @@ Resources:
             "Statement": [{
               "Action": [
                 "acm:Describe*",
+                "iam:Simulate*",
                 "acm:Get*",
                 "acm:List*",
                 "apigateway:GET",
@@ -441,7 +457,16 @@ Resources:
                 "sns:ListTopics",
                 "tag:GetResources",
                 "timestream:DescribeEndpoints",
-                "timestream:List*"
+                "timestream:List*",
+                "iam:GetContextKeysForPrincipalPolicy",
+                "iam:SimulatePrincipalPolicy",
+                "aws-marketplace:Li*",
+                "aws-marketplace:D*",
+                "s3:GetBucket*",
+                "aws-marketplace:GetResourcePolicy",
+                "aws-marketplace:ListTagsForResource",
+                "identitystore:List*"
+
               ],
               "Resource": [
                 "*"
@@ -481,6 +506,9 @@ Resources:
               - "logs:CreateLogGroup"
               - "logs:CreateLogStream"
               - "logs:PutLogEvents"
+              - "es:Describe*"
+              - "identitystore:List*"
+
             Resource:
               - !Sub "arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/lambda/${OrganizationName}gc*"
             Effect: Allow
@@ -490,6 +518,8 @@ Resources:
               - "organizations:RegisterDelegatedAdministrator"
               - "organizations:Describe*"
               - "organizations:List*"
+              - "iam:Simulate*"
+              - "iam:GetContextKeysForPrincipalPolicy"
             Resource: "*"
             Effect: Allow
       PolicyName: gc_setup_config_lambda_execution_role_policy
@@ -565,6 +595,8 @@ Resources:
               - "organizations:RegisterDelegatedAdministrator"
               - "organizations:Describe*"
               - "organizations:List*"
+              - "iam:Simulate*"
+              - "iam:GetContextKeysForPrincipalPolicy"
             Resource: "*"
             Effect: Allow
       PolicyName: !Sub "${OrganizationName}setup_auditmanager_lambda_execution_role_policy"
@@ -1160,7 +1192,8 @@ Resources:
           - Sid: AllowES
             Action:
               - "es:ListDomainNames"
-              - "es:DescribeElasticsearchDomains"
+              - "es:DescribeDomain"
+              - "es:DescribeElasticsearchDomain"
             Resource: "*"
             Effect: Allow
           - Sid: AllowReadTags
@@ -1346,6 +1379,7 @@ Resources:
               - "s3:ListAllMyBuckets"
               - "s3:ListBucket"
               - "s3:GetBucketPublicAccessBlock"
+              - "s3:GetBucketTagging"
               - "sso:ListInstances"
               - "identitystore:ListUsers"
               - "identitystore:ListGroups"
@@ -1473,7 +1507,7 @@ Resources:
         - !Ref GCLambdaExecutionRole
         - !Ref GCLambdaExecutionRole2
 
-  # ACM Access
+  # ACM Accessdescribe_domain
   GCLambdaExecutionRoleAcmPolicy:
     Condition: DeployRoles
     Type: AWS::IAM::Policy
@@ -1513,7 +1547,7 @@ Resources:
     Properties:
       ConformancePackInputParameters:
         - ParameterName: UpdateTriggerVersion
-          ParameterValue: "v3"
+          ParameterValue: !Ref InvokeUpdate
         - ParameterName: GCLambdaExecutionRoleName
           ParameterValue: !Sub "${AccelRolePrefix}GCLambdaExecutionRole"
         - ParameterName: GCLambdaExecutionRoleName2
