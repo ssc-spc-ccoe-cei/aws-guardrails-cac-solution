@@ -1181,43 +1181,6 @@ Resources:
           - EventSource: "aws.config"
             MessageType: "ScheduledNotification"
   # GC09
-  GC09CheckNetworkSecurityArchitectureConfigRule:
-    Type: "AWS::Config::ConfigRule"
-    Properties:
-      ConfigRuleName: gc09_check_netsec_architecture
-      Description: Checks S3 bucket for the network security architecture document
-      InputParameters:
-        s3ObjectPath:
-          Fn::If:
-            - s3NetworkArchitectureDocumentPath
-            - Ref: S3NetworkArchitectureDocumentPath
-            - Ref: AWS::NoValue
-        ExecutionRoleName:
-          Fn::If:
-            - GCLambdaExecutionRoleName
-            - Ref: GCLambdaExecutionRoleName
-            - Ref: AWS::NoValue
-        AuditAccountID:
-          Fn::If:
-            - auditAccountID
-            - Ref: AuditAccountID
-            - Ref: AWS::NoValue
-      Scope:
-        ComplianceResourceTypes:
-          - AWS::Account
-      MaximumExecutionFrequency: TwentyFour_Hours
-      Source:
-        Owner: CUSTOM_LAMBDA
-        SourceIdentifier:
-          Fn::Join:
-            - ""
-            - - "arn:aws:lambda:ca-central-1:"
-              - Ref: AuditAccountID
-              - !Sub ":function:${OrganizationName}gc09_check_netsec_architecture"
-        SourceDetails:
-          - EventSource: "aws.config"
-            MessageType: "ScheduledNotification"
-
   GC09CheckNonPublicStorageAccountsConfigRule:
     Type: "AWS::Config::ConfigRule"
     Properties:

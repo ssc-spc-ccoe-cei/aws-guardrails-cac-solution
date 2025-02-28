@@ -120,25 +120,6 @@ Resources:
           DEFAULT_CLOUD_PROFILE: !Ref DefaultCloudProfile
 
   ## GC09
-  GC09CheckNetworkSecurityArchitectureDocumentLambda:
-    Condition: IsAuditAccount
-    Type: AWS::Lambda::Function
-    Properties:
-      FunctionName: !Sub "${OrganizationName}gc09_check_netsec_architecture"
-      Code: "../../src/lambda/gc09_check_netsec_architecture/build/GC09CheckNetworkSecurityArchitectureDocumentLambda/"
-      Handler: app.lambda_handler
-      Role: !Sub "arn:aws:iam::${AuditAccountID}:role/${RolePrefix}default_assessment_role"
-      Runtime: !Ref PythonRuntime
-      Timeout: 90
-      Layers:
-        - !Ref CloudGuardrailsCommonLayer
-      LoggingConfig:
-        LogGroup: !Sub "${OrganizationName}gc_guardrails"
-        LogFormat: "JSON"
-      Environment:
-        Variables:
-          DEFAULT_CLOUD_PROFILE: !Ref DefaultCloudProfile
-
   GC09CheckNonPublicStorageAccountsLambda:
     Condition: IsAuditAccount
     Type: AWS::Lambda::Function
