@@ -223,6 +223,7 @@ Resources:
                 Action:
                   - organizations:ListTagsForResource
                   - organizations:Des*
+                  - lambda:In*
                 Resource: "*"
         - PolicyName: S3Policy
           PolicyDocument:
