@@ -269,7 +269,7 @@ Resources:
                   - !Sub "arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/lambda/${OrganizationName}gc*"
                 Effect: Allow
 
-  ## Create schedule
+  ## Create schedule.
   CronjobsScheduledRule:
     Condition: IsAuditAccount
     Type: AWS::Events::Rule

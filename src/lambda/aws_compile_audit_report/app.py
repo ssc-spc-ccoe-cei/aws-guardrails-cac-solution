@@ -504,7 +504,7 @@ def merge_chunk_files(chunk_files, temp_dir):
     return merged_path
 
 def cleanup_temp_directory(temp_dir):
-    """Remove the entire temporary directory."""
+    """Remove the entire temporary directory.."""
     if os.path.exists(temp_dir):
         shutil.rmtree(temp_dir, ignore_errors=True)
         logger.info("Cleaned up temp directory: %s", temp_dir)
