@@ -449,6 +449,41 @@ Resources:
       Roles:
         - Ref: GCLambdaExecutionRole
 
+  # OpenSearch Access
+  GCLambdaExecutionRoleOpenSearchPolicy:
+    Type: AWS::IAM::Policy
+    Properties:
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: AllowOpenSearchAccess
+            Action:
+              - "es:Desc*"
+            Resource:
+              - "*"
+            Effect: Allow
+      PolicyName: !Sub "${OrganizationName}GCLambdaExecutionRoleOpenSearchPolicy"
+      Roles:
+        - !Ref GCLambdaExecutionRole2
+        
+
+  # MarketPlace Access
+  GCLambdaExecutionRoleMarketPlacePolicy:
+    Type: AWS::IAM::Policy
+    Properties:
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: AllowMarketPlaceAccess
+            Action:
+              - "aws-marketplace:Li*"
+            Resource:
+              - "*"
+            Effect: Allow
+      PolicyName: !Sub "${OrganizationName}GCLambdaExecutionRoleMarketPlacePolicy"
+      Roles:
+        - !Ref GCLambdaExecutionRole2
+        
   # IAM Access
   GCLambdaExecutionRoleCloudFrontPolicy:
     Type: AWS::IAM::Policy
