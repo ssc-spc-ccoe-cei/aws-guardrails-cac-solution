@@ -10,6 +10,7 @@ import shutil
 import time
 import uuid
 import concurrent.futures
+import botocore.exceptions
 
 import boto3
 from botocore.exceptions import BotoCoreError, ClientError
@@ -54,10 +55,26 @@ def create_boto3_clients():
         "organizations": get_client("organizations", assume_role=False)
     }
 
+
 # MAIN LAMBDA HANDLER
 def lambda_handler(event, context):
     logger.info("Lambda invocation started (structured).")
     clients = create_boto3_clients()
+    # Initialize AWS Organizations client
+    org_client = boto3.client("organizations")
+
+    # Fetch Management Account ID
+    def get_management_account_id():
+        try:
+            response = org_client.describe_organization()
+            return response["Organization"]["MasterAccountId"]  # Older accounts use "MasterAccountId"
+        except Exception as e:
+            print(f"Error fetching management account ID: {e}")
+            return "unknown"
+
+    # Retrieve Management Account ID
+    global management_account_id
+    management_account_id = get_management_account_id()
 
     # Handle concurrency limit
     current_concurrency = event.get("current_concurrency", 1)
@@ -439,7 +456,7 @@ def finalize_and_cleanup_if_necessary(temp_dir, state, s3_client):
         logger.info("State is finished. Merging partial CSV files.")
         merged_csv = merge_chunk_files(state["chunks_written"], temp_dir)
         if merged_csv:
-            final_key = f'{datetime.datetime.now(tz=datetime.timezone.utc).strftime(config["DATE_FORMAT"])}.csv'
+            final_key = f'{management_account_id}_{datetime.datetime.now(tz=datetime.timezone.utc).strftime(config["DATE_FORMAT"])}.csv'
             try:
                 with open(merged_csv, "rb") as f:
                     safe_aws_call(
