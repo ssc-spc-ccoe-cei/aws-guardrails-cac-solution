@@ -222,6 +222,8 @@ Resources:
               - Effect: Allow
                 Action:
                   - organizations:ListTagsForResource
+                  - organizations:Des*
+                  - lambda:In*
                 Resource: "*"
         - PolicyName: S3Policy
           PolicyDocument:
@@ -268,7 +270,7 @@ Resources:
                   - !Sub "arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/lambda/${OrganizationName}gc*"
                 Effect: Allow
 
-  ## Create schedule
+  ## Create schedule.
   CronjobsScheduledRule:
     Condition: IsAuditAccount
     Type: AWS::Events::Rule
