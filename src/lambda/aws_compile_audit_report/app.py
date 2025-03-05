@@ -314,7 +314,7 @@ OUTPUT_HEADER = [
     "compliance",
     "organizationId",
     "organizationName",
-    "tenantId",
+    "azureTenantId",
     "cacVersion",
 ]
 
