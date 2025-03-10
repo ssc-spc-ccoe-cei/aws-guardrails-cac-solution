@@ -733,7 +733,7 @@ Resources:
     Properties:
       AutoDeployment:
         Enabled: true
-        RetainStacksOnAccountRemoval: true
+        RetainStacksOnAccountRemoval: false
       Capabilities:
         - CAPABILITY_IAM
         - CAPABILITY_NAMED_IAM
@@ -800,7 +800,7 @@ Resources:
     Properties:
       AutoDeployment:
         Enabled: true
-        RetainStacksOnAccountRemoval: true
+        RetainStacksOnAccountRemoval: false
       Capabilities:
         - CAPABILITY_IAM
         - CAPABILITY_NAMED_IAM
@@ -841,7 +841,7 @@ Resources:
     Properties:
       AutoDeployment:
         Enabled: true
-        RetainStacksOnAccountRemoval: true
+        RetainStacksOnAccountRemoval: false
       Capabilities:
         - CAPABILITY_IAM
         - CAPABILITY_NAMED_IAM
@@ -882,7 +882,7 @@ Resources:
     Properties:
       AutoDeployment:
         Enabled: true
-        RetainStacksOnAccountRemoval: true
+        RetainStacksOnAccountRemoval: false
       Capabilities:
         - CAPABILITY_IAM
         - CAPABILITY_NAMED_IAM
@@ -924,7 +924,7 @@ Resources:
     Properties:
       AutoDeployment:
         Enabled: true
-        RetainStacksOnAccountRemoval: true
+        RetainStacksOnAccountRemoval: false
       Capabilities:
         - CAPABILITY_IAM
         - CAPABILITY_NAMED_IAM
@@ -965,7 +965,7 @@ Resources:
     Properties:
       AutoDeployment:
         Enabled: true
-        RetainStacksOnAccountRemoval: true
+        RetainStacksOnAccountRemoval: false
       Capabilities:
         - CAPABILITY_IAM
         - CAPABILITY_NAMED_IAM
@@ -1006,7 +1006,7 @@ Resources:
     Properties:
       AutoDeployment:
         Enabled: true
-        RetainStacksOnAccountRemoval: true
+        RetainStacksOnAccountRemoval: false
       Capabilities:
         - CAPABILITY_IAM
         - CAPABILITY_NAMED_IAM
@@ -1047,7 +1047,7 @@ Resources:
     Properties:
       AutoDeployment:
         Enabled: true
-        RetainStacksOnAccountRemoval: true
+        RetainStacksOnAccountRemoval: false
       Capabilities:
         - CAPABILITY_IAM
         - CAPABILITY_NAMED_IAM
@@ -1095,7 +1095,7 @@ Resources:
     Properties:
       AutoDeployment:
         Enabled: true
-        RetainStacksOnAccountRemoval: true
+        RetainStacksOnAccountRemoval: false
       Capabilities:
         - CAPABILITY_IAM
         - CAPABILITY_NAMED_IAM
@@ -1805,7 +1805,7 @@ Resources:
     Properties:
       AutoDeployment:
         Enabled: true
-        RetainStacksOnAccountRemoval: true
+        RetainStacksOnAccountRemoval: false
       Capabilities:
         - CAPABILITY_IAM
         - CAPABILITY_NAMED_IAM
@@ -1858,7 +1858,7 @@ Resources:
     Properties:
       AutoDeployment:
         Enabled: true
-        RetainStacksOnAccountRemoval: true
+        RetainStacksOnAccountRemoval: false
       Capabilities:
         - CAPABILITY_IAM
         - CAPABILITY_NAMED_IAM
@@ -1910,7 +1910,7 @@ Resources:
       TemplateURL: !Sub https://${PipelineBucket}.s3.${AWS::Region}.amazonaws.com/${DeployVersion}/OrgRoleGenerator.yaml
       #      AutoDeployment:
       #        Enabled: true
-      #        RetainStacksOnAccountRemoval: true
+      #        RetainStacksOnAccountRemoval: false
       Capabilities:
         - CAPABILITY_IAM
         - CAPABILITY_NAMED_IAM
