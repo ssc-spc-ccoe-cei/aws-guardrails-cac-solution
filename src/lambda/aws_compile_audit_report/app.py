@@ -44,21 +44,13 @@ logger.setLevel(logging.INFO)
 
 ACCOUNT_TAGS_CACHE = {}
 
-# ------------------------------------------------------------------------------
-# HELPERS: FETCH MANAGEMENT ACCOUNT ID
-# ------------------------------------------------------------------------------
 def get_management_account_id(org_client):
     resp = safe_aws_call(
         org_client.describe_organization,
         "describe_organization"
     )
-    # Some older AWS orgs use 'MasterAccountId'. Newer ones use 'ManagementAccountId'
-    # The response is consistent, but key name is 'MasterAccountId' in the JSON.
     return resp["Organization"]["MasterAccountId"]
 
-# ------------------------------------------------------------------------------
-# CLIENT CREATION
-# ------------------------------------------------------------------------------
 def create_boto3_clients():
     return {
         "auditmanager": boto3.client("auditmanager"),
@@ -67,9 +59,7 @@ def create_boto3_clients():
         "organizations": get_client("organizations", assume_role=False)
     }
 
-# ------------------------------------------------------------------------------
-# MAIN LAMBDA HANDLER
-# ------------------------------------------------------------------------------
+
 def lambda_handler(event, context):
     logger.info("Lambda invocation started (structured).")
 
@@ -89,9 +79,7 @@ def lambda_handler(event, context):
         logger.error("Unexpected error in lambda_handler: %s", str(e), exc_info=True)
         return {"status": "error", "message": str(e)}
 
-# ------------------------------------------------------------------------------
-# CORE PROCESSING LOGIC
-# ------------------------------------------------------------------------------
+
 def process_assessments(event, context, current_concurrency, clients):
     # Prepare a unique temp directory for this Lambda invocation
     invocation_id = event.get("invocation_id") or str(uuid.uuid4())
@@ -213,9 +201,6 @@ def process_assessments(event, context, current_concurrency, clients):
     save_state_to_s3(clients["s3"], state)
     return finalize_and_cleanup_if_necessary(temp_dir, state, clients)
 
-# ------------------------------------------------------------------------------
-# MANUAL PAGINATION FUNCTIONS (replacing built-in paginator calls)
-# ------------------------------------------------------------------------------
 def safe_aws_call(fn, context_msg, *args, **kwargs):
     delay = 1
     for attempt in range(1, config["MAX_RETRIES"] + 1):
@@ -235,7 +220,6 @@ def safe_aws_call(fn, context_msg, *args, **kwargs):
             time.sleep(delay)
             delay *= 2
 def get_all_assessments_paginated(auditmanager_client):
-    """Manually paginate list_assessments since built-in paginator is unsupported."""
     next_token = None
     while True:
         if not next_token:
@@ -287,9 +271,6 @@ def get_all_evidence_folders_paginated(auditmanager_client, assessment_id):
             break
 
 def get_all_evidence_paginated(auditmanager_client, assessment_id, control_set_id, folder_id):
-    """
-    Yields pages of evidence from get_evidence_by_evidence_folder, also manually handling nextToken.
-    """
     next_token = None
     while True:
         if not next_token:
@@ -318,9 +299,6 @@ def get_all_evidence_paginated(auditmanager_client, assessment_id, control_set_i
         if not next_token:
             break
 
-# ------------------------------------------------------------------------------
-# EVIDENCE PROCESSING
-# ------------------------------------------------------------------------------
 OUTPUT_HEADER = [
     "accountId",
     "accountCloudProfile",
@@ -420,9 +398,7 @@ def get_account_tags_cached(org_client, aws_account_id):
         logger.error("Failed to get account tags for %s: %s", aws_account_id, e)
         return {}
 
-# ------------------------------------------------------------------------------
-# STATE MANAGEMENT
-# ------------------------------------------------------------------------------
+
 def load_state_from_s3(s3_client):
     try:
         resp = s3_client.get_object(Bucket=config["SOURCE_TARGET_BUCKET"],
@@ -450,9 +426,7 @@ def save_state_to_s3(s3_client, state):
     except Exception as e:
         logger.error("Failed to save state to S3: %s", str(e))
 
-# ------------------------------------------------------------------------------
-# SELF-INVOCATION
-# ------------------------------------------------------------------------------
+
 def self_invoke(lambda_client, event, invocation_id, current_concurrency):
     try:
         new_event = {
@@ -474,9 +448,7 @@ def self_invoke(lambda_client, event, invocation_id, current_concurrency):
 def near_time_limit(context, buffer_sec):
     return (context.get_remaining_time_in_millis() / 1000.0) < buffer_sec
 
-# ------------------------------------------------------------------------------
-# CHUNK UPLOAD/DOWNLOAD HELPERS
-# ------------------------------------------------------------------------------
+
 def upload_chunk_to_s3(s3_client, local_path, s3_key):
     with open(local_path, "rb") as f:
         safe_aws_call(
@@ -499,9 +471,7 @@ def download_chunk_from_s3(s3_client, s3_key, local_path):
     with open(local_path, "wb") as f:
         f.write(resp["Body"].read())
 
-# ------------------------------------------------------------------------------
-# FINALIZATION & CLEANUP
-# ------------------------------------------------------------------------------
+
 def finalize_and_cleanup_if_necessary(temp_dir, state, clients):
     if not state.get("finished"):
         logger.info("Not finished yet, skipping final merge.")
