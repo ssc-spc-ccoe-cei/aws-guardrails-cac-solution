@@ -1,7 +1,3 @@
-""" GC03 - Check trusted devices admin access
-    Confirm that administrative access to cloud environments is from approved and trusted locations and devices
-"""
-
 import json
 import logging
 import ipaddress
@@ -21,7 +17,7 @@ logger.setLevel(logging.INFO)
 
 
 def ip_is_within_ranges(ip_addr: str, ip_cidr_ranges: list[str]) -> bool:
-    """Return true if the given IP Address is within the at least one of the given CIDR ranges, otherwise returns false"""
+    """Return true if the given IP Address is within at least one of the given CIDR ranges, otherwise false."""
     for ip_range in ip_cidr_ranges:
         ip_network = ipaddress.ip_network(ip_range)
         if ipaddress.ip_address(ip_addr) in ip_network:
@@ -31,13 +27,10 @@ def ip_is_within_ranges(ip_addr: str, ip_cidr_ranges: list[str]) -> bool:
 
 def lambda_handler(event, context):
     """
-    This function is the main entry point for Lambda.
+    Main entry point for Lambda execution.
 
-    Keyword arguments:
-
-    event -- the event variable given in the lambda handler
-
-    context -- the context variable given in the lambda handler
+    event -- Event data passed to the Lambda function.
+    context -- Runtime information for the Lambda execution.
     """
     logger.info("Received Event: %s", json.dumps(event, indent=2))
 
@@ -46,13 +39,13 @@ def lambda_handler(event, context):
         logger.error("Skipping assessments as this is not a scheduled invocation")
         return
 
+    # Extract rule parameters
     rule_parameters = check_required_parameters(
-        json.loads(event.get("ruleParameters", "{}")), ["ExecutionRoleName", "s3ObjectPath"]
+        json.loads(event.get("ruleParameters", "{}")), ["ExecutionRoleName", "BgUser1", "BgUser2"]
     )
     execution_role_name = rule_parameters.get("ExecutionRoleName")
     audit_account_id = rule_parameters.get("AuditAccountID", "")
     aws_account_id = event["accountId"]
-    is_not_audit_account = aws_account_id != audit_account_id
 
     evaluations = []
 
@@ -69,28 +62,23 @@ def lambda_handler(event, context):
     aws_cloudtrail_client = get_client("cloudtrail", aws_account_id, execution_role_name)
     aws_iam_client = get_client("iam", aws_account_id, execution_role_name)
 
-    # Check cloud profile
-    tags = get_account_tags(get_client("organizations", assume_role=False), aws_account_id)
-    cloud_profile = get_cloud_profile_from_tags(tags)
-    gr_requirement_type = check_guardrail_requirement_by_cloud_usage_profile(GuardrailType.Guardrail3, cloud_profile)
-    
-    # If the guardrail is recommended
-    if gr_requirement_type == GuardrailRequirementType.Recommended:
-        return submit_evaluations(aws_config_client, event, [build_evaluation(
+    # Check for federated users
+    if account_has_federated_users(aws_iam_client):
+        # Log identity providers
+        logger.info("Federated users detected.")
+
+        annotation = "Federated users detected. Compliance is determined by Federated Identity Provider compliance."
+        logger.info(annotation)
+        evaluations.append(build_evaluation(
             aws_account_id,
             "COMPLIANT",
             event,
-            gr_requirement_type=gr_requirement_type
-        )])
-    # If the guardrail is not required
-    elif gr_requirement_type == GuardrailRequirementType.Not_Required:
-        return submit_evaluations(aws_config_client, event, [build_evaluation(
-            aws_account_id,
-            "NOT_APPLICABLE",
-            event,
-            gr_requirement_type=gr_requirement_type
-        )])
-        
+            annotation=annotation
+        ))
+        submit_evaluations(aws_config_client, event, evaluations)
+        return
+
+    # Check for source IP ranges if no federated users are present
     file_param_name = "s3ObjectPath"
     vpn_ip_ranges_file_path = rule_parameters.get(file_param_name, "")
 
@@ -105,59 +93,47 @@ def lambda_handler(event, context):
     logger.info("vpn_ip_ranges from the file in s3: %s", vpn_ip_ranges)
 
     if not vpn_ip_ranges:
-        annotation = "No ip ranges found in input file."
+        annotation = "No IP ranges found in the input file."
         logger.info(annotation)
         evaluations.append(build_evaluation(aws_account_id, "NON_COMPLIANT", event, annotation=annotation))
         submit_evaluations(aws_config_client, event, evaluations)
         return
 
+    # Retrieve CloudTrail events and filter by background accounts
     bg_account_names = [rule_parameters["BgUser1"], rule_parameters["BgUser2"]]
     lookup_attributes = [{"AttributeKey": "EventName", "AttributeValue": "ConsoleLogin"}]
     console_login_cloud_trail_events = lookup_cloud_trail_events(aws_cloudtrail_client, lookup_attributes)
-    print("INFO 1:", console_login_cloud_trail_events)
+    logger.info("INFO 1: %s", console_login_cloud_trail_events)
+
     cloud_trail_events = [e for e in console_login_cloud_trail_events if e.get("Username") not in bg_account_names]
     num_compliant_rules = 0
     logger.info("Number of events found: %s", len(cloud_trail_events))
 
+    # Evaluate events for compliance
     for lookup_event in cloud_trail_events:
         ct_event = json.loads(lookup_event.get("CloudTrailEvent", "{}"))
         ct_event_id = ct_event.get("eventID", "")
-        ct_event_time = ct_event.get("eventTime", "")
+        source_ip = ct_event.get("sourceIPAddress", "")
 
-        # get event time and convert to ISO format
-        ct_event_isotime = datetime.datetime.fromisoformat(ct_event_time.replace('Z', '+00:00'))
-        now = datetime.datetime.now(datetime.timezone.utc)
-        # find difference from the current/execution time
-        time_diff = now - ct_event_isotime
-        # this is one day in ISO format
-        one_day = datetime.timedelta(days=1)
-
-        if time_diff > one_day:
-            # skip if event entry is older than 1 day
-            pass
-        elif not ip_is_within_ranges(ct_event["sourceIPAddress"], vpn_ip_ranges):
+        if not ip_is_within_ranges(source_ip, vpn_ip_ranges):
             compliance_type = "NON_COMPLIANT"
-            annotation = f"Cloud Trail Event '{ct_event_id}' has a source IP address OUTSIDE of the allowed ranges, with event time '{ct_event_time}'."
+            annotation = f"Event '{ct_event_id}' from IP '{source_ip}' is outside allowed ranges."
             logger.info(f"{compliance_type}: {annotation}")
-            evaluations.append(build_evaluation(ct_event_id, compliance_type, event, "AWS::CloudTrail::Trail", annotation))
+            evaluations.append(build_evaluation(ct_event_id, compliance_type, event, annotation=annotation))
         else:
-            num_compliant_rules = num_compliant_rules + 1
             compliance_type = "COMPLIANT"
-            annotation = f"Cloud Trail Event '{ct_event_id}' has a source IP address inside of the allowed ranges."
-            if account_has_federated_users(aws_iam_client):
-                annotation = f"{annotation} Dependent on the compliance of the Federated IdP."
+            annotation = f"Event '{ct_event_id}' from IP '{source_ip}' is inside allowed ranges."
             logger.info(f"{compliance_type}: {annotation}")
-            evaluations.append(build_evaluation(ct_event_id, compliance_type, event, "AWS::CloudTrail::Trail", annotation))
-            
+            evaluations.append(build_evaluation(ct_event_id, compliance_type, event, annotation=annotation))
+            num_compliant_rules += 1
 
+    # Final compliance summary
     if len(cloud_trail_events) == num_compliant_rules:
         compliance_type = "COMPLIANT"
-        annotation = "All Cloud Trail Events are within the allowed source IP address ranges."
-        if account_has_federated_users(aws_iam_client):
-            annotation = f"All Cloud Trail Events are within the allowed source IP address ranges or are dependant on the federated identity provider."
+        annotation = "All CloudTrail events are within the allowed source IP address ranges."
     else:
         compliance_type = "NON_COMPLIANT"
-        annotation = "NOT all Cloud Trail Events are within the allowed source IP address ranges."
+        annotation = "Not all CloudTrail events are within the allowed source IP address ranges."
 
     logger.info(f"{compliance_type}: {annotation}")
     evaluations.append(build_evaluation(aws_account_id, compliance_type, event, annotation=annotation))
