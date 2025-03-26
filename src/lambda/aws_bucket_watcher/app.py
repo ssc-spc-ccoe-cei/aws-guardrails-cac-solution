@@ -20,7 +20,7 @@ def lambda_handler(event, context):
     s3_resource = boto3.resource("s3")
     copy_source = {"Bucket": bucket, "Key": key}
 
-    print(key)
+    #print(key)
     
     #Todo: Not sure why this exist, its not being used anywhere? 
     #account_id = context.invoked_function_arn.split(":")[4]
