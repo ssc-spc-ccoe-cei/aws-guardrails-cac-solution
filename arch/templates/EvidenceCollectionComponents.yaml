@@ -235,6 +235,7 @@ Resources:
                   - "s3:GetObject"
                   - "s3:CreateBucket"
                   - "s3:ListBucket"
+                  - "s3:DeleteObject"
                 Resource: !Sub "arn:aws:s3:::gc-fedclient-${AWS::AccountId}-${AWS::Region}/*"
               - Effect: Allow
                 Action:
@@ -242,6 +243,7 @@ Resources:
                   - "s3:GetObject"
                   - "s3:CreateBucket"
                   - "s3:ListBucket"
+                  - "s3:DeleteObject"
                 Resource: !Sub "arn:aws:s3:::gc-fedclient-${AWS::AccountId}-${AWS::Region}"
               - Effect: Allow
                 Action:
