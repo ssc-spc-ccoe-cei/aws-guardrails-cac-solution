@@ -62,8 +62,31 @@ def create_boto3_clients():
 
 def lambda_handler(event, context):
     logger.info("Lambda invocation started (structured).")
-
+    
     clients = create_boto3_clients()
+
+    # Delete state file before proceeding
+    try:
+        s3 = boto3.client("s3")
+        objects = s3.list_objects_v2(Bucket=config["SOURCE_TARGET_BUCKET"], Prefix="state")
+        if 'Contents' in objects:
+            for obj in objects['Contents']:
+                s3.delete_object(Bucket=config["SOURCE_TARGET_BUCKET"], Key=obj["Key"])
+               # logger.info(f"Delete complete{obj}")
+    except Exception as e:
+        logger.info("Failed to delete S3 states folder: %s", str(e))
+ 
+    # Delete Chunk files before proceeding
+
+    try:
+        s3 = boto3.client("s3")
+        objects = s3.list_objects_v2(Bucket=config["SOURCE_TARGET_BUCKET"], Prefix="chunks")
+        if 'Contents' in objects:
+            for obj in objects['Contents']:
+                s3.delete_object(Bucket=config["SOURCE_TARGET_BUCKET"], Key=obj["Key"])
+               # logger.info(f"Delete complete{obj}")
+    except Exception as e:
+        logger.info("Failed to delete S3 chunks folder: %s", str(e))
 
     # Handle concurrency limit
     current_concurrency = event.get("current_concurrency", 1)
@@ -149,6 +172,9 @@ def process_assessments(event, context, current_concurrency, clients):
             with open(chunk_file_local, "w", newline="") as csvfile:
                 writer = csv.writer(csvfile)
                 writer.writerow(OUTPUT_HEADER)
+                # Log the creation of the chunk file
+                logger.info(f"Created chunk file at {chunk_file_local}")
+
 
                 all_evidence_pages = get_all_evidence_paginated(
                     clients["auditmanager"], assessment_id, control_set_id, folder_id
