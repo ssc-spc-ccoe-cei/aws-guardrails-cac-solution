@@ -132,7 +132,9 @@ def process_assessments(event, context, current_concurrency, clients):
         # If state indicates we're done, do final merge check or skip
         return finalize_and_cleanup_if_necessary(temp_dir, state, clients)
 
-    assessment_list = list(get_all_assessments_paginated(clients["auditmanager"]))
+    assessment_lists = list(get_all_assessments_paginated(clients["auditmanager"]))
+    assessment_list = [assessment for assessment in assessment_lists if assessment['name'] == config["ASSESSMENT_NAME"]]
+    logger.info(assessment_list)
     if not assessment_list:
         logger.info("No active assessments found.")
         state["finished"] = True
