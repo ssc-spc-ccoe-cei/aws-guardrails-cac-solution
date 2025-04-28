@@ -358,7 +358,7 @@ def assess_rds_encryption_at_rest(rds_client, event):
     logger.info("RDS - %s DB Instance Snapshots found.", len(snapshots))
 
     for snapshot in snapshots:
-        if snapshot.get("StorageEncrypted", "") is True:
+        if snapshot.get("Encrypted", "") is True:
             compliance_status = "COMPLIANT"
             annotation = "Encrypted at rest"
         else:
