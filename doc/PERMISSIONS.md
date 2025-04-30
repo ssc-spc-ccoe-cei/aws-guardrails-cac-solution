@@ -1,9 +1,13 @@
-# README
+# Lambda Permissions
  
 ## Role Information
+This page outlines the Lambda Execution Roles for the AWS CaC Solution, alongside the permissions assigned to each role. These permissions enable secure, read-oriented access to various AWS services. Each section describes the role's purpose, trust relationships, and the AWS actions it is authorized to perform.
  
 ### Name
 `${AccelRolePrefix}GCLambdaExecutionRole2`
+
+## Description
+This role is designed to provide comprehensive read access across various AWS services, allowing for compliance and monitoring capabilities.
  
 ### TrustPrincipal
 `arn:${AWS::Partition}:iam::${AuditAccountID}:root`
@@ -57,12 +61,14 @@ The following actions are allowed across various AWS services:
 ### Resources
 `*`
  
-## Description
-This role is designed to provide comprehensive read access across various AWS services, ensuring compliance and monitoring capabilities. The role can be assumed by the root user of the specified audit account and can be switched to by the specified accelerator role.
+
   
  
 ### Name
 `${AccelRolePrefix}GCLambdaExecutionRole`
+
+## Description
+This role is designed to provide read access across various AWS services, allowing for compliance and monitoring capabilities. 
  
 ### TrustPrincipal
 `arn:${AWS::Partition}:iam::${AuditAccountID}:root`
@@ -143,8 +149,7 @@ The following actions are allowed across various AWS services:
 - **Actions**: `s3:ListAllMyBuckets`
 - **Resources**: `*`
  
-## Description
-This role is designed to provide comprehensive read access across various AWS services, ensuring compliance and monitoring capabilities. The role can be assumed by the root user of the specified audit account and can be switched to by the specified accelerator role.
+
 
  
  
