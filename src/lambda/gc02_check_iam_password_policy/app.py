@@ -30,9 +30,9 @@ def overlay_policy_from_parameters(rule_parameters, password_assessment_policy):
             "RequireNumbers",
             "RequireUppercaseCharacters",
             "RequireLowercaseCharacters",
-            "AllowUsersToChangePassword",
-            "ExpirePasswords",
-            "HardExpiry",
+            "AllowUsersToChangePassword"
+           # "ExpirePasswords",
+           # "HardExpiry",
         ]:
             if str(rule_parameters[parameter]).lower() == "true":
                 password_assessment_policy[parameter] = True
@@ -60,12 +60,6 @@ def assess_iam_password_policy(iam_client, password_assessment_policy):
                     ):
                         compliance_status = "NON_COMPLIANT"
                         compliance_annotation += "MinimumPasswordLength;"
-                if int(password_assessment_policy.get("MaxPasswordAge", -1)) > 0:
-                    if current_password_policy.get("MaxPasswordAge", -1) < password_assessment_policy.get(
-                        "MaxPasswordAge"
-                    ):
-                        compliance_status = "NON_COMPLIANT"
-                        compliance_annotation += "MaxPasswordAge;"
                 if int(password_assessment_policy.get("PasswordReusePrevention", -1)) > 0:
                     if current_password_policy.get("PasswordReusePrevention", -1) < password_assessment_policy.get(
                         "PasswordReusePrevention"
@@ -103,16 +97,22 @@ def assess_iam_password_policy(iam_client, password_assessment_policy):
                     ) != password_assessment_policy.get("AllowUsersToChangePassword"):
                         compliance_status = "NON_COMPLIANT"
                         compliance_annotation += "AllowUsersToChangePassword;"
-                if password_assessment_policy.get("ExpirePasswords", False):
-                    if current_password_policy.get("ExpirePasswords", False) != password_assessment_policy.get(
-                        "ExpirePasswords"
-                    ):
-                        compliance_status = "NON_COMPLIANT"
-                        compliance_annotation += "ExpirePasswords;"
-                if password_assessment_policy.get("HardExpiry", False):
-                    if current_password_policy.get("HardExpiry", False) != password_assessment_policy.get("HardExpiry"):
-                        compliance_status = "NON_COMPLIANT"
-                        compliance_annotation += "HardExpiry;"
+                # if password_assessment_policy.get("ExpirePasswords", False):
+                #     if current_password_policy.get("ExpirePasswords", False) != password_assessment_policy.get(
+                #         "ExpirePasswords"
+                #     ):
+                #         compliance_status = "NON_COMPLIANT"
+                #         compliance_annotation += "ExpirePasswords;"
+                # if password_assessment_policy.get("HardExpiry", False):
+                #     if current_password_policy.get("HardExpiry", False) != password_assessment_policy.get("HardExpiry"):
+                #         compliance_status = "NON_COMPLIANT"
+                #         compliance_annotation += "HardExpiry;"
+                # if int(password_assessment_policy.get("MaxPasswordAge", -1)) > 0:
+                #     if current_password_policy.get("MaxPasswordAge", -1) < password_assessment_policy.get(
+                #         "MaxPasswordAge"
+                #     ):
+                #         compliance_status = "NON_COMPLIANT"
+                #         compliance_annotation += "MaxPasswordAge;"
             else:
                 compliance_status = "NON_COMPLIANT"
                 compliance_annotation = "Empty password policy read. Unable to assess"
@@ -152,10 +152,10 @@ def lambda_handler(event, context):
         "RequireUppercaseCharacters": True,
         "RequireLowercaseCharacters": True,
         "AllowUsersToChangePassword": True,
-        "ExpirePasswords": False,
-        "MaxPasswordAge": 90,
-        "PasswordReusePrevention": 24,
-        "HardExpiry": False,
+        "PasswordReusePrevention": 24
+        # "HardExpiry": False,
+        # "ExpirePasswords": False,
+        # "MaxPasswordAge": 90,
     }
 
     rule_parameters = check_required_parameters(json.loads(event.get("ruleParameters", "{}")), ["ExecutionRoleName"])

@@ -453,45 +453,45 @@ def assess_dax_encryption_at_rest(dax_client, event):
 
 
 #################################################################
-# DynamoDB specific support functions
-#  - DYNAMODB_TABLE_ENCRYPTION_ENABLED
+# # DynamoDB specific support functions
+# #  - DYNAMODB_TABLE_ENCRYPTION_ENABLED
 
 
-def assess_dynamodb_encryption_at_rest(dynamo_db_client, event):
-    """
-    Finds AWS DynamoDB tables that are not encrypted at rest
-    """
-    local_evaluations = []
-    tables = []
-    resource_type = "AWS::DynamoDB::Table"
-    try:
-        tables = list_all_dynamo_db_tables(dynamo_db_client, PAGE_SIZE, INTERVAL_BETWEEN_API_CALLS)
-    except botocore.exceptions.ClientError as ex:
-        logger.error("DynamoDB - Error while calling dynamodb_get_tables_list %s", ex)
-        NONCOMPLIANT_SERVICES.add("DynamoDB")
-    logger.info("DynamoDB - %s tables found.", len(tables))
-    for table_name in tables:
-        compliance_status = "NON_COMPLIANT"
-        annotation = "Unable to assess"
-        table_id = table_name
-        try:
-            response = dynamo_db_client.describe_table(TableName=table_name)
-            if response:
-                sse_description = response.get("Table", {}).get("SSEDescription", {})
-                table_id = response.get("Table", {}).get("TableArn", table_name)
-                if sse_description.get("Status", "") == "ENABLED":
-                    compliance_status = "COMPLIANT"
-                    annotation = "Encrypted at rest using {}".format(sse_description.get("SSEType", ""))
-                else:
-                    annotation = "Not encrypted at rest - status is {}".format(sse_description.get("Status", ""))
-        except botocore.exceptions.ClientError as ex:
-            logger.error("DynamoDB - Error while calling describe_table %s", ex)
-        if compliance_status == "NON_COMPLIANT":
-            NONCOMPLIANT_SERVICES.add("DynamoDB")
-        # build evaluation
-        local_evaluations.append(build_evaluation(table_id, compliance_status, event, resource_type, annotation))
-    logger.info("DynamoDB - reporting %s evaluations.", len(local_evaluations))
-    return local_evaluations
+# def assess_dynamodb_encryption_at_rest(dynamo_db_client, event):
+#     """
+#     Finds AWS DynamoDB tables that are not encrypted at rest
+#     """
+#     local_evaluations = []
+#     tables = []
+#     resource_type = "AWS::DynamoDB::Table"
+#     try:
+#         tables = list_all_dynamo_db_tables(dynamo_db_client, PAGE_SIZE, INTERVAL_BETWEEN_API_CALLS)
+#     except botocore.exceptions.ClientError as ex:
+#         logger.error("DynamoDB - Error while calling dynamodb_get_tables_list %s", ex)
+#         NONCOMPLIANT_SERVICES.add("DynamoDB")
+#     logger.info("DynamoDB - %s tables found.", len(tables))
+#     for table_name in tables:
+#         compliance_status = "NON_COMPLIANT"
+#         annotation = "Unable to assess"
+#         table_id = table_name
+#         try:
+#             response = dynamo_db_client.describe_table(TableName=table_name)
+#             if response:
+#                 sse_description = response.get("Table", {}).get("SSEDescription", {})
+#                 table_id = response.get("Table", {}).get("TableArn", table_name)
+#                 if sse_description.get("Status", "") == "ENABLED":
+#                     compliance_status = "COMPLIANT"
+#                     annotation = "Encrypted at rest using {}".format(sse_description.get("SSEType", ""))
+#                 else:
+#                     annotation = "Not encrypted at rest - status is {}".format(sse_description.get("Status", ""))
+#         except botocore.exceptions.ClientError as ex:
+#             logger.error("DynamoDB - Error while calling describe_table %s", ex)
+#         if compliance_status == "NON_COMPLIANT":
+#             NONCOMPLIANT_SERVICES.add("DynamoDB")
+#         # build evaluation
+#         local_evaluations.append(build_evaluation(table_id, compliance_status, event, resource_type, annotation))
+#     logger.info("DynamoDB - reporting %s evaluations.", len(local_evaluations))
+#     return local_evaluations
 
 
 #################################################################
@@ -617,7 +617,7 @@ def lambda_handler(event, context):
     aws_codebuild_client = get_client("codebuild", aws_account_id, execution_role_name, is_not_audit_account)
     aws_config_client = get_client("config", aws_account_id, execution_role_name, is_not_audit_account)
     aws_dax_client = get_client("dax", aws_account_id, execution_role_name, is_not_audit_account)
-    aws_dynamo_db_client = get_client("dynamodb", aws_account_id, execution_role_name, is_not_audit_account)
+    #aws_dynamo_db_client = get_client("dynamodb", aws_account_id, execution_role_name, is_not_audit_account)
     aws_ec2_client = get_client("ec2", aws_account_id, execution_role_name, is_not_audit_account)
     
     # Check cloud profile
@@ -655,7 +655,7 @@ def lambda_handler(event, context):
     evaluations.extend(assess_cloudtrail_encryption_at_rest(aws_cloudtrail_client, event))
 
     # DynamoDB
-    evaluations.extend(assess_dynamodb_encryption_at_rest(aws_dynamo_db_client, event))
+    #evaluations.extend(assess_dynamodb_encryption_at_rest(aws_dynamo_db_client, event))
 
     # DAX
     evaluations.extend(assess_dax_encryption_at_rest(aws_dax_client, event))

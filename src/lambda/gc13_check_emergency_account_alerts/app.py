@@ -8,7 +8,7 @@ import logging
 import botocore.exceptions
 
 from utils import is_scheduled_notification, check_required_parameters, check_guardrail_requirement_by_cloud_usage_profile, get_cloud_profile_from_tags, GuardrailType, GuardrailRequirementType
-from boto_util.organizations import get_account_tags
+from boto_util.organizations import get_account_tags, get_organizations_mgmt_account_id
 from boto_util.client import get_client
 from boto_util.config import build_evaluation, submit_evaluations
 from boto_util.s3 import check_s3_object_exists, get_lines_from_s3_file
@@ -85,10 +85,19 @@ def lambda_handler(event, context):
     audit_account_id = rule_parameters.get("AuditAccountID", "")
     aws_account_id = event["accountId"]
     is_not_audit_account = aws_account_id != audit_account_id
+    aws_config_client = get_client("config", aws_account_id, execution_role_name)
+    aws_organizations_client = get_client("organizations", aws_account_id, execution_role_name, is_not_audit_account)
+    if aws_account_id != get_organizations_mgmt_account_id(aws_organizations_client):
+        logger.info("Not checked in account %s as this is not the Management Account", aws_account_id)
+        return submit_evaluations(aws_config_client, event, [build_evaluation(
+            aws_account_id,
+            "NOT_APPLICABLE",
+            event
+        )])
 
     evaluations = []
 
-    aws_config_client = get_client("config", aws_account_id, execution_role_name)
+    
     aws_s3_client = get_client("s3")
     aws_event_bridge_client = get_client("events", aws_account_id, execution_role_name)
     aws_sns_client = get_client("sns", aws_account_id, execution_role_name)
