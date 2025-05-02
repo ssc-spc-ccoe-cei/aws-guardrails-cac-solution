@@ -14,7 +14,7 @@ from utils import (
     GuardrailType,
     GuardrailRequirementType,
 )
-from boto_util.organizations import get_account_tags
+from boto_util.organizations import get_account_tags, get_organizations_mgmt_account_id
 from boto_util.client import get_client
 from boto_util.config import build_evaluation, submit_evaluations
 from boto_util.event_bridge import list_all_event_bridge_rules, list_all_event_bridge_rule_targets
@@ -184,10 +184,20 @@ def lambda_handler(event, context):
     execution_role_name = rule_parameters.get("ExecutionRoleName")
     audit_account_id = rule_parameters.get("AuditAccountID", "")
     aws_account_id = event["accountId"]
+    aws_organizations_client = get_client("organizations", aws_account_id, execution_role_name, audit_account_id)
+    aws_config_client = get_client("config", aws_account_id, execution_role_name)
+
+
+    if aws_account_id != get_organizations_mgmt_account_id(aws_organizations_client):
+        logger.info("Not checked in account %s as this is not the Management Account", aws_account_id)
+        return submit_evaluations(aws_config_client, event, [build_evaluation(
+            aws_account_id,
+            "NOT_APPLICABLE",
+            event
+        )])
 
     evaluations = []
 
-    aws_config_client = get_client("config", aws_account_id, execution_role_name)
     aws_event_bridge_client = get_client("events", aws_account_id, execution_role_name)
     aws_sns_client = get_client("sns", aws_account_id, execution_role_name)
     aws_cloud_trail_client = get_client("cloudtrail", aws_account_id, execution_role_name)
