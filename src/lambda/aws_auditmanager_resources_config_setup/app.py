@@ -367,7 +367,7 @@ def get_active_accounts():
             next_token = response.get("NextToken")
             while next_token:
                 response = client.list_accounts(NextToken=next_token)
-                accounts.append(response.get("Accounts"))
+                accounts.extend(response.get("Accounts"))
                 next_token = response.get("NextToken")
             for account in accounts:
                 if account.get("Status", "") == "ACTIVE":
