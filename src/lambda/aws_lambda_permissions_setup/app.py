@@ -31,20 +31,24 @@ def get_accounts():
     client = boto3.client("organizations")
     b_retry = True
     b_completed = False
+    next_token = None
     while b_retry and (not b_completed):
         try:
-            response = client.list_accounts()
+            if next_token:
+                response = client.list_accounts(NextToken=next_token)
+            else:
+                response = client.list_accounts()
+
             if response:
-                accounts = response.get("Accounts")
+                accounts.extend(response.get("Accounts", []))
                 next_token = response.get("NextToken")
-                while next_token:
-                    response = client.list_accounts(NextToken=next_token)
-                    accounts.extend(response.get("Accounts"))
-                    next_token = response.get("NextToken")
+                if not next_token:
+                    b_completed = True # No more accounts
             else:
                 logger.error("Unable to read account data from AWS - empty response.")
                 b_retry = False
-            b_completed = True
+                b_completed = True
+
         except botocore.exceptions.ClientError as error:
             if error.response["Error"]["Code"] == "TooManyRequestsException":
                 logger.warning("API call limit exceeded; backing off and retrying...")
@@ -54,10 +58,82 @@ def get_accounts():
                 # no, some other error
                 logger.error("Unable to list accounts in AWS Organizations. Error:\n %s", error)
                 b_retry = False
-        except (ValueError, TypeError):
-            logger.error("Unknown Exception trying to list accounts in AWS Organizations.")
+        except (ValueError, TypeError) as e:
+            logger.error("Unknown Exception trying to list accounts in AWS Organizations. Error: %s", e)
             b_retry = False
     return accounts
+
+
+def remove_existing_permissions(client, lambda_name):
+    """Removes all existing config.amazonaws.com permissions for a Lambda function.
+    :param client: Boto3 Lambda client
+    :param lambda_name: Name of the Lambda function
+    :return: True if successful, False otherwise
+    """
+    sids_to_remove = []
+    i_requests = 0
+    b_retry = True
+    while b_retry:
+        try:
+            response = client.get_policy(FunctionName=lambda_name)
+            i_requests += 1
+            if i_requests % 3 == 0:
+                time.sleep(0.05)
+
+            policy_doc = json.loads(response.get("Policy", "{}"))
+            statements = policy_doc.get("Statement", [])
+
+            for statement in statements:
+                principal = statement.get("Principal", {})
+                if (
+                    principal.get("Service") == "config.amazonaws.com"
+                    and statement.get("Action") == "lambda:InvokeFunction"
+                    and statement.get("Effect") == "Allow"
+                    and statement.get("Sid")
+                ):
+                    sids_to_remove.append(statement.get("Sid"))
+            b_retry = False # Success
+
+        except botocore.exceptions.ClientError as error:
+            if error.response["Error"]["Code"] == "TooManyRequestsException":
+                logger.warning("API call limit exceeded (get_policy); backing off and retrying...")
+                time.sleep(0.25)
+            elif error.response["Error"]["Code"] == "ResourceNotFoundException":
+                logger.info("Policy not found for %s, no SIDs to remove.", lambda_name)
+                return True # No policy means no SIDs to remove, so it's a success
+            else:
+                logger.error("boto3 error getting policy for %s: %s", lambda_name, error)
+                return False
+        except (ValueError, TypeError, json.JSONDecodeError) as e:
+            logger.error("Exception processing policy for %s: %s", lambda_name, e)
+            return False
+
+    logger.info("Found %d existing config policies to remove for %s.", len(sids_to_remove), lambda_name)
+
+    # Remove all identified SIDs
+    for sid in sids_to_remove:
+        b_retry = True
+        while b_retry:
+            try:
+                client.remove_permission(FunctionName=lambda_name, StatementId=sid)
+                logger.info("Removed SID %s for %s.", sid, lambda_name)
+                i_requests += 1
+                if i_requests % 5 == 0:
+                    time.sleep(0.05)
+                b_retry = False
+            except botocore.exceptions.ClientError as error:
+                if error.response["Error"]["Code"] == "TooManyRequestsException":
+                    logger.warning("API call limit exceeded (remove_permission); backing off and retrying...")
+                    time.sleep(0.25)
+                elif error.response["Error"]["Code"] == "ResourceNotFoundException":
+                    logger.warning("SID %s not found for %s during removal (might have been removed already).", sid, lambda_name)
+                    b_retry = False # Ignore if not found
+                else:
+                    logger.error("Error removing SID %s for %s: %s", sid, lambda_name, error)
+                    return False # Error during removal
+
+    logger.info("Successfully removed existing policies for %s.", lambda_name)
+    return True
 
 
 def apply_lambda_permissions():
@@ -65,10 +141,9 @@ def apply_lambda_permissions():
     AWS Accounts in the Organization.
     :return: 1 if successful, 0 if unable to apply permissions, or -1 in case of errors
     """
-    organization_name = os.environ['OrganizationName']
+    organization_name = os.environ.get('OrganizationName', 'DefaultOrg') # Added default for safety
     logger.debug("Organization Name: %s", organization_name)
     i_result = 0
-    permissions_validated = 0
     lambda_functions = {
         f"{organization_name}gc01_check_alerts_flag_misuse": ["GC01CheckAlertsFlagMisuseLambda"],
         f"{organization_name}gc01_check_attestation_letter": ["GC01CheckAttestationLetterLambda"],
@@ -116,110 +191,81 @@ def apply_lambda_permissions():
     accounts = get_accounts()
     client = boto3.client("lambda")
     i_requests = 0
-    if accounts:
-        for lambda_name in lambda_functions:
-            # check if any accounts are currently authorized
-            authorized_accounts = []
-            sids_in_use = []
+
+    if not accounts:
+        logger.error("No accounts listed - unable to add Lambda permissions.")
+        return 0 # No accounts isn't a failure, but nothing was done.
+
+    for lambda_name in lambda_functions:
+        logger.info("Processing permissions for Lambda: %s", lambda_name)
+
+        # 1. Remove existing permissions
+        if not remove_existing_permissions(client, lambda_name):
+            logger.error("Failed to remove existing permissions for %s. Aborting.", lambda_name)
+            return -1 # Indicate failure
+
+        # 2. Add permissions for all active accounts
+        sid_counter = 1
+        b_throttle = False
+        active_accounts_count = 0
+
+        for account in accounts:
+            account_id = account["Id"]
+            account_status = str(account["Status"]).upper()
+            if account_status != "ACTIVE":
+                logger.info("Skipping inactive account %s for %s.", account_id, lambda_name)
+                continue
+
+            active_accounts_count += 1
+            new_sid = f"p{sid_counter}"
+
             b_retry = True
-            b_completed = False
-            while b_retry and (not b_completed):
+            b_permission_added = False
+            while b_retry and (not b_permission_added):
+                if b_throttle and (i_requests % 5 == 0):
+                    time.sleep(0.05)
                 try:
-                    response = client.get_policy(FunctionName=lambda_name)
                     i_requests += 1
-                    if i_requests % 3 == 0:
-                        # backing off the API to avoid throttling
-                        time.sleep(0.05)
-                    for statement in json.loads(response.get("Policy")).get("Statement"):
-                        if (
-                            statement.get("Principal").get("Service") == "config.amazonaws.com"
-                            and statement.get("Action") == "lambda:InvokeFunction"
-                            and statement.get("Effect") == "Allow"
-                        ):
-                            # this is an authorized account
-                            source_account = (statement.get("Condition").get("StringEquals").get("AWS:SourceAccount"))
-                            authorized_accounts.append(source_account)
-                            if statement.get("Sid", ""):
-                                sids_in_use.append(statement.get("Sid", ""))
-                    b_completed = True
-                except botocore.exceptions.ClientError as error:
-                    # are we being throttled?
-                    if error.response["Error"]["Code"] == "TooManyRequestsException":
-                        logger.warning("API call limit exceeded; backing off and retrying...")
-                        time.sleep(0.25)
-                        b_retry = True
-                    else:
-                        # no, some other error
-                        logger.error("boto3 error %s", error)
+                    response = client.add_permission(
+                        Action="lambda:InvokeFunction",
+                        FunctionName=lambda_name,
+                        Principal="config.amazonaws.com",
+                        SourceAccount=account_id,
+                        StatementId=new_sid,
+                    )
+                    if not response.get("Statement"):
+                        logger.error("Invalid response adding permission %s for account '%s' to '%s'", new_sid, account_id, lambda_name)
+                        i_result = -1
                         b_retry = False
-                except (ValueError, TypeError):
-                    # let's assume the Lambda function permission does not exist
-                    logger.error("Unknown Exception trying to get policy for Lambda function '%s'.", lambda_name)
-                    b_retry = False
-            i = 0
-            b_throttle = False
-            for account in accounts:
-                account_id = account["Id"]
-                account_status = str(account["Status"]).upper()
-                if (account_id in authorized_accounts) or (account_status != "ACTIVE"):
-                    # skip this account and go to the next loop iteration
-                    i += 1
-                    permissions_validated += 1
-                    continue
-                # we need to add the permission
-                compliant_resource_name = "{}Permission{}".format(lambda_name.replace("_", "").replace("-", ""), i)
-                # ensure we are using a unique Sid
-                while compliant_resource_name in sids_in_use:
-                    i += 1
-                    compliant_resource_name = "{}Permission{}".format(lambda_name.replace("_", "").replace("-", ""), i)
-                b_retry = True
-                b_permission_added = False
-                while b_retry and (not b_permission_added):
-                    # if we've been throttled, sleep 50ms every 5 calls
-                    if b_throttle and (i_requests % 5 == 0):
-                        time.sleep(0.05)
-                    try:
-                        i_requests += 1
-                        response = client.add_permission(
-                            Action="lambda:InvokeFunction",
-                            FunctionName=lambda_name,
-                            Principal="config.amazonaws.com",
-                            SourceAccount=account_id,
-                            StatementId=compliant_resource_name,
-                        )
-                        if not response.get("Statement"):
-                            # invalid response
-                            logger.error("Invalid response adding permission for account '%s' to the '%s'", account_id, lambda_name)
-                            i_result = -1
-                            b_retry = False
-                            break
-                        else:
-                            # success
-                            permissions_validated += 1
-                            b_permission_added = True
-                    except botocore.exceptions.ClientError as error:
-                        # error while trying to add the permission
-                        # are we being throttled?
-                        if (error.response["Error"]["Code"] == "TooManyRequestsException"):
-                            logger.warning("API call limit exceeded; backing off and retrying...")
-                            b_throttle = True
-                            b_retry = True
-                            time.sleep(0.25)
-                        else:
-                            logger.error("Error while adding permission for account '%s' to the '%s' lambda", account_id, lambda_name)
-                            logger.error("Error: {%s}", error)
-                            i_result = -1
-                            b_retry = False
-                i += 1
-                if i_result == -1:
-                    # we ran into errors, stop the process
-                    break
-            if i_result != -1 and permissions_validated > 0:
-                # success!
-                i_result = 1
-    else:
-        logger.error("No accounts listed - unable to add Lambda permissions to template")
-    return i_result
+                        break
+                    else:
+                        logger.info("Added permission %s for account %s to %s.", new_sid, account_id, lambda_name)
+                        b_permission_added = True
+                        sid_counter += 1 # Increment only on success
+                except botocore.exceptions.ClientError as error:
+                    if error.response["Error"]["Code"] == "TooManyRequestsException":
+                        logger.warning("API call limit exceeded (add_permission); backing off and retrying...")
+                        b_throttle = True
+                        b_retry = True
+                        time.sleep(0.25)
+                    elif error.response["Error"]["Code"] == "ResourceConflictException":
+                         logger.warning("SID %s already exists for %s. This shouldn't happen after removal. Retrying...", new_sid, lambda_name)
+                         b_retry = True
+                         time.sleep(0.5) # Wait a bit longer for potential consistency issues
+                    else:
+                        logger.error("Error adding permission %s for account '%s' to '%s': %s", new_sid, account_id, lambda_name, error)
+                        i_result = -1
+                        b_retry = False
+
+            if i_result == -1:
+                break # Stop adding if an error occurs
+
+        if i_result == -1:
+            return -1 # Propagate error upwards
+
+        logger.info("Processed %d active accounts for %s.", active_accounts_count, lambda_name)
+
+    return 1 # If we reached here, all lambdas were processed successfully
 
 
 def send(event, context, response_status, response_data, physical_resource_id=None, no_echo=False, reason=None):
@@ -241,7 +287,7 @@ def send(event, context, response_status, response_data, physical_resource_id=No
     logger.info(json_response_body)
     headers = {'content-type': '', 'content-length': str(len(json_response_body))}
     try:
-        response = http.request('PUT', response_url, headers=headers, body=json_response_body)
+        response = http.request('PUT', response_url, headers=headers, body=json_response_body.encode('utf-8')) # Added encode
         logger.info("Status code: %s", response.status)
     except (ValueError, TypeError, urllib3.exceptions.HTTPError) as err:
         logger.error("send(..) failed executing http.request(..): %s", err)
@@ -255,44 +301,45 @@ def lambda_handler(event, context):
     """
     logger.info("Received Event: %s", json.dumps(event, indent=2))
     response_data = {}
-    if event["RequestType"] == "Create":
-        # try to add the lambda permissions
-        result = apply_lambda_permissions()
-        if result != 1:
-            # we failed
-            response_data["Reason"] = "Failed to add the Lambda Permissions. Check CloudWatch Logs."
-            send(event, context, FAILED, response_data)
-        else:
-            # success
-            response_data["Reason"] = "Successfully added the Lambda Permissions. Check CloudWatch Logs."
+
+    # Determine if this is a CloudFormation event or a scheduled (Cron) event
+    is_cloudformation = "RequestType" in event and "ResponseURL" in event
+    is_cron = "source" in event and event["source"] == "aws.events" # Example check for EventBridge
+
+    if is_cloudformation:
+        request_type = event["RequestType"]
+        logger.info("Handling CloudFormation RequestType: %s", request_type)
+
+        if request_type in ["Create", "Update"]:
+            result = apply_lambda_permissions()
+            if result != 1:
+                response_data["Reason"] = f"Failed to {request_type.lower()} the Lambda Permissions. Check CloudWatch Logs."
+                send(event, context, FAILED, response_data, reason=response_data["Reason"])
+            else:
+                response_data["Reason"] = f"Successfully {request_type.lower()}d the Lambda Permissions."
+                send(event, context, SUCCESS, response_data)
+        elif request_type == "Delete":
+            logger.info("Delete request received. No specific cleanup action required for permissions here.")
             send(event, context, SUCCESS, response_data)
-    elif event["RequestType"] == "Update":
-        # try to validate the lambda permissions
-        result = apply_lambda_permissions()
-        if result != 1:
-            # we failed
-            response_data["Reason"] = "Failed to update the Lambda Permissions. Check CloudWatch Logs."
-            send(event, context, FAILED, response_data)
         else:
-            # success
-            response_data["Reason"] = "Successfully validated the Lambda Permissions. Check CloudWatch Logs."
-            send(event, context, SUCCESS, response_data)
-    elif event["RequestType"] == "Delete":
-        # delete - review in the future if anything needs to be deleted
-        # assuming Lambda Permissions are removed when the function is removed
-        res = event["PhysicalResourceId"]
-        response_data["lower"] = res.lower()
-        send(event, context, SUCCESS, response_data)
-    elif event["RequestType"] == "Cron":
-        # try to validate the lambda permissions
-        result = apply_lambda_permissions()
-        if result != 1:
-            # we failed
-            response_data["Reason"] = "Failed to update the Lambda Permissions. Check CloudWatch Logs."
-        else:
-            # success
-            response_data["Reason"] = "Successfully validated the Lambda Permissions. Check CloudWatch Logs."
-    else:  # delete / update
-        # something else, need to raise error
-        send(event, context, FAILED, response_data, response_data["lower"])
-    logger.info("responseData %s", response_data)
+            logger.error("Unknown CloudFormation RequestType: %s", request_type)
+            send(event, context, FAILED, response_data, reason="Unknown RequestType")
+
+    # Handle scheduled events (Cron-like)
+    # Check if 'RequestType' exists and is 'Cron' (from original code) OR if it's an EventBridge event
+    elif event.get("RequestType") == "Cron" or is_cron:
+         logger.info("Handling Cron/Scheduled Event.")
+         result = apply_lambda_permissions()
+         if result != 1:
+             logger.error("Cron job failed to update Lambda Permissions.")
+             # You might want to raise an exception or send a notification here
+         else:
+             logger.info("Cron job successfully validated/updated Lambda Permissions.")
+             # For cron, we usually don't send CFN responses.
+             # If you need to signal success/failure elsewhere, add it here.
+    else:
+        logger.error("Unknown event type. Event: %s", json.dumps(event, indent=2))
+        # If it's a CFN event that failed the initial check, send FAILED
+        if is_cloudformation:
+             send(event, context, FAILED, response_data, reason="Unknown event structure or RequestType")
+        # Otherwise, just log the error.
