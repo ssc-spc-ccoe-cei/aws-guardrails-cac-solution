@@ -1691,6 +1691,15 @@ Resources:
                   !GetAtt GenerateEvidenceBucketName.EvidenceBucketName,
                   !Ref EvidenceBucketName,
                 ]
+        - ParameterName: S3NonComplianceOptoutFilePath
+          ParameterValue: !Sub
+            - "s3://${ClientEvidenceBucket}/gc-07/optout_file.txt"
+            - ClientEvidenceBucket:
+                !If [
+                  GenerateEvidenceBucketName,
+                  !GetAtt GenerateEvidenceBucketName.EvidenceBucketName,
+                  !Ref EvidenceBucketName,
+                ]
         - ParameterName: S3SecureNetworkTransmissionPolicyPath
           ParameterValue: !Sub
             - "s3://${ClientEvidenceBucket}/gc-07/secure_network_transmission.pdf"

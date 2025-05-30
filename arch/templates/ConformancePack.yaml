@@ -85,6 +85,8 @@ Parameters:
     Type: String
   S3SecureNetworkTransmissionPolicyPath:
     Type: String
+  S3NonComplianceOptoutFilePath:
+    Type: String
   # GC08
   S3TargetNetworkArchitecturePath:
     Type: String
@@ -1051,6 +1053,11 @@ Resources:
             - auditAccountID
             - Ref: AuditAccountID
             - Ref: AWS::NoValue
+        S3NonComplianceOptoutFilePath:
+          Fn::If:
+            - s3NonComplianceOptoutFilePath
+            - Ref: S3NonComplianceOptoutFilePath
+            - Ref: AWS::NoValue
       Scope:
         ComplianceResourceTypes:
           - AWS::Account
@@ -1836,6 +1843,11 @@ Conditions:
       - Fn::Equals:
           - ""
           - Ref: S3SecureNetworkTransmissionPolicyPath
+  s3NonComplianceOptoutFilePath:
+    Fn::Not:
+      - Fn::Equals:
+          - ""
+          - Ref: S3NonComplianceOptoutFilePath
   # GC08
   s3TargetNetworkArchitecturePath:
     Fn::Not:

@@ -10,7 +10,7 @@ from utils import is_scheduled_notification, check_required_parameters, check_gu
 from boto_util.organizations import get_account_tags
 from boto_util.client import get_client, is_throttling_exception
 from boto_util.config import build_evaluation, submit_evaluations
-from boto_util.s3 import list_all_s3_buckets
+from boto_util.s3 import list_all_s3_buckets, check_s3_object_exists
 from boto_util.api_gateway import list_all_api_gateway_resources
 from boto_util.cloud_front import list_all_cloud_front_distributions
 
@@ -728,11 +728,12 @@ def lambda_handler(event, context):
         logger.error("Skipping assessments as this is not a scheduled invocation")
         return
 
-    rule_parameters = check_required_parameters(json.loads(event.get("ruleParameters", "{}")), ["ExecutionRoleName"])
+    rule_parameters = check_required_parameters(json.loads(event.get("ruleParameters", "{}")), ["ExecutionRoleName", "S3NonComplianceOptoutFilePath"])
     execution_role_name = rule_parameters.get("ExecutionRoleName")
     audit_account_id = rule_parameters.get("AuditAccountID", "")
     aws_account_id = event["accountId"]
-    logger.info(f"AWS Account ID: {aws_account_id}, Audit Account ID: {audit_account_id}")
+    optout_file_path = rule_parameters.get("S3NonComplianceOptoutFilePath", "")
+    logger.info(f"AWS Account ID: {aws_account_id}, Audit Account ID: {audit_account_id}", "Optout File Path: {optout_file_path}")
     is_not_audit_account = aws_account_id != audit_account_id
 
     evaluations = []
@@ -748,13 +749,14 @@ def lambda_handler(event, context):
     THROTTLE_BACKOFF = 2
 
     aws_config_client = get_client("config", aws_account_id, execution_role_name, is_not_audit_account)
+    aws_cloud_front_client = get_client("cloudfront", aws_account_id, execution_role_name, is_not_audit_account)
     aws_s3_client = get_client("s3", aws_account_id, execution_role_name, is_not_audit_account)
     aws_redshift_client = get_client("redshift", aws_account_id, execution_role_name, is_not_audit_account)
     aws_elb_v1_client = get_client("elb", aws_account_id, execution_role_name, is_not_audit_account)
     aws_elb_v2_client = get_client("elbv2", aws_account_id, execution_role_name, is_not_audit_account)
     aws_api_gw_client = get_client("apigateway", aws_account_id, execution_role_name, is_not_audit_account)
     aws_open_search_client = get_client("opensearch", aws_account_id, execution_role_name, is_not_audit_account)
-    aws_cloud_front_client = get_client("cloudfront", aws_account_id, execution_role_name, is_not_audit_account)
+    
     
 
     compliance_details = get_all_compliance_details_by_config_rule(aws_config_client, event["configRuleName"], ["NON_COMPLIANT"])
@@ -796,10 +798,23 @@ def lambda_handler(event, context):
     compliance_type = "COMPLIANT"
     annotation = "No non-compliant resources found"
 
+    # added check for opt out file. if file exists, change the non-compliance to compliant status
+    for evaluation in evaluations:
+        if evaluation.get("ComplianceType", "") == "NON_COMPLIANT":
+            # add the check for if file exists in an evidence bucket
+            optout_file_exists_flag = check_s3_object_exists(aws_s3_client, optout_file_path)  
+            # if file exists, change status to compliant
+            if optout_file_exists_flag:
+                evaluation["ComplianceType"] = "COMPLIANT"
+                evaluation["Annotation"] = "Compliant owing to opt out file found"     
+            
+
+    
+
     for evaluation in evaluations:
         if evaluation.get("ComplianceType", "") == "NON_COMPLIANT":
             compliance_type = "NON_COMPLIANT"
-            annotation = "Non-compliant resources in scope found"
+            annotation = "Non-compliant resources in scope found"    
             break
 
     logger.info(f"{compliance_type}: {annotation}")
