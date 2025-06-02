@@ -733,7 +733,7 @@ def lambda_handler(event, context):
     audit_account_id = rule_parameters.get("AuditAccountID", "")
     aws_account_id = event["accountId"]
     optout_file_path = rule_parameters.get("S3NonComplianceOptoutFilePath", "")
-    logger.info(f"AWS Account ID: {aws_account_id}, Audit Account ID: {audit_account_id}", "Optout File Path: {optout_file_path}")
+    logger.info(f"AWS Account ID: {aws_account_id}, Audit Account ID: {audit_account_id}")
     is_not_audit_account = aws_account_id != audit_account_id
 
     evaluations = []
