@@ -131,16 +131,26 @@ def apply_lambda_permissions():
                         # backing off the API to avoid throttling
                         time.sleep(0.05)
                     for statement in json.loads(response.get("Policy")).get("Statement"):
+                        try:
+                            service = statement.get("Principal").get("Service")
+                        except AttributeError:
+                            service = "*"
+                        
                         if (
-                            statement.get("Principal").get("Service") == "config.amazonaws.com"
+                            service == "config.amazonaws.com"
                             and statement.get("Action") == "lambda:InvokeFunction"
                             and statement.get("Effect") == "Allow"
                         ):
                             # this is an authorized account
-                            source_account = (statement.get("Condition").get("StringEquals").get("AWS:SourceAccount"))
-                            authorized_accounts.append(source_account)
+                            try:
+                                source_account = (statement.get("Condition").get("StringEquals").get("AWS:SourceAccount"))
+                                authorized_accounts.append(source_account)
+                            except AttributeError:
+                                source_account = ""
                             if statement.get("Sid", ""):
                                 sids_in_use.append(statement.get("Sid", ""))
+                            #remove existing permission for the service config.amazonaws.com
+                            client.remove_permission(FunctionName=lambda_name, StatementId=statement.get("Sid", ""))
                     b_completed = True
                 except botocore.exceptions.ClientError as error:
                     # are we being throttled?
@@ -183,7 +193,7 @@ def apply_lambda_permissions():
                         response = client.add_permission(
                             Action="lambda:InvokeFunction",
                             FunctionName=lambda_name,
-                            Principal="config.amazonaws.com",
+                            Principal="*",
                             SourceAccount=account_id,
                             StatementId=compliant_resource_name,
                         )
@@ -221,6 +231,45 @@ def apply_lambda_permissions():
         logger.error("No accounts listed - unable to add Lambda permissions to template")
     return i_result
 
+
+def remove_lambda_policies(lambda_functions):
+    
+    client = boto3.client("lambda")
+    results = {}
+    
+    for lambda_name in lambda_functions:
+        results[lambda_name] = {"removed": [], "errors": []}
+        try:
+            # Get current policy
+            try:
+                
+                response = client.get_policy(FunctionName=lambda_name)
+                if response:
+                    policy = json.loads(json.loads(response.get("Policy")))
+                    statements = policy.get("Statement", [])
+                    sids_to_remove = [ stmt.get("Sid") for stmt in statements ]
+                    
+                    for sid in sids_to_remove:
+                        try:
+                            client.remove_permission(FunctionName=lambda_name, StatementId=sid)
+                            
+                            results[lambda_name]["removed"].append(sid)
+                            logger.info(f"Removed policy statement {sid} from function {lambda_name}")
+                    
+                        except Exception as e:
+                            error_msg = f"Error removing statement {sid} : {str(e)}"
+                            results[lambda_name]["errors"].append(error_msg)
+                            logger.error(error_msg)
+            
+            except client.exceptions.ResourceNotFoundException:
+                results[lambda_name]["errors"].append("No policy found for this function")
+                logger.info(f"No  policy found for the function {lambda_name}")
+        
+        except Exception as e:
+            error_msg = f"Error processing function {lambda_name} : {str(e)}"
+            results[lambda_name]["errors"].append(error_msg)
+            logger.error(error_msg)
+            
 
 def send(event, context, response_status, response_data, physical_resource_id=None, no_echo=False, reason=None):
     """Sends a response to CloudFormation"""
