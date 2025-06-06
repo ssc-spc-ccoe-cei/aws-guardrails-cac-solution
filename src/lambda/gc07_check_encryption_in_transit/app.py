@@ -275,8 +275,18 @@ def assess_elb_v2_ssl_enforcement(elb_v2_client, event: dict):
                         listener_annotation = ""
                         listener_protocol = listener.get("Protocol", "")
                         if listener_protocol.lower() not in ["https", "tls"]:
-                            listener_compliance = "NON_COMPLIANT"
-                            listener_annotation = "Non HTTPS/TLS listener protocol - {}".format(listener_protocol)
+                            redirect_flag = False
+                            for action in listener.get("DefaultActions", []):
+                                if (action.get("Type") == "redirect" and action.get("RedirectConfig", {}).get("Protocol") == "HTTPS"):
+                                    redirect_flag = True
+                                    break
+
+                            if redirect_flag:
+                                listener_compliance = "COMPLIANT"
+                                listener_annotation = f"HTTP listener with HTTPS redirection - {listener.get("ListenerArn", "")}"
+                            else:
+                                listener_compliance = "NON_COMPLIANT"
+                                listener_annotation = "Non HTTPS/TLS listener protocol - {}".format(listener_protocol)
                         else:
                             listener_compliance = "COMPLIANT"
                             listener_annotation = f"Listener uses HTTPS/TLS - {listener.get("ListenerArn", "")}"
@@ -371,6 +381,7 @@ def assess_elb_v1_ssl_enforcement(elb_client, event: dict):
                 listener_protocol = listener.get("Listener", {}).get("Protocol", "")
                 
                 if listener_protocol.lower() not in ["https", "ssl"]:
+                    #Classic Load Balancers don't support HTTP to HTTPS redirection at the load balancer level
                     listener_compliance = "NON_COMPLIANT"
                     listener_annotation = f"Port {listener_port} uses non TLS 1.2 compliant listener protocol {listener_protocol}"
                 else:
@@ -797,10 +808,9 @@ def lambda_handler(event, context):
 
     compliance_type = "COMPLIANT"
     annotation = "No non-compliant resources found"
-
-    # added check for opt out file. if file exists, change the non-compliance to compliant status
+    # added check for opt out file. if file exists, change the non-compliance to compliant status only for both ELB v1 and v2
     for evaluation in evaluations:
-        if evaluation.get("ComplianceType", "") == "NON_COMPLIANT":
+        if evaluation.get("ComplianceType", "") == "NON_COMPLIANT" and (evaluation.get("ComplianceResourceType", "") == "AWS::ElasticLoadBalancingV2::Listener" or evaluation.get("ComplianceResourceType", "") == "AWS::ElasticLoadBalancing::LoadBalancer") :
             # add the check for if file exists in an evidence bucket
             optout_file_exists_flag = check_s3_object_exists(aws_s3_client, optout_file_path)  
             # if file exists, change status to compliant

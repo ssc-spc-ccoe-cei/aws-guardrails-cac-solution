@@ -149,9 +149,11 @@ def apply_lambda_permissions():
                                 source_account = ""
                             if statement.get("Sid", ""):
                                 sids_in_use.append(statement.get("Sid", ""))
-                            #remove existing permission for the service config.amazonaws.com
+                            #remove all existing permissions for service config.amazonaws.com
                             client.remove_permission(FunctionName=lambda_name, StatementId=statement.get("Sid", ""))
+
                     b_completed = True
+                    
                 except botocore.exceptions.ClientError as error:
                     # are we being throttled?
                     if error.response["Error"]["Code"] == "TooManyRequestsException":
@@ -166,6 +168,7 @@ def apply_lambda_permissions():
                     # let's assume the Lambda function permission does not exist
                     logger.error("Unknown Exception trying to get policy for Lambda function '%s'.", lambda_name)
                     b_retry = False
+            
             i = 0
             b_throttle = False
             for account in accounts:
@@ -177,11 +180,11 @@ def apply_lambda_permissions():
                     permissions_validated += 1
                     continue
                 # we need to add the permission
-                compliant_resource_name = "{}Permission{}".format(lambda_name.replace("_", "").replace("-", ""), i)
+                compliant_resource_name = f"p{i + 1}"
                 # ensure we are using a unique Sid
                 while compliant_resource_name in sids_in_use:
                     i += 1
-                    compliant_resource_name = "{}Permission{}".format(lambda_name.replace("_", "").replace("-", ""), i)
+                    compliant_resource_name = f"p{i + 1}"
                 b_retry = True
                 b_permission_added = False
                 while b_retry and (not b_permission_added):
@@ -190,6 +193,7 @@ def apply_lambda_permissions():
                         time.sleep(0.05)
                     try:
                         i_requests += 1
+                        
                         response = client.add_permission(
                             Action="lambda:InvokeFunction",
                             FunctionName=lambda_name,
@@ -197,6 +201,7 @@ def apply_lambda_permissions():
                             SourceAccount=account_id,
                             StatementId=compliant_resource_name,
                         )
+                    
                         if not response.get("Statement"):
                             # invalid response
                             logger.error("Invalid response adding permission for account '%s' to the '%s'", account_id, lambda_name)
@@ -231,45 +236,6 @@ def apply_lambda_permissions():
         logger.error("No accounts listed - unable to add Lambda permissions to template")
     return i_result
 
-
-def remove_lambda_policies(lambda_functions):
-    
-    client = boto3.client("lambda")
-    results = {}
-    
-    for lambda_name in lambda_functions:
-        results[lambda_name] = {"removed": [], "errors": []}
-        try:
-            # Get current policy
-            try:
-                
-                response = client.get_policy(FunctionName=lambda_name)
-                if response:
-                    policy = json.loads(json.loads(response.get("Policy")))
-                    statements = policy.get("Statement", [])
-                    sids_to_remove = [ stmt.get("Sid") for stmt in statements ]
-                    
-                    for sid in sids_to_remove:
-                        try:
-                            client.remove_permission(FunctionName=lambda_name, StatementId=sid)
-                            
-                            results[lambda_name]["removed"].append(sid)
-                            logger.info(f"Removed policy statement {sid} from function {lambda_name}")
-                    
-                        except Exception as e:
-                            error_msg = f"Error removing statement {sid} : {str(e)}"
-                            results[lambda_name]["errors"].append(error_msg)
-                            logger.error(error_msg)
-            
-            except client.exceptions.ResourceNotFoundException:
-                results[lambda_name]["errors"].append("No policy found for this function")
-                logger.info(f"No  policy found for the function {lambda_name}")
-        
-        except Exception as e:
-            error_msg = f"Error processing function {lambda_name} : {str(e)}"
-            results[lambda_name]["errors"].append(error_msg)
-            logger.error(error_msg)
-            
 
 def send(event, context, response_status, response_data, physical_resource_id=None, no_echo=False, reason=None):
     """Sends a response to CloudFormation"""
