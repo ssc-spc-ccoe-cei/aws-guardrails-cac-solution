@@ -1,11 +1,5 @@
 # aws-guardrails-cac-solution
 
-# GC Guardrails
-
-- For detailed breakdown by lambda function, refer to [notes.md](./doc/NOTES.md)
-- For manual deployment steps, refer to [manual.md](./doc/MANUAL.md)
-- For steps to extend the current solution, refer to [enhance.md](./doc/ENHANCE.md)
-
 ## The Deployment procedures, Prerequisite Requirements, Release Notes and Remediation documentation are available on the GCXchange page.
 
 ## GCXchange page Links
