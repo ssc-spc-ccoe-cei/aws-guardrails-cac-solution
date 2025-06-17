@@ -208,27 +208,6 @@ frameworks_data = [
                     },
                     {
                         "type": "Custom",
-                        "name": "gc02_check_account_mgmt_plan",
-                        "description": "Confirm that a Account Management Plan document has been provided. Source: https://github.com/canada-ca/cloud-guardrails/blob/master/EN/02_Manage-Access.md",
-                        "testingInformation": "",
-                        "actionPlanTitle": "Provide a Account Management Plan document that meets GC requirements",
-                        "actionPlanInstructions": "Upload the file to an S3 bucket and provide the path to the AWS Config control.",
-                        "controlSources": "AWS Config",
-                        "controlMappingSources": [
-                            {
-                                "sourceName": "S3-check",
-                                "sourceSetUpOption": "System_Controls_Mapping",
-                                "sourceType": "AWS_Config",
-                                "sourceKeyword": {
-                                    "keywordInputType": "SELECT_FROM_LIST",
-                                    "keywordValue": "Custom_gc02_check_account_mgmt_plan-conformance-pack",
-                                },
-                            }
-                        ],
-                        "tags": {},
-                    },
-                    {
-                        "type": "Custom",
                         "name": "gc02_check_group_access_configuration",
                         "description": "Demonstrate access configurations and policies are implemented for different classes of users.Source: https://github.com/canada-ca/cloud-guardrails/blob/master/EN/02_Manage-Access.md",
                         "testingInformation": "Checks IAM and identity center groups to ensure that only admin groups have admin policies and members. And only non admin groups have non admin policies.",
