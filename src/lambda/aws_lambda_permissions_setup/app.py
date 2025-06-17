@@ -186,7 +186,7 @@ def apply_lambda_permissions():
                     compliant_resource_name = f"p{i + 1}"
                 b_retry = True
                 b_permission_added = False
-                logger.info(compliant_resource_name)
+            
                 while b_retry and (not b_permission_added):
                     # if we've been throttled, sleep 50ms every 5 calls
                     if b_throttle and (i_requests % 5 == 0):
