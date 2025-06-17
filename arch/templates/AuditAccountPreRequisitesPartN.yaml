@@ -53,7 +53,6 @@ Resources:
             Action:
               - "lambda:AddPermission"
               - "lambda:GetPolicy"
-              - "lambda:RemovePermission"
             Resource:
               - !Sub "arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:${OrganizationName}gc*"
             Effect: Allow

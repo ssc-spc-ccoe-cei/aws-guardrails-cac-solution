@@ -146,13 +146,13 @@ def apply_lambda_permissions():
                                 authorized_accounts.append(source_account)
                             except AttributeError:
                                 source_account = ""
+                            
                             if statement.get("Sid", ""):
                                 sids_in_use.append(statement.get("Sid", ""))
-                            #remove all existing permissions for service config.amazonaws.com
-                            client.remove_permission(FunctionName=lambda_name, StatementId=statement.get("Sid", ""))
-
+                            
                     b_completed = True
                     
+
                 except botocore.exceptions.ClientError as error:
                     # are we being throttled?
                     if error.response["Error"]["Code"] == "TooManyRequestsException":
@@ -186,6 +186,7 @@ def apply_lambda_permissions():
                     compliant_resource_name = f"p{i + 1}"
                 b_retry = True
                 b_permission_added = False
+                logger.info(compliant_resource_name)
                 while b_retry and (not b_permission_added):
                     # if we've been throttled, sleep 50ms every 5 calls
                     if b_throttle and (i_requests % 5 == 0):
@@ -196,7 +197,7 @@ def apply_lambda_permissions():
                         response = client.add_permission(
                             Action="lambda:InvokeFunction",
                             FunctionName=lambda_name,
-                            Principal="*",
+                            Principal="config.amazonaws.com",
                             SourceAccount=account_id,
                             StatementId=compliant_resource_name,
                         )
