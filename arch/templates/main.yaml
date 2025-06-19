@@ -1693,7 +1693,7 @@ Resources:
                 ]
         - ParameterName: S3NonComplianceOptoutFilePath
           ParameterValue: !Sub
-            - "s3://${ClientEvidenceBucket}/gc-07/optout_file.txt"
+            - "s3://${ClientEvidenceBucket}/gc-07/GR07_lb_attestation.pdf"
             - ClientEvidenceBucket:
                 !If [
                   GenerateEvidenceBucketName,
