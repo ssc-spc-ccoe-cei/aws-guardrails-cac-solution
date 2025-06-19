@@ -65,6 +65,7 @@ def assess_s3_buckets_ssl_enforcement(s3_client, event: dict):
                                 bucket.get("Name", ""),
                                 ex,
                             )
+                logger.info(bucket_policy)
                 if bucket_policy:
                     for statement in bucket_policy.get("Statement"):
                         statement_condition = statement.get("Condition")
@@ -811,8 +812,10 @@ def lambda_handler(event, context):
     # added check for opt out file. if file exists, change the non-compliance to compliant status only for both ELB v1 and v2
     for evaluation in evaluations:
         if evaluation.get("ComplianceType", "") == "NON_COMPLIANT" and (evaluation.get("ComplianceResourceType", "") == "AWS::ElasticLoadBalancingV2::Listener" or evaluation.get("ComplianceResourceType", "") == "AWS::ElasticLoadBalancing::LoadBalancer") :
-            # add the check for if file exists in an evidence bucket
-            optout_file_exists_flag = check_s3_object_exists(aws_s3_client, optout_file_path)  
+            # add the check for if file exists in an evidence bucket, 
+            # addeded new client to avoid AccessDenied exception
+            s3_client = get_client("s3")
+            optout_file_exists_flag = check_s3_object_exists(s3_client, optout_file_path)  
             # if file exists, change status to compliant
             if optout_file_exists_flag:
                 evaluation["ComplianceType"] = "COMPLIANT"
