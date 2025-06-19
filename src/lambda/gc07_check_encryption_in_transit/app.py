@@ -65,7 +65,7 @@ def assess_s3_buckets_ssl_enforcement(s3_client, event: dict):
                                 bucket.get("Name", ""),
                                 ex,
                             )
-                logger.info(bucket_policy)
+                
                 if bucket_policy:
                     for statement in bucket_policy.get("Statement"):
                         statement_condition = statement.get("Condition")
