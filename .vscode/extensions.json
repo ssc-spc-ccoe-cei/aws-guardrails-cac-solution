@@ -1,0 +1,17 @@
+{
+  "recommendations": [
+    "amazonwebservices.aws-toolkit-vscode",
+    "Boto3typed.boto3-ide",
+    "esbenp.prettier-vscode",
+    "foxundermoon.shell-format",
+    "mark-tucker.aws-cli-configure",
+    "ms-python.black-formatter",
+    "ms-python.debugpy",
+    "ms-python.python",
+    "ms-python.vscode-pylance",
+    "nextfaze.json-parse-stringify",
+    "redhat.vscode-yaml",
+    "streetsidesoftware.code-spell-checker",
+    "yzhang.markdown-all-in-one"
+  ]
+}

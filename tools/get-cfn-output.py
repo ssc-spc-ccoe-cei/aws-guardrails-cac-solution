@@ -74,7 +74,7 @@ parser.add_argument('--update', help = 'json file to update',
 args=parser.parse_args()
 
 output = get_cfn_outputs(stack_name=args.stack, session=s)
-if output is []:
+if output is None:
     print(f"Stack {args.stack} does not exist. Please create the stack or verify the stack name.")
 else:
     # Proceed with updating the JSON only if the stack exists and outputs were retrieved

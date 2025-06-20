@@ -17,15 +17,26 @@ Parameters:
       The prefix to apply to generated role names, in ASEA this is generally ASEA- for lza this could be cdk-accel etc
   PythonRuntime:
     Type: String
-    Default: 'python3.12'
-    Description:
-      The python runtime to use for the compliance dashboard
+    Default: "python3.12"
+    Description: The python runtime to use for the compliance dashboard
+  DefaultCloudProfile:
+    Type: String
+    Description: The cloud profile to use when one is not provided by an account.
+
 Conditions:
   IsAuditAccount: !Equals
     - !Ref AWS::AccountId
     - !Ref AuditAccountID
 
 Resources:
+  CloudGuardrailsCommonLayer:
+    Type: AWS::Lambda::LayerVersion
+    Properties:
+      LayerName: CloudGuardrailsCommonLayerPart5
+      CompatibleRuntimes:
+        - python3.12
+      Content: "../../src/layer/cloud_guardrails/build/CloudGuardrailsCommonLayer/"
+
   ## GC04
   GC04CheckEnterpriseMonitoringLambda:
     Condition: IsAuditAccount
@@ -37,9 +48,33 @@ Resources:
       Role: !Sub "arn:aws:iam::${AuditAccountID}:role/${RolePrefix}default_assessment_role"
       Runtime: !Ref PythonRuntime
       Timeout: 90
+      Layers:
+        - !Ref CloudGuardrailsCommonLayer
       LoggingConfig:
         LogGroup: !Sub "${OrganizationName}gc_guardrails"
         LogFormat: "JSON"
+      Environment:
+        Variables:
+          DEFAULT_CLOUD_PROFILE: !Ref DefaultCloudProfile
+
+  GC04CheckAlertsFlagMisuseLambda:
+    Condition: IsAuditAccount
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub "${OrganizationName}gc04_check_alerts_flag_misuse"
+      Code: "../../src/lambda/gc04_check_alerts_flag_misuse/build/GC04CheckAlertsFlagMisuseLambda/"
+      Handler: app.lambda_handler
+      Role: !Sub "arn:aws:iam::${AuditAccountID}:role/${RolePrefix}default_assessment_role"
+      Runtime: !Ref PythonRuntime
+      Timeout: 90
+      Layers:
+        - !Ref CloudGuardrailsCommonLayer
+      LoggingConfig:
+        LogGroup: !Sub "${OrganizationName}gc_guardrails"
+        LogFormat: "JSON"
+      Environment:
+        Variables:
+          DEFAULT_CLOUD_PROFILE: !Ref DefaultCloudProfile
 
   ## GC05
   GC05CheckDataLocationLambda:
@@ -52,6 +87,11 @@ Resources:
       Role: !Sub "arn:aws:iam::${AuditAccountID}:role/${RolePrefix}default_assessment_role"
       Runtime: !Ref PythonRuntime
       Timeout: 900
+      Layers:
+        - !Ref CloudGuardrailsCommonLayer
       LoggingConfig:
         LogGroup: !Sub "${OrganizationName}gc_guardrails"
         LogFormat: "JSON"
+      Environment:
+        Variables:
+          DEFAULT_CLOUD_PROFILE: !Ref DefaultCloudProfile

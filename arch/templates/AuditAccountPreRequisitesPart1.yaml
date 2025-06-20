@@ -5,6 +5,9 @@ Parameters:
     Type: String
     Default: ""
     Description: The name of the organization. Used as a prefix in resource names.
+  OrganizationId:
+    Type: String
+    Description: Organization id to be passed down from the root.yaml file.
   AuditAccountID:
     Type: String
     Default: ""
@@ -14,6 +17,13 @@ Parameters:
     Default: ""
     Description: >-
       The name of the Amazon S3 bucket to be used to store the required documents for assessment.
+  ExecutionName:
+    Type: String
+    Default: "gc-evidencewatcher-execution-role"
+    Description: Execution arn name to be used when applying policy to the evidence and destination bucket.
+  DestBucketName:
+    Description: S3 Bucket name
+    Type: String
   AWSConfigConformsBucketName:
     Type: String
     Default: ""
@@ -27,12 +37,18 @@ Parameters:
   AccelRolePrefix:
     Type: String
     Default: "AWSA-"
-    Description: The Accelerator role prefix for priveledged access
+    Description: The Accelerator role prefix for privileged access
   PythonRuntime:
     Type: String
-    Default: 'python3.12'
-    Description:
-      The python runtime to use for the compliance dashboard
+    Default: "python3.12"
+    Description: The python runtime to use for the compliance dashboard
+  DefaultCloudProfile:
+    Type: String
+    Description: The cloud profile to use when one is not provided by an account.
+  DeployVersion:
+    Type: String
+  InvokeUpdate:
+    Type: String
 
 Conditions:
   GenerateEvidenceBucketName: !Equals
@@ -46,6 +62,14 @@ Conditions:
     - !Ref AuditAccountID
 
 Resources:
+  CloudGuardrailsCommonLayer:
+    Type: AWS::Lambda::LayerVersion
+    Properties:
+      LayerName: CloudGuardrailsCommonLayerPart1
+      CompatibleRuntimes:
+        - python3.12
+      Content: "../../src/layer/cloud_guardrails/build/CloudGuardrailsCommonLayer/"
+
   BucketSetupLambdaExecutionRolePolicy:
     Condition: IsAuditAccount
     Type: AWS::IAM::Policy
@@ -72,15 +96,17 @@ Resources:
               - "s3:CreateBucket"
               - "s3:ListAllMyBuckets"
               - "s3:PutBucketPolicy"
+              - "s3:PutBucketNotification"
+              - "s3:GetBucketNotification"
             Resource: "*"
             Effect: Allow
           - Sid: AllowS3ObjectCreation
             Action:
+              - "s3:Get*"
+              - "s3:List*"
               - "s3:PutBucketAcl"
               - "s3:PutObject"
               - "s3:PutObjectAcl"
-              - "s3:Get*"
-              - "s3:List*"
             Resource:
               - !Sub "arn:aws:s3:::${EvidenceBucketName}"
               - !Sub "arn:aws:s3:::${EvidenceBucketName}/*"
@@ -105,6 +131,26 @@ Resources:
       Description: "Setup Buckets"
       ManagedPolicyArns:
         - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Policies:
+        - PolicyName: ListLambdaPolicy
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - "lambda:ListFunctions"
+                Resource: "*"
+        - PolicyName: LambdaNotificationValidationPolicy
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - "lambda:ListFunctionEventInvokeConfigs"
+                  - "lambda:GetFunction"
+                  - "lambda:GetFunctionConfiguration"
+                  - "lambda:GetFunctionEventInvokeConfig"
+                Resource: !GetAtt EvidenceWatcherLambda.Arn
       Path: "/"
       RoleName: !Sub ${RolePrefix}setup_buckets_role
       Tags:
@@ -121,6 +167,9 @@ Resources:
       Role: !GetAtt BucketSetupLambdaExecutionRole.Arn
       Runtime: !Ref PythonRuntime
       Timeout: 300
+      Environment:
+        Variables:
+          EVIDENCE_WATCHER_ARN: !GetAtt EvidenceWatcherLambda.Arn
     DependsOn:
       - BucketSetupLambdaExecutionRolePolicy
 
@@ -133,10 +182,73 @@ Resources:
       EvidenceBucketName:
         !If [GenerateEvidenceBucketName, AWS::NoValue, !Ref EvidenceBucketName]
       AWSConfigBucketName:
-        !If [GenerateAWSConfigConformsBucketName, AWS::NoValue, !Ref AWSConfigConformsBucketName]
+        !If [
+          GenerateAWSConfigConformsBucketName,
+          AWS::NoValue,
+          !Ref AWSConfigConformsBucketName,
+        ]
       StaticWebSiteURL: "http://localhost:8000"
+      DeployVersion: !Ref DeployVersion
+      InvokeUpdate: !Ref InvokeUpdate
     DependsOn:
       - BucketsSetupLambda
+
+  EvidenceWatcherPermission:
+    Condition: IsAuditAccount
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: "lambda:InvokeFunction"
+      FunctionName: !Ref EvidenceWatcherLambda
+      Principal: s3.amazonaws.com
+      SourceAccount: !Ref "AWS::AccountId"
+      SourceArn: !Sub "arn:aws:s3:::${EvidenceBucketName}"
+
+  EvidenceWatcherLambda:
+    Condition: IsAuditAccount
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub "${OrganizationName}aws_evidence_bucket_watcher"
+      Description: Copys attestation files from the evidence bucket to the destination bucket.
+      Code: "../../src/lambda/aws_bucket_watcher/build/BucketWatcherLambda/"
+      Handler: app.lambda_handler
+      Role: !GetAtt EvidenceWatcherLambdaExecutionRole.Arn
+      Timeout: 30
+      Runtime: python3.9
+      Environment:
+        Variables:
+          target_bucket: !Ref DestBucketName
+          ORG_ID: !Ref OrganizationId
+
+  EvidenceWatcherLambdaExecutionRole:
+    Condition: IsAuditAccount
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub "${ExecutionName}${AWS::Region}"
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal: { Service: [lambda.amazonaws.com] }
+            Action: ["sts:AssumeRole"]
+      Path: /
+      ManagedPolicyArns:
+        - "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
+      Policies:
+        - PolicyName: S3Policy
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - "s3:GetObject"
+                Resource: !Sub "arn:aws:s3:::${EvidenceBucketName}/*"
+              - Effect: Allow
+                Action:
+                  - "s3:PutObject"
+                  - "s3:PutObjectAcl"
+                  - "s3:GetObjectTagging"
+                  - "s3:PutObjectTagging"
+                Resource: !Sub "arn:aws:s3:::${DestBucketName}/*"
 
   #############################################
   # Part 2 - Assessment Resources
@@ -150,20 +262,20 @@ Resources:
         Statement:
           - Sid: AllowS3Access
             Action:
-              - "s3:GetObjectRetention"
-              - "s3:GetObjectVersionTagging"
-              - "s3:GetObjectAttributes"
-              - "s3:ListBucket"
-              - "s3:GetObjectLegalHold"
-              - "s3:GetObjectVersionAttributes"
-              - "s3:GetObjectVersionTorrent"
-              - "s3:GetObjectAcl"
               - "s3:GetObject"
-              - "s3:GetObjectTorrent"
-              - "s3:GetObjectVersionAcl"
+              - "s3:GetObjectAcl"
+              - "s3:GetObjectAttributes"
+              - "s3:GetObjectLegalHold"
+              - "s3:GetObjectRetention"
               - "s3:GetObjectTagging"
-              - "s3:GetObjectVersionForReplication"
+              - "s3:GetObjectTorrent"
               - "s3:GetObjectVersion"
+              - "s3:GetObjectVersionAcl"
+              - "s3:GetObjectVersionAttributes"
+              - "s3:GetObjectVersionForReplication"
+              - "s3:GetObjectVersionTagging"
+              - "s3:GetObjectVersionTorrent"
+              - "s3:ListBucket"
             Resource:
               - !Sub "arn:aws:s3:::${EvidenceBucketName}"
               - !Sub "arn:aws:s3:::${EvidenceBucketName}/*"
@@ -201,14 +313,10 @@ Resources:
             Effect: Allow
           - Sid: AllowIAMQueries
             Action:
-              - "iam:GenerateCredentialReport"
-              - "iam:GetAccountPasswordPolicy"
-              - "iam:GetCredentialReport"
-              - "iam:GetLoginProfile"
-              - "iam:GetRole"
-              - "iam:ListAttachedRolePolicies"
-              - "iam:ListMFADevices"
-              - "iam:ListUsers"
+              - "iam:Generate*"
+              - "iam:Get*"
+              - "iam:List*"
+              - "iam:Simulate*"
             Resource: "*"
             Effect: Allow
           - Sid: AllowCloudWatchAlarmQueries
@@ -219,24 +327,27 @@ Resources:
           - Sid: AllowDatastoreChecks
             Action:
               - "apigateway:GET"
-              - "backup:ListRecoveryPointsByBackupVault"
               - "backup:ListBackupVaults"
+              - "backup:ListRecoveryPointsByBackupVault"
               - "cassandra:Select"
               - "codebuild:BatchGetProjects"
               - "codebuild:ListProjects"
+              - "config:Describe*"
+              - "config:Get*"
+              - "config:PutEvaluations"
               - "dax:DescribeClusters"
-              - "dynamodb:DescribeTable"
-              - "dynamodb:ListTables"
               - "docdb-elastic:ListClusters"
               - "docdb-elastic:ListClusterSnapshots"
+              - "dynamodb:DescribeTable"
+              - "dynamodb:ListTables"
               - "ec2:DescribeRegions"
               - "ec2:DescribeVolumes"
               - "ec2:GetEbsEncryptionByDefault"
-              - "elasticfilesystem:DescribeFileSystems"
               - "eks:DescribeCluster"
               - "eks:ListClusters"
               - "elasticache:DescribeCacheClusters"
               - "elasticache:DescribeSnapshots"
+              - "elasticfilesystem:DescribeFileSystems"
               - "kinesis:DescribeStream"
               - "kinesis:ListStreams"
               - "memorydb:DescribeClusters"
@@ -249,17 +360,17 @@ Resources:
               - "rds:DescribeDBSnapshots"
               - "resource-explorer-2:ListIndexes"
               - "resource-explorer-2:Search"
-              - "s3:GetEncryptionConfiguration"
               - "s3:GetBucketLocation"
               - "s3:GetBucketPolicy"
+              - "s3:GetEncryptionConfiguration"
               - "s3:ListAllMyBuckets"
               - "s3:ListBucket"
-              - "sns:GetTopicAttributes"
-              - "sns:ListTopics"
+              - "sns:Get*"
+              - "sns:List*"
+              - "tag:GetResources"
               - "timestream:DescribeEndpoints"
               - "timestream:ListDatabases"
               - "timestream:ListTables"
-              - "tag:GetResources"
             Resource: "*"
             Effect: Allow
           - Sid: AllowReadAccountInfo
@@ -272,8 +383,11 @@ Resources:
           - Sid: AllowCloudTrailChecks
             Action:
               - "cloudtrail:DescribeTrails"
+              - "cloudtrail:GetEventSelectors"
+              - "cloudtrail:GetTrail"
               - "cloudtrail:GetTrailStatus"
               - "cloudtrail:ListTrails"
+              - "cloudtrail:LookupEvents"
             Resource:
               - "*"
             Effect: Allow
@@ -285,15 +399,15 @@ Resources:
             Effect: Allow
           - Sid: AllowOrganizationsChecks
             Action:
-              - "organizations:DescribeOrganization"
-              - "organizations:DescribeAccount"
+              - "organizations:Describe*"
+              - "organizations:List*"
             Resource:
               - "*"
             Effect: Allow
           - Sid: AllowRedshift
             Action:
-              - "redshift:DescribeClusters"
               - "redshift:DescribeClusterParameters"
+              - "redshift:DescribeClusters"
             Resource: "*"
             Effect: Allow
           - Sid: AllowAPI
@@ -303,18 +417,47 @@ Resources:
             Effect: Allow
           - Sid: AllowELB
             Action:
-              - "elasticloadbalancing:DescribeListeners"
-              - "elasticloadbalancing:DescribeLoadBalancers"
+              - "elasticloadbalancing:Describe*"
             Resource:
               - "*"
             Effect: Allow
           - Sid: AllowES
             Action:
-              - "es:ListDomainNames"
               - "es:DescribeDomain"
               - "es:DescribeDomains"
               - "es:DescribeElasticsearchDomain"
               - "es:DescribeElasticsearchDomains"
+              - "es:ListDomainNames"
+            Resource: "*"
+            Effect: Allow
+          - Sid: AllowEventChecks
+            Action:
+              - events:List*
+            Resource: "*"
+            Effect: Allow
+          - Sid: AllowGuardDuty
+            Action:
+              - guardduty:List*
+            Resource: "*"
+            Effect: Allow
+          - Sid: AllowACM
+            Action:
+              - acm:Describe*
+              - acm:Get*
+              - acm:List*
+            Resource: "*"
+            Effect: Allow
+          - Sid: AllowCloudFront
+            Action:
+              - cloudfront:Describe*
+              - cloudfront:Get*
+              - cloudfront:List*
+            Resource: "*"
+            Effect: Allow
+          - Sid: AllowSSO
+            Action:
+              - sso:Describe*
+              - sso:List*
             Resource: "*"
             Effect: Allow
       PolicyName: !Sub "${RolePrefix}default_lambda_execution_role_policy"
@@ -384,31 +527,23 @@ Resources:
         - Key: Note
           Value: Not really secret - used for sharing value between templates
 
-  GC01CheckAttestationLetterLambda:
-    Condition: IsAuditAccount
-    Type: AWS::Lambda::Function
-    Properties:
-      FunctionName: !Sub "${OrganizationName}gc01_check_attestation_letter"
-      Code: "../../src/lambda/gc01_check_attestation_letter/build/GC01CheckAttestationLetterLambda/"
-      Handler: app.lambda_handler
-      Role: !GetAtt GCDefaultLambdaExecutionRole.Arn
-      Runtime: !Ref PythonRuntime
-      Timeout: 90
-      LoggingConfig:
-        LogGroup: !Sub "${OrganizationName}gc_guardrails"
-        LogFormat: "JSON"
 
   ## GC02
-  GC02CheckAccountManagementPlanLambda:
+  GC02CheckPasswordProtectionMechanismsLambda:
     Condition: IsAuditAccount
     Type: AWS::Lambda::Function
     Properties:
-      FunctionName: !Sub "${OrganizationName}gc02_check_account_mgmt_plan"
-      Code: "../../src/lambda/gc02_check_account_mgmt_plan/build/GC02CheckAccountManagementPlanLambda/"
+      FunctionName: !Sub "${OrganizationName}gc02_check_password_protection_mechanisms"
+      Code: "../../src/lambda/gc02_check_password_protection_mechanisms/build/GC02CheckPasswordProtectionMechanismsLambda/"
       Handler: app.lambda_handler
       Role: !GetAtt GCDefaultLambdaExecutionRole.Arn
       Runtime: !Ref PythonRuntime
       Timeout: 90
+      Layers:
+        - !Ref CloudGuardrailsCommonLayer
       LoggingConfig:
         LogGroup: !Sub "${OrganizationName}gc_guardrails"
         LogFormat: "JSON"
+      Environment:
+        Variables:
+          DEFAULT_CLOUD_PROFILE: !Ref DefaultCloudProfile
