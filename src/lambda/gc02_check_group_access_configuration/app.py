@@ -424,7 +424,11 @@ def lambda_handler(event, context):
     # Identity Center Check
     if identity_center_enabled:
         if aws_account_id != management_account_id:
-            return
+            logger.info("Not a management account, Identity center check not applicable for account %s", aws_account_id)
+            return submit_evaluations(
+            aws_config_client,
+            event,
+            [build_evaluation(aws_account_id, "NOT_APPLICABLE", event, annotation="NOT applicable in this account")])
 
         for i in instances:
             has_non_admin_group = False

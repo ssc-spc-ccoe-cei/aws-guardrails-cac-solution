@@ -71,7 +71,6 @@ def apply_lambda_permissions():
     permissions_validated = 0
     lambda_functions = {
         f"{organization_name}gc01_check_alerts_flag_misuse": ["GC01CheckAlertsFlagMisuseLambda"],
-        f"{organization_name}gc01_check_attestation_letter": ["GC01CheckAttestationLetterLambda"],
         f"{organization_name}gc01_check_dedicated_admin_account": ["GC01CheckDedicatedAdminAccountLambda"],
         f"{organization_name}gc01_check_federated_users_mfa": ["GC01CheckFederatedUsersMFALambda"],
         f"{organization_name}gc01_check_iam_users_mfa": ["GC01CheckIAMUsersMFALambda"],
@@ -79,7 +78,6 @@ def apply_lambda_permissions():
         f"{organization_name}gc01_check_monitoring_and_logging": ["GC01CheckMonitoringAndLoggingLambda"],
         f"{organization_name}gc01_check_root_mfa": ["GC01CheckRootAccountMFAEnabledLambda"],
         f"{organization_name}gc02_check_access_management_attestation": ["GC02CheckAccessManagementAttestationLambda"],
-        f"{organization_name}gc02_check_account_mgmt_plan": ["GC02CheckAccountManagementPlanLambda"],
         f"{organization_name}gc02_check_group_access_configuration": ["GC02CheckGroupAccessConfigurationLambda"],
         f"{organization_name}gc02_check_iam_password_policy": ["GC02CheckIAMPasswordPolicyLambda"],
         f"{organization_name}gc02_check_password_protection_mechanisms": ["GC02CheckPasswordProtectionMechanismsLambda"],
@@ -131,17 +129,29 @@ def apply_lambda_permissions():
                         # backing off the API to avoid throttling
                         time.sleep(0.05)
                     for statement in json.loads(response.get("Policy")).get("Statement"):
+                        try:
+                            service = statement.get("Principal").get("Service")
+                        except AttributeError:
+                            service = "*"
+                        
                         if (
-                            statement.get("Principal").get("Service") == "config.amazonaws.com"
+                            service == "config.amazonaws.com"
                             and statement.get("Action") == "lambda:InvokeFunction"
                             and statement.get("Effect") == "Allow"
                         ):
                             # this is an authorized account
-                            source_account = (statement.get("Condition").get("StringEquals").get("AWS:SourceAccount"))
-                            authorized_accounts.append(source_account)
+                            try:
+                                source_account = (statement.get("Condition").get("StringEquals").get("AWS:SourceAccount"))
+                                authorized_accounts.append(source_account)
+                            except AttributeError:
+                                source_account = ""
+                            
                             if statement.get("Sid", ""):
                                 sids_in_use.append(statement.get("Sid", ""))
+                            
                     b_completed = True
+                    
+
                 except botocore.exceptions.ClientError as error:
                     # are we being throttled?
                     if error.response["Error"]["Code"] == "TooManyRequestsException":
@@ -156,6 +166,7 @@ def apply_lambda_permissions():
                     # let's assume the Lambda function permission does not exist
                     logger.error("Unknown Exception trying to get policy for Lambda function '%s'.", lambda_name)
                     b_retry = False
+            
             i = 0
             b_throttle = False
             for account in accounts:
@@ -167,19 +178,21 @@ def apply_lambda_permissions():
                     permissions_validated += 1
                     continue
                 # we need to add the permission
-                compliant_resource_name = "{}Permission{}".format(lambda_name.replace("_", "").replace("-", ""), i)
+                compliant_resource_name = f"p{i + 1}"
                 # ensure we are using a unique Sid
                 while compliant_resource_name in sids_in_use:
                     i += 1
-                    compliant_resource_name = "{}Permission{}".format(lambda_name.replace("_", "").replace("-", ""), i)
+                    compliant_resource_name = f"p{i + 1}"
                 b_retry = True
                 b_permission_added = False
+            
                 while b_retry and (not b_permission_added):
                     # if we've been throttled, sleep 50ms every 5 calls
                     if b_throttle and (i_requests % 5 == 0):
                         time.sleep(0.05)
                     try:
                         i_requests += 1
+                        
                         response = client.add_permission(
                             Action="lambda:InvokeFunction",
                             FunctionName=lambda_name,
@@ -187,6 +200,7 @@ def apply_lambda_permissions():
                             SourceAccount=account_id,
                             StatementId=compliant_resource_name,
                         )
+                    
                         if not response.get("Statement"):
                             # invalid response
                             logger.error("Invalid response adding permission for account '%s' to the '%s'", account_id, lambda_name)

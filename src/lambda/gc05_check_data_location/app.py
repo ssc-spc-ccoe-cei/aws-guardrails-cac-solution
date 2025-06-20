@@ -461,9 +461,9 @@ def lambda_handler(event, context):
     if os.environ.get("ALLOWED_REGIONS"):
         allowed_regions = os.environ.get("ALLOWED_REGIONS").split(",")
         if allowed_regions == [""]:
-            allowed_regions == ["ca-central-1"]
+            allowed_regions == ["ca-central-1", "ca-west-1"]
     else:
-        allowed_regions = ["ca-central-1"]
+        allowed_regions = ["ca-central-1", "ca-west-1"]
 
     complianceStatus = "NOT_APPLICABLE"
     annotation = ""

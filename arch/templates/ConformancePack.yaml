@@ -85,6 +85,8 @@ Parameters:
     Type: String
   S3SecureNetworkTransmissionPolicyPath:
     Type: String
+  S3NonComplianceOptoutFilePath:
+    Type: String
   # GC08
   S3TargetNetworkArchitecturePath:
     Type: String
@@ -114,43 +116,6 @@ Parameters:
 
 Resources:
   # GC01
-  GC01CheckAttestationLetterConfigRule:
-    Type: "AWS::Config::ConfigRule"
-    Properties:
-      ConfigRuleName: gc01_check_attestation_letter
-      Description: Checks S3 bucket for the attestation letter.
-      InputParameters:
-        s3ObjectPath:
-          Fn::If:
-            - s3AttestationLetterPath
-            - Ref: S3AttestationLetterPath
-            - Ref: AWS::NoValue
-        ExecutionRoleName:
-          Fn::If:
-            - GCLambdaExecutionRoleName
-            - Ref: GCLambdaExecutionRoleName
-            - Ref: AWS::NoValue
-        AuditAccountID:
-          Fn::If:
-            - auditAccountID
-            - Ref: AuditAccountID
-            - Ref: AWS::NoValue
-      Scope:
-        ComplianceResourceTypes:
-          - AWS::Account
-      MaximumExecutionFrequency: TwentyFour_Hours
-      Source:
-        Owner: CUSTOM_LAMBDA
-        SourceIdentifier:
-          Fn::Join:
-            - ""
-            - - "arn:aws:lambda:ca-central-1:"
-              - Ref: AuditAccountID
-              - !Sub ":function:${OrganizationName}gc01_check_attestation_letter"
-        SourceDetails:
-          - EventSource: "aws.config"
-            MessageType: "ScheduledNotification"
-
   GC01CheckRootAccountMFAEnabled:
     Type: "AWS::Config::ConfigRule"
     Properties:
@@ -403,42 +368,6 @@ Resources:
           - EventSource: "aws.config"
             MessageType: "ScheduledNotification"
   # GC02
-  GC02CheckAccountManagementPlanConfigRule:
-    Type: "AWS::Config::ConfigRule"
-    Properties:
-      ConfigRuleName: gc02_check_account_mgmt_plan
-      Description: Checks S3 bucket for the account management plan document
-      InputParameters:
-        s3ObjectPath:
-          Fn::If:
-            - s3AccountManagementPlanPath
-            - Ref: S3AccountManagementPlanPath
-            - Ref: AWS::NoValue
-        ExecutionRoleName:
-          Fn::If:
-            - GCLambdaExecutionRoleName
-            - Ref: GCLambdaExecutionRoleName
-            - Ref: AWS::NoValue
-        AuditAccountID:
-          Fn::If:
-            - auditAccountID
-            - Ref: AuditAccountID
-            - Ref: AWS::NoValue
-      Scope:
-        ComplianceResourceTypes:
-          - AWS::Account
-      MaximumExecutionFrequency: TwentyFour_Hours
-      Source:
-        Owner: CUSTOM_LAMBDA
-        SourceIdentifier:
-          Fn::Join:
-            - ""
-            - - "arn:aws:lambda:ca-central-1:"
-              - Ref: AuditAccountID
-              - !Sub ":function:${OrganizationName}gc02_check_account_mgmt_plan"
-        SourceDetails:
-          - EventSource: "aws.config"
-            MessageType: "ScheduledNotification"
   GC02CheckPrivilegedRolesReviewConfigRule:
     Type: "AWS::Config::ConfigRule"
     Properties:
@@ -1051,6 +980,11 @@ Resources:
             - auditAccountID
             - Ref: AuditAccountID
             - Ref: AWS::NoValue
+        S3NonComplianceOptoutFilePath:
+          Fn::If:
+            - s3NonComplianceOptoutFilePath
+            - Ref: S3NonComplianceOptoutFilePath
+            - Ref: AWS::NoValue
       Scope:
         ComplianceResourceTypes:
           - AWS::Account
@@ -1485,28 +1419,7 @@ Resources:
         SourceDetails:
           - EventSource: "aws.config"
             MessageType: "ScheduledNotification"
-  # GC11 - Cloud Trail check with AWS Managed rules CLOUD_TRAIL_ENABLED, CLOUDTRAIL_S3_DATAEVENTS_ENABLED, CLOUDTRAIL_SECURITY_TRAIL_ENABLED
-  GC11CheckCloudTrailEnabledConfigRule:
-    Type: "AWS::Config::ConfigRule"
-    Properties:
-      ConfigRuleName: gc11_check_cloud_trail_enabled
-      Source:
-        Owner: AWS
-        SourceIdentifier: CLOUD_TRAIL_ENABLED
-  GC11CheckCloudTrailS3DataEventsEnabledConfigRule:
-    Type: "AWS::Config::ConfigRule"
-    Properties:
-      ConfigRuleName: gc11_check_cloudtrail_s3_dataevents_enabled
-      Source:
-        Owner: AWS
-        SourceIdentifier: CLOUDTRAIL_S3_DATAEVENTS_ENABLED
-  GC11CheckCloudTrailSecurityTrailEnabledConfigRule:
-    Type: "AWS::Config::ConfigRule"
-    Properties:
-      ConfigRuleName: gc11_check_cloudtrail_security_trail_enabled
-      Source:
-        Owner: AWS
-        SourceIdentifier: CLOUDTRAIL_SECURITY_TRAIL_ENABLED
+  
   # GC12 - Check Trail Logging
   GC12CheckPrivateMarketplaceConfigRule:
     Type: "AWS::Config::ConfigRule"
@@ -1836,6 +1749,11 @@ Conditions:
       - Fn::Equals:
           - ""
           - Ref: S3SecureNetworkTransmissionPolicyPath
+  s3NonComplianceOptoutFilePath:
+    Fn::Not:
+      - Fn::Equals:
+          - ""
+          - Ref: S3NonComplianceOptoutFilePath
   # GC08
   s3TargetNetworkArchitecturePath:
     Fn::Not:

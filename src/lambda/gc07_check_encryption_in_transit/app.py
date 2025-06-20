@@ -10,7 +10,7 @@ from utils import is_scheduled_notification, check_required_parameters, check_gu
 from boto_util.organizations import get_account_tags
 from boto_util.client import get_client, is_throttling_exception
 from boto_util.config import build_evaluation, submit_evaluations
-from boto_util.s3 import list_all_s3_buckets
+from boto_util.s3 import list_all_s3_buckets, check_s3_object_exists
 from boto_util.api_gateway import list_all_api_gateway_resources
 from boto_util.cloud_front import list_all_cloud_front_distributions
 
@@ -65,6 +65,7 @@ def assess_s3_buckets_ssl_enforcement(s3_client, event: dict):
                                 bucket.get("Name", ""),
                                 ex,
                             )
+                
                 if bucket_policy:
                     for statement in bucket_policy.get("Statement"):
                         statement_condition = statement.get("Condition")
@@ -275,8 +276,18 @@ def assess_elb_v2_ssl_enforcement(elb_v2_client, event: dict):
                         listener_annotation = ""
                         listener_protocol = listener.get("Protocol", "")
                         if listener_protocol.lower() not in ["https", "tls"]:
-                            listener_compliance = "NON_COMPLIANT"
-                            listener_annotation = "Non HTTPS/TLS listener protocol - {}".format(listener_protocol)
+                            redirect_flag = False
+                            for action in listener.get("DefaultActions", []):
+                                if (action.get("Type") == "redirect" and action.get("RedirectConfig", {}).get("Protocol") == "HTTPS"):
+                                    redirect_flag = True
+                                    break
+
+                            if redirect_flag:
+                                listener_compliance = "COMPLIANT"
+                                listener_annotation = f"HTTP listener with HTTPS redirection - {listener.get("ListenerArn", "")}"
+                            else:
+                                listener_compliance = "NON_COMPLIANT"
+                                listener_annotation = "Non HTTPS/TLS listener protocol - {}".format(listener_protocol)
                         else:
                             listener_compliance = "COMPLIANT"
                             listener_annotation = f"Listener uses HTTPS/TLS - {listener.get("ListenerArn", "")}"
@@ -371,6 +382,7 @@ def assess_elb_v1_ssl_enforcement(elb_client, event: dict):
                 listener_protocol = listener.get("Listener", {}).get("Protocol", "")
                 
                 if listener_protocol.lower() not in ["https", "ssl"]:
+                    #Classic Load Balancers don't support HTTP to HTTPS redirection at the load balancer level
                     listener_compliance = "NON_COMPLIANT"
                     listener_annotation = f"Port {listener_port} uses non TLS 1.2 compliant listener protocol {listener_protocol}"
                 else:
@@ -728,10 +740,11 @@ def lambda_handler(event, context):
         logger.error("Skipping assessments as this is not a scheduled invocation")
         return
 
-    rule_parameters = check_required_parameters(json.loads(event.get("ruleParameters", "{}")), ["ExecutionRoleName"])
+    rule_parameters = check_required_parameters(json.loads(event.get("ruleParameters", "{}")), ["ExecutionRoleName", "S3NonComplianceOptoutFilePath"])
     execution_role_name = rule_parameters.get("ExecutionRoleName")
     audit_account_id = rule_parameters.get("AuditAccountID", "")
     aws_account_id = event["accountId"]
+    optout_file_path = rule_parameters.get("S3NonComplianceOptoutFilePath", "")
     logger.info(f"AWS Account ID: {aws_account_id}, Audit Account ID: {audit_account_id}")
     is_not_audit_account = aws_account_id != audit_account_id
 
@@ -748,13 +761,14 @@ def lambda_handler(event, context):
     THROTTLE_BACKOFF = 2
 
     aws_config_client = get_client("config", aws_account_id, execution_role_name, is_not_audit_account)
+    aws_cloud_front_client = get_client("cloudfront", aws_account_id, execution_role_name, is_not_audit_account)
     aws_s3_client = get_client("s3", aws_account_id, execution_role_name, is_not_audit_account)
     aws_redshift_client = get_client("redshift", aws_account_id, execution_role_name, is_not_audit_account)
     aws_elb_v1_client = get_client("elb", aws_account_id, execution_role_name, is_not_audit_account)
     aws_elb_v2_client = get_client("elbv2", aws_account_id, execution_role_name, is_not_audit_account)
     aws_api_gw_client = get_client("apigateway", aws_account_id, execution_role_name, is_not_audit_account)
     aws_open_search_client = get_client("opensearch", aws_account_id, execution_role_name, is_not_audit_account)
-    aws_cloud_front_client = get_client("cloudfront", aws_account_id, execution_role_name, is_not_audit_account)
+    
     
 
     compliance_details = get_all_compliance_details_by_config_rule(aws_config_client, event["configRuleName"], ["NON_COMPLIANT"])
@@ -795,11 +809,25 @@ def lambda_handler(event, context):
 
     compliance_type = "COMPLIANT"
     annotation = "No non-compliant resources found"
+    # added check for opt out file. if file exists, change the non-compliance to compliant status only for both ELB v1 and v2
+    for evaluation in evaluations:
+        if evaluation.get("ComplianceType", "") == "NON_COMPLIANT" and (evaluation.get("ComplianceResourceType", "") == "AWS::ElasticLoadBalancingV2::Listener" or evaluation.get("ComplianceResourceType", "") == "AWS::ElasticLoadBalancing::LoadBalancer") :
+            # add the check for if file exists in an evidence bucket, 
+            # addeded new client to avoid AccessDenied exception
+            s3_client = get_client("s3")
+            optout_file_exists_flag = check_s3_object_exists(s3_client, optout_file_path)  
+            # if file exists, change status to compliant
+            if optout_file_exists_flag:
+                evaluation["ComplianceType"] = "COMPLIANT"
+                evaluation["Annotation"] = "Compliant owing to opt out file found"     
+            
+
+    
 
     for evaluation in evaluations:
         if evaluation.get("ComplianceType", "") == "NON_COMPLIANT":
             compliance_type = "NON_COMPLIANT"
-            annotation = "Non-compliant resources in scope found"
+            annotation = "Non-compliant resources in scope found"    
             break
 
     logger.info(f"{compliance_type}: {annotation}")

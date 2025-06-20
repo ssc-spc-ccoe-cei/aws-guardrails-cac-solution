@@ -50,6 +50,16 @@ def assess_cloudtrail_configurations(cloudtrail_client, event: dict) -> tuple[li
         elif not trail.get("IncludeGlobalServiceEvents", False):
             compliance_type = "NON_COMPLIANT"
             annotation = f"Cloud Trail '{trail_name}' does NOT have IncludeGlobalServiceEvents set to True."
+        elif not trail.get("IsMultiRegionTrail", False):
+            compliance_type = "NON_COMPLIANT"
+            annotation = f"Cloud Trail '{trail_name}' is not a multi-region trail."
+        elif not trail.get("LogFileValidationEnabled", False):
+            compliance_type = "NON_COMPLIANT"
+            annotation = f"Cloud Trail '{trail_name}' does not have log file validation enabled."
+        elif not trail.get("KmsKeyId", False):
+            compliance_type = "NON_COMPLIANT"
+            annotation = f"Cloud Trail '{trail_name}' is not encrypted with a KMS key."
+             
         else:
             response = cloudtrail_client.get_event_selectors(TrailName=trail_arn)
             event_selectors = response.get("EventSelectors", [])

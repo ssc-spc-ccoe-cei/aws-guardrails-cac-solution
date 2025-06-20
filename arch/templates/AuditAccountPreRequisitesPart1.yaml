@@ -527,45 +527,8 @@ Resources:
         - Key: Note
           Value: Not really secret - used for sharing value between templates
 
-  GC01CheckAttestationLetterLambda:
-    Condition: IsAuditAccount
-    Type: AWS::Lambda::Function
-    Properties:
-      FunctionName: !Sub "${OrganizationName}gc01_check_attestation_letter"
-      Code: "../../src/lambda/gc01_check_attestation_letter/build/GC01CheckAttestationLetterLambda/"
-      Handler: app.lambda_handler
-      Role: !GetAtt GCDefaultLambdaExecutionRole.Arn
-      Runtime: !Ref PythonRuntime
-      Timeout: 90
-      Layers:
-        - !Ref CloudGuardrailsCommonLayer
-      LoggingConfig:
-        LogGroup: !Sub "${OrganizationName}gc_guardrails"
-        LogFormat: "JSON"
-      Environment:
-        Variables:
-          DEFAULT_CLOUD_PROFILE: !Ref DefaultCloudProfile
 
   ## GC02
-  GC02CheckAccountManagementPlanLambda:
-    Condition: IsAuditAccount
-    Type: AWS::Lambda::Function
-    Properties:
-      FunctionName: !Sub "${OrganizationName}gc02_check_account_mgmt_plan"
-      Code: "../../src/lambda/gc02_check_account_mgmt_plan/build/GC02CheckAccountManagementPlanLambda/"
-      Handler: app.lambda_handler
-      Role: !GetAtt GCDefaultLambdaExecutionRole.Arn
-      Runtime: !Ref PythonRuntime
-      Timeout: 90
-      Layers:
-        - !Ref CloudGuardrailsCommonLayer
-      LoggingConfig:
-        LogGroup: !Sub "${OrganizationName}gc_guardrails"
-        LogFormat: "JSON"
-      Environment:
-        Variables:
-          DEFAULT_CLOUD_PROFILE: !Ref DefaultCloudProfile
-
   GC02CheckPasswordProtectionMechanismsLambda:
     Condition: IsAuditAccount
     Type: AWS::Lambda::Function

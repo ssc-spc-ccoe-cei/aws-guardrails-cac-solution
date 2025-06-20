@@ -178,7 +178,7 @@ deploy-stack:
 
 ss1:
 	$(info --- Updating StackSet #1 ---)
-	@echo "Updating: GC01CheckAttestationLetter, GC02CheckAccountManagementPlan"
+	@echo "Updating: AuditAccountPreRequisitesPart1.yaml"
 	@aws cloudformation update-stack-set \
 		--stack-set-name $(ORGANIZATION_NAME)-GC-AuditAccount-PreReqs-Part1 \
 		--template-body file://arch/templates/build/AuditAccountPreRequisitesPart1.yaml \
