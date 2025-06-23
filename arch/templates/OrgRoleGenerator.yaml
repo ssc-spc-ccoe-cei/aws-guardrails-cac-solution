@@ -738,7 +738,8 @@ Resources:
                                 "sns:ListTopics",
                                 "tag:GetResources",
                                 "timestream:DescribeEndpoints",
-                                "timestream:List*"
+                                "timestream:List*",
+                                "identitystore:ListGroupMemberships"
                               ],
                               "Resource": [
                                 "*"

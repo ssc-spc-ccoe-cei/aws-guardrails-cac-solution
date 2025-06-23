@@ -4,6 +4,7 @@
 
 import json
 import logging
+import re
 
 from utils import (
     is_scheduled_notification,
@@ -120,6 +121,24 @@ def check_cb_role(cloud_trail_client, cb_role, event, aws_account_id):
 
     return build_evaluation(aws_account_id, "COMPLIANT", event)
 
+def check_cloudwatch_metric_setup(namespace=None):
+    str_pattern = '{($.eventName="AssumeRole") && ($.errorCode="AccessDenied") && ($.errorMessage="*CloudBrokering*")}'
+    try:
+        cloudwatch_client = get_client("cloudwatch")
+        # List metrics through the pagination interface
+        paginator = cloudwatch_client.get_paginator('list_metrics')
+
+        page_iterator = paginator.paginate(Namespace=namespace) if namespace else paginator.paginate()
+
+        regex = re.compile(str_pattern)
+
+        for page in page_iterator:
+            for metric in page['Metrics']:
+                if regex.search(metric['MetricName']):
+                    return True
+            return False
+    except Exception:
+        return False
 
 def check_rule_sns_target_is_setup(sns_client, event_bridge_client, rule, event):
     resource_type = "AWS::Events::Rule"
@@ -150,6 +169,15 @@ def check_rule_sns_target_is_setup(sns_client, event_bridge_client, rule, event)
                             event,
                             resource_type,
                             annotation="An Event rule that has a SNS topic and subscription to send notification emails is setup and confirmed.",
+                        )
+        
+        elif check_cloudwatch_metric_setup:
+            return build_evaluation(
+                            rule.get("Name"),
+                            "COMPLIANT",
+                            event,
+                            resource_type,
+                            annotation="CloudWatch metric is setup and confirmed.",
                         )
 
     return build_evaluation(
