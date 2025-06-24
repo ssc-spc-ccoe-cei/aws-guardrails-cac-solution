@@ -73,7 +73,7 @@ def check_rule_sns_or_log_grp_target_is_setup(sns_client, event_bridge_client, r
 
     rule_name = rule.get("Name")
     targets = list_all_event_bridge_rule_targets(event_bridge_client, rule_name)
-   
+    
     for target in targets:
         logger.info("Checking rule target: %s", target)
         # is target an SNS input transformer?
@@ -95,7 +95,7 @@ def check_rule_sns_or_log_grp_target_is_setup(sns_client, event_bridge_client, r
                             resource_type=resource_type,
                             annotation="An Event rule that has a SNS topic and subscription to send notification emails is setup and confirmed.",
                         )
-        elif target_arn.startswith("arn:aws:log:"):
+        if target_arn.startswith("arn:aws:logs:"):
             return build_evaluation(
                             rule.get("Name"),
                             "COMPLIANT",

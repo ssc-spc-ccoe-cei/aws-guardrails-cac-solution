@@ -121,26 +121,74 @@ def check_cb_role(cloud_trail_client, cb_role, event, aws_account_id):
 
     return build_evaluation(aws_account_id, "COMPLIANT", event)
 
-def check_cloudwatch_metric_setup(namespace=None):
-    str_pattern = '{($.eventName="AssumeRole") && ($.errorCode="AccessDenied") && ($.errorMessage="*CloudBrokering*")}'
-    try:
-        cloudwatch_client = get_client("cloudwatch")
-        # List metrics through the pagination interface
-        paginator = cloudwatch_client.get_paginator('list_metrics')
+def list_all_log_groups(logs_client):
+    logger.info("### LIST ALL LOGGRPS")
+    log_groups = []
 
-        page_iterator = paginator.paginate(Namespace=namespace) if namespace else paginator.paginate()
+    paginator = logs_client.get_paginator("describe_log_groups")
 
-        regex = re.compile(str_pattern)
+    for page in paginator.paginate():
+        for log_grp in page["logGroups"]:
+            log_groups.append(log_grp["logGroupName"])
+    
+    logger.info("### B4 Return")
+    return log_groups
 
-        for page in page_iterator:
-            for metric in page['Metrics']:
-                if regex.search(metric['MetricName']):
-                    return True
-            return False
-    except Exception:
-        return False
+def check_cloudwatch_metric_setup(logs_client):
+    
+    #str_pattern = '{($.eventName="AssumeRole") && ($.errorCode="AccessDenied") && ($.errorMessage="*CloudBrokering*")}'
+    str_pattern = "{($.eventSource=config.amazonaws.com) && (($.eventName=StopConfigurationRecorder) || ($.eventName=DeleteDeliveryChannel) || ($.eventName=PutDeliveryChannel) || ($.eventName=PutConfigurationRecorder))}"
+    regex = re.compile(str_pattern)
 
-def check_rule_sns_target_is_setup(sns_client, event_bridge_client, rule, event):
+    log_groups = list_all_log_groups(logs_client)
+    logger.info("###LOGGRPS SIZE %s ",  len(log_groups))
+
+    pattern_match_flag = False
+    for log_grp in log_groups:
+        try:
+            paginator = logs_client.get_paginator("describe_metric_filters")
+            for page in paginator.paginate(logGroupName=log_grp):
+                
+                for metric_filter in page.get('metricFilters', []):
+                    #logger.info("### Metric Filter : " + str(metric_filter))
+                    filter_pattern = metric_filter.get('filterPattern', '')
+                    logger.info("### filter_pattern : " + str(filter_pattern))
+                    
+                    if filter_pattern == str_pattern:
+                        logger.info("###  MATCHED : %s ", filter_pattern)
+                        pattern_match_flag =  True
+                    break
+                
+                if pattern_match_flag:
+                    break
+
+        except Exception as e:
+            logger.error("Error matching metric filter")
+           
+    return pattern_match_flag
+
+
+
+
+    # try:
+    #     cloudwatch_client = get_client("cloudwatch")
+    #     # List metrics through the pagination interface
+    #     paginator = cloudwatch_client.get_paginator('list_metrics')
+
+    #     page_iterator = paginator.paginate(Namespace=namespace) if namespace else paginator.paginate()
+        
+    #     regex = re.compile(str_pattern)
+
+    #     for page in page_iterator:
+    #         for metric in page['Metrics']:
+    #             logger.info("### MetricName " + metric['MetricName'])
+    #             if regex.search(metric['MetricName']):
+    #                 return True
+    #         return False
+    # except Exception:
+    #     return False
+
+def check_rule_sns_target_is_setup(aws_logs_client, sns_client, event_bridge_client, rule, event):
     resource_type = "AWS::Events::Rule"
 
     logger.info("Checking rule: %s", rule)
@@ -171,13 +219,13 @@ def check_rule_sns_target_is_setup(sns_client, event_bridge_client, rule, event)
                             annotation="An Event rule that has a SNS topic and subscription to send notification emails is setup and confirmed.",
                         )
         
-        elif check_cloudwatch_metric_setup:
+        if check_cloudwatch_metric_setup(aws_logs_client):
             return build_evaluation(
                             rule.get("Name"),
                             "COMPLIANT",
                             event,
                             resource_type,
-                            annotation="CloudWatch metric is setup and confirmed.",
+                            annotation="Cloud Watch metric exists.",
                         )
 
     return build_evaluation(
@@ -214,7 +262,9 @@ def lambda_handler(event, context):
     aws_account_id = event["accountId"]
     aws_organizations_client = get_client("organizations", aws_account_id, execution_role_name, audit_account_id)
     aws_config_client = get_client("config", aws_account_id, execution_role_name)
+    aws_logs_client = get_client("logs", aws_account_id, execution_role_name, audit_account_id)
 
+    check_cloudwatch_metric_setup(aws_logs_client)
 
     if aws_account_id != get_organizations_mgmt_account_id(aws_organizations_client):
         logger.info("Not checked in account %s as this is not the Management Account", aws_account_id)
@@ -298,7 +348,7 @@ def lambda_handler(event, context):
         rules_are_compliant = False
         for rule in cb_rules:
             logger.info(f"Checking rule: {rule}")
-            rule_evaluation = check_rule_sns_target_is_setup(aws_sns_client, aws_event_bridge_client, rule, event)
+            rule_evaluation = check_rule_sns_target_is_setup(aws_logs_client, aws_sns_client, aws_event_bridge_client, rule, event)
             if rule_evaluation.get("ComplianceType", "COMPLIANT") == "COMPLIANT":
                 rules_are_compliant = True
             evaluations.append(rule_evaluation)
