@@ -220,7 +220,7 @@ Resources:
         Statement:
           - Sid: AllowCreateLogGroup
             Action:
-              - "logs:CreateLogGroup",
+              - "logs:CreateLogGroup"
               - "logs:DescribeLogGroups"
               - "logs:DescribeMetricFilters"
             Resource:
