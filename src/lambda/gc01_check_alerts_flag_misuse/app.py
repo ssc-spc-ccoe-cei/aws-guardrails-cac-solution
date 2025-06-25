@@ -95,7 +95,7 @@ def check_rule_sns_or_log_grp_target_is_setup(sns_client, event_bridge_client, r
                             resource_type=resource_type,
                             annotation="An Event rule that has a SNS topic and subscription to send notification emails is setup and confirmed.",
                         )
-        if target_arn.startswith("arn:aws:logs:"):
+        elif target_arn.startswith("arn:aws:logs:"):
             return build_evaluation(
                             rule.get("Name"),
                             "COMPLIANT",
