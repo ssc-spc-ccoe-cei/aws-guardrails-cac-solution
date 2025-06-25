@@ -753,33 +753,7 @@ frameworks_data = [
                                 },
                             }
 
-                            # {
-                            #     "sourceName": "AWS Config - CLOUDTRAIL_S3_DATAEVENTS_ENABLED",
-                            #     "sourceSetUpOption": "System_Controls_Mapping",
-                            #     "sourceType": "AWS_Config",
-                            #     "sourceKeyword": {
-                            #         "keywordInputType": "SELECT_FROM_LIST",
-                            #         "keywordValue": "CLOUDTRAIL_S3_DATAEVENTS_ENABLED",
-                            #     },
-                            # },
-                            # {
-                            #     "sourceName": "AWS Config - CLOUDTRAIL_SECURITY_TRAIL_ENABLED",
-                            #     "sourceSetUpOption": "System_Controls_Mapping",
-                            #     "sourceType": "AWS_Config",
-                            #     "sourceKeyword": {
-                            #         "keywordInputType": "SELECT_FROM_LIST",
-                            #         "keywordValue": "CLOUDTRAIL_SECURITY_TRAIL_ENABLED",
-                            #     },
-                            # },
-                            # {
-                            #     "sourceName": "AWS Config - CLOUD_TRAIL_ENABLED",
-                            #     "sourceSetUpOption": "System_Controls_Mapping",
-                            #     "sourceType": "AWS_Config",
-                            #     "sourceKeyword": {
-                            #         "keywordInputType": "SELECT_FROM_LIST",
-                            #         "keywordValue": "CLOUD_TRAIL_ENABLED",
-                            #     },
-                            # },
+                            
                         ],
                         "tags": {},
                     },
