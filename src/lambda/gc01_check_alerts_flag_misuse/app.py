@@ -85,7 +85,8 @@ def check_rule_sns_or_log_grp_target_is_setup(sns_client, event_bridge_client, r
             # then search topic for a subscription with "email" protocol and is confirmed
             for subscription in subscriptions:
                 logger.info("Checking target subscriptions: %s", subscription)
-                if subscription.get("Protocol") == "email":
+                protocol = subscription.get("Protocol")
+                if protocol in ["email", "lambda"]:
                     subscription_arn = subscription.get("SubscriptionArn")
                     if subscription_is_confirmed(sns_client, subscription_arn):
                         return build_evaluation(
@@ -170,7 +171,7 @@ def check_alerts_flag_misuse(event, rule_parameters, aws_account_id, evaluations
 
                 # are there any rules matching the naming convention?
             if len(filtered_rules) > 0:
-                    # yes, check that an SNS target is setup that sends an email notification to authorized personnel
+                    # yes, check that an SNS target is setup that sends an email notification to authorized personnel or a log group is setup
                 for rule in filtered_rules:
                     eval = check_rule_sns_or_log_grp_target_is_setup(aws_sns_client, aws_event_bridge_client, rule, event)
                     if eval.get("ComplianceType") == "COMPLIANT":
@@ -195,7 +196,7 @@ def check_alerts_flag_misuse(event, rule_parameters, aws_account_id, evaluations
                             aws_account_id,
                             "NON_COMPLIANT",
                             event,
-                            annotation="GuardDuty is not enabled and there are no EventBridge rules setup to notify authorized personnel of misuse or suspicious activity.",
+                            annotation="GuardDuty is not enabled OR there are no EventBridge rules setup to notify authorized personnel of misuse or suspicious activity.",
                         )
                     )
                 
