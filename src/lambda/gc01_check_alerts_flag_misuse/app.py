@@ -57,8 +57,9 @@ def rule_event_pattern_matches_guard_duty_findings(rule_event_pattern: str | Non
     )
 
 
-def check_rule_sns_target_is_setup(sns_client, event_bridge_client, rule, event):
+def check_rule_sns_or_log_grp_target_is_setup(sns_client, event_bridge_client, rule, event):
     resource_type = "AWS::Events::Rule"
+    
 
     logger.info("Checking rule: %s", rule)
     if rule.get("State") == "DISABLED":
@@ -72,18 +73,20 @@ def check_rule_sns_target_is_setup(sns_client, event_bridge_client, rule, event)
 
     rule_name = rule.get("Name")
     targets = list_all_event_bridge_rule_targets(event_bridge_client, rule_name)
-
+    
     for target in targets:
         logger.info("Checking rule target: %s", target)
         # is target an SNS input transformer?
         target_arn: str = target.get("Arn")
+
         if target_arn.startswith("arn:aws:sns:"):
             # yes, get a list of topic subscriptions
             subscriptions = list_all_sns_subscriptions_by_topic(sns_client, target_arn)
             # then search topic for a subscription with "email" protocol and is confirmed
             for subscription in subscriptions:
                 logger.info("Checking target subscriptions: %s", subscription)
-                if subscription.get("Protocol") == "email":
+                protocol = subscription.get("Protocol")
+                if protocol in ["email", "lambda"]:
                     subscription_arn = subscription.get("SubscriptionArn")
                     if subscription_is_confirmed(sns_client, subscription_arn):
                         return build_evaluation(
@@ -93,15 +96,26 @@ def check_rule_sns_target_is_setup(sns_client, event_bridge_client, rule, event)
                             resource_type=resource_type,
                             annotation="An Event rule that has a SNS topic and subscription to send notification emails is setup and confirmed.",
                         )
-
+        elif target_arn.startswith("arn:aws:logs:"):
+            return build_evaluation(
+                            rule.get("Name"),
+                            "COMPLIANT",
+                            event,
+                            resource_type=resource_type,
+                            annotation="An Event rule that has a CloudWatch log group is setup and confirmed.",
+                        )
+    
+    
     return build_evaluation(
         rule.get("Name"),
         "NON_COMPLIANT",
         event,
         resource_type=resource_type,
-        annotation="An Event rule that has a SNS topic and subscription to send notification emails is not setup or confirmed.",
+        annotation="An Event rule that has a CloudWatch log group or SNS topic and subscription to send notification emails is not setup or confirmed.",
     )
-    
+
+   # is target an SNS input transformer?
+  
 def check_alerts_flag_misuse(event, rule_parameters, aws_account_id, evaluations, aws_s3_client, aws_guard_duty_client, aws_event_bridge_client, aws_sns_client):
     rules = list_all_event_bridge_rules(aws_event_bridge_client)
 
@@ -116,7 +130,7 @@ def check_alerts_flag_misuse(event, rule_parameters, aws_account_id, evaluations
         if len(guardduty_rules) > 0:
                 # yes, check that an SNS target is setup that sends an email notification to authorized personnel
             for rule in guardduty_rules:
-                eval = check_rule_sns_target_is_setup(aws_sns_client, aws_event_bridge_client, rule, event)
+                eval = check_rule_sns_or_log_grp_target_is_setup(aws_sns_client, aws_event_bridge_client, rule, event)
                 if eval.get("ComplianceType") == "COMPLIANT":
                     guard_duty_is_setup = True
                 evaluations.append(eval)
@@ -157,9 +171,9 @@ def check_alerts_flag_misuse(event, rule_parameters, aws_account_id, evaluations
 
                 # are there any rules matching the naming convention?
             if len(filtered_rules) > 0:
-                    # yes, check that an SNS target is setup that sends an email notification to authorized personnel
+                    # yes, check that an SNS target is setup that sends an email notification to authorized personnel or a log group is setup
                 for rule in filtered_rules:
-                    eval = check_rule_sns_target_is_setup(aws_sns_client, aws_event_bridge_client, rule, event)
+                    eval = check_rule_sns_or_log_grp_target_is_setup(aws_sns_client, aws_event_bridge_client, rule, event)
                     if eval.get("ComplianceType") == "COMPLIANT":
                         is_compliant = True
                         evaluations.append(eval)
@@ -182,7 +196,7 @@ def check_alerts_flag_misuse(event, rule_parameters, aws_account_id, evaluations
                             aws_account_id,
                             "NON_COMPLIANT",
                             event,
-                            annotation="GuardDuty is not enabled and there are no EventBridge rules setup to notify authorized personnel of misuse or suspicious activity.",
+                            annotation="GuardDuty is not enabled OR there are no EventBridge rules setup to notify authorized personnel of misuse or suspicious activity.",
                         )
                     )
                 

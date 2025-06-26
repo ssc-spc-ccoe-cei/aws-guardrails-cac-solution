@@ -744,32 +744,16 @@ frameworks_data = [
                         "controlSources": "AWS Config",
                         "controlMappingSources": [
                             {
-                                "sourceName": "AWS Config - CLOUDTRAIL_S3_DATAEVENTS_ENABLED",
+                                "sourceName": "AWS Account - Check Policy Event Logging",
                                 "sourceSetUpOption": "System_Controls_Mapping",
                                 "sourceType": "AWS_Config",
                                 "sourceKeyword": {
                                     "keywordInputType": "SELECT_FROM_LIST",
-                                    "keywordValue": "CLOUDTRAIL_S3_DATAEVENTS_ENABLED",
+                                    "keywordValue": "Custom_gc11_check_policy_event_logging-conformance-pack",
                                 },
-                            },
-                            {
-                                "sourceName": "AWS Config - CLOUDTRAIL_SECURITY_TRAIL_ENABLED",
-                                "sourceSetUpOption": "System_Controls_Mapping",
-                                "sourceType": "AWS_Config",
-                                "sourceKeyword": {
-                                    "keywordInputType": "SELECT_FROM_LIST",
-                                    "keywordValue": "CLOUDTRAIL_SECURITY_TRAIL_ENABLED",
-                                },
-                            },
-                            {
-                                "sourceName": "AWS Config - CLOUD_TRAIL_ENABLED",
-                                "sourceSetUpOption": "System_Controls_Mapping",
-                                "sourceType": "AWS_Config",
-                                "sourceKeyword": {
-                                    "keywordInputType": "SELECT_FROM_LIST",
-                                    "keywordValue": "CLOUD_TRAIL_ENABLED",
-                                },
-                            },
+                            }
+
+                            
                         ],
                         "tags": {},
                     },

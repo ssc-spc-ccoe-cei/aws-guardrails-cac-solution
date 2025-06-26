@@ -1308,6 +1308,8 @@ Resources:
           - Sid: AllowCreateLogGroup
             Action:
               - "logs:CreateLogGroup"
+              - "logs:DescribeLogGroups"
+              - "logs:DescribeMetricFilters"
             Resource:
               - !Sub "arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:*"
             Effect: Allow

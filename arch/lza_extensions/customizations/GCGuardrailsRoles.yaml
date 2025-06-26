@@ -221,6 +221,8 @@ Resources:
           - Sid: AllowCreateLogGroup
             Action:
               - "logs:CreateLogGroup"
+              - "logs:DescribeLogGroups"
+              - "logs:DescribeMetricFilters"
             Resource:
               - !Sub "arn:aws:logs:${AWS::Region}:${AWS::AccountId}:*"
             Effect: Allow

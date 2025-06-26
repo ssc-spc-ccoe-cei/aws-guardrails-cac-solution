@@ -120,10 +120,51 @@ def check_cb_role(cloud_trail_client, cb_role, event, aws_account_id):
 
     return build_evaluation(aws_account_id, "COMPLIANT", event)
 
+def list_all_log_groups(logs_client):
+    
+    log_groups = []
 
-def check_rule_sns_target_is_setup(sns_client, event_bridge_client, rule, event):
+    paginator = logs_client.get_paginator("describe_log_groups")
+
+    for page in paginator.paginate():
+        for log_grp in page["logGroups"]:
+            log_groups.append(log_grp["logGroupName"])
+    
+    
+    return log_groups
+
+def check_cloudwatch_metric_setup(logs_client, metric_filter_pattern):
+    
+    
+    log_groups = list_all_log_groups(logs_client)
+    
+
+    pattern_match_flag = False
+    for log_grp in log_groups:
+        try:
+            paginator = logs_client.get_paginator("describe_metric_filters")
+            for page in paginator.paginate(logGroupName=log_grp):
+                
+                for metric_filter in page.get('metricFilters', []):
+                    
+                    filter_pattern = metric_filter.get('filterPattern', '')
+                    
+                    
+                    if filter_pattern == metric_filter_pattern:
+                        pattern_match_flag =  True
+                    break
+                
+                if pattern_match_flag:
+                    break
+
+        except Exception as e:
+            logger.error("Error matching metric filter %s", str(e))
+    logger.info("### pattern_match_flag : " + str(pattern_match_flag))   
+    return pattern_match_flag
+
+def check_rule_sns_target_is_setup(logs_client, sns_client, event_bridge_client, rule, event):
     resource_type = "AWS::Events::Rule"
-
+    # string pattern to check for metric filter
     logger.info("Checking rule: %s", rule)
     if rule.get("State") == "DISABLED":
         return build_evaluation(rule.get("Name"), "NON_COMPLIANT", event, resource_type, "Rule is disabled.")
@@ -141,7 +182,8 @@ def check_rule_sns_target_is_setup(sns_client, event_bridge_client, rule, event)
             # then search topic for a subscription with "email" protocol and is confirmed
             for subscription in subscriptions:
                 logger.info("Checking target subscriptions: %s", subscription)
-                if subscription.get("Protocol") == "email":
+                protocol = subscription.get("Protocol")
+                if protocol in ["email", "lambda"]:
                     subscription_arn = subscription.get("SubscriptionArn")
                     if subscription_is_confirmed(sns_client, subscription_arn):
                         return build_evaluation(
@@ -151,6 +193,9 @@ def check_rule_sns_target_is_setup(sns_client, event_bridge_client, rule, event)
                             resource_type,
                             annotation="An Event rule that has a SNS topic and subscription to send notification emails is setup and confirmed.",
                         )
+        
+       
+        
 
     return build_evaluation(
         rule.get("Name"),
@@ -186,7 +231,10 @@ def lambda_handler(event, context):
     aws_account_id = event["accountId"]
     aws_organizations_client = get_client("organizations", aws_account_id, execution_role_name, audit_account_id)
     aws_config_client = get_client("config", aws_account_id, execution_role_name)
-
+    aws_logs_client = get_client("logs", aws_account_id, execution_role_name, audit_account_id)
+    metric_filter_pattern = '{($.eventName="AssumeRole") && ($.errorCode="AccessDenied") && ($.errorMessage="*CloudBrokering*")}'
+    
+    
 
     if aws_account_id != get_organizations_mgmt_account_id(aws_organizations_client):
         logger.info("Not checked in account %s as this is not the Management Account", aws_account_id)
@@ -237,11 +285,14 @@ def lambda_handler(event, context):
             ],
         )
 
+    
+
     rules = list_all_event_bridge_rules(aws_event_bridge_client)
     cb_role_pattern = rule_parameters["IAM_Role_Name"]
 
     # Now we lookup the CloudBroker role by partial match
     cb_role_arn = get_role_arn(aws_iam_client, cb_role_pattern)
+    rules_are_compliant = False
 
     if not cb_role_arn:
         compliance_type = "NON_COMPLIANT"
@@ -267,10 +318,10 @@ def lambda_handler(event, context):
             )
         )
     else:
-        rules_are_compliant = False
+        
         for rule in cb_rules:
             logger.info(f"Checking rule: {rule}")
-            rule_evaluation = check_rule_sns_target_is_setup(aws_sns_client, aws_event_bridge_client, rule, event)
+            rule_evaluation = check_rule_sns_target_is_setup(aws_logs_client, aws_sns_client, aws_event_bridge_client, rule, event)
             if rule_evaluation.get("ComplianceType", "COMPLIANT") == "COMPLIANT":
                 rules_are_compliant = True
             evaluations.append(rule_evaluation)
@@ -287,5 +338,19 @@ def lambda_handler(event, context):
                     annotation="One or more event bridge rules are not compliant.",
                 )
             )
+    
+    #check if log metric exists only if cb rules are not compliant
+    
+    if not rules_are_compliant:
+        if check_cloudwatch_metric_setup(aws_logs_client, metric_filter_pattern):
+            logger.info("### EventBridge Rules are not compliant and a matching Metric filter pattern exists")
+            #clear the existing array
+            evaluations.clear()
+            compliance_type = "COMPLIANT"
+            annotation = f"Cloud Watch Metric Filter exists  '{metric_filter_pattern}'"
+            evaluation = build_evaluation(aws_account_id, compliance_type, event, annotation=annotation)
+            evaluations.append(evaluation)
+            logger.info(f"{compliance_type}: {annotation}")
+    
 
     submit_evaluations(aws_config_client, event, evaluations)
