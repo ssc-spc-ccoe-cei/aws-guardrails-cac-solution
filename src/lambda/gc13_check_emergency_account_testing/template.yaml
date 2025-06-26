@@ -1,0 +1,19 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Transform: AWS::Serverless-2016-10-31
+Description: >
+  gc13_check_emergency_account_testing
+
+Globals:
+  Function:
+    Timeout: 90
+    MemorySize: 128
+
+Resources:
+  GC13CheckEmergencyAccountTestingLambda:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: .
+      Handler: app.lambda_handler
+      Runtime: python3.9
+      Architectures:
+        - x86_64

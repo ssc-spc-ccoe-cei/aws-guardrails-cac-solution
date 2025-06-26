@@ -16,10 +16,17 @@ Parameters:
     Description: Execution arn name to be used when applying policy to the destination bucket.
   OrganizationName:
     Type: String
-    Description: Name of the organziation.
+    Description: Name of the organization.
   OrganizationId:
     Type: String
     Description: Organization id to be passed down from the root.yaml file.
+  TenantId:
+    Type: String
+  DeployVersion:
+    Type: String
+  DefaultCloudProfile:
+    Type: String
+    Description: The cloud profile to use when one is not provided by an account.
   AssessmentName:
     Type: String
     Default: "GC Guardrails Assessment"
@@ -31,6 +38,15 @@ Conditions:
     - !Ref AuditAccountID
 
 Resources:
+  CloudGuardrailsCommonLayer:
+    Condition: IsAuditAccount
+    Type: AWS::Lambda::LayerVersion
+    Properties:
+      LayerName: CloudGuardrailsCommonLayerPartEvidenceCollection
+      CompatibleRuntimes:
+        - python3.12
+      Content: "../../src/layer/cloud_guardrails/build/CloudGuardrailsCommonLayer/"
+  
   myKey:
     Condition: IsAuditAccount
     Type: "AWS::KMS::Key"
@@ -171,14 +187,19 @@ Resources:
       Handler: app.lambda_handler
       Code: "../../src/lambda/aws_compile_audit_report/build/CronjobsLambda/"
       Role: !GetAtt CronLambdaExecutionRole.Arn
+      Layers:
+        - !Ref CloudGuardrailsCommonLayer
       Environment:
         Variables:
           source_target_bucket: !Sub "gc-fedclient-${AWS::AccountId}-${AWS::Region}"
           ORG_ID: !Ref OrganizationId
           ASSESSMENT_NAME: !Ref AssessmentName
           ORG_NAME: !Ref OrganizationName
-      Runtime: python3.9
-      Timeout: 360
+          TENANT_ID: !Ref TenantId
+          CAC_VERSION: !Ref DeployVersion
+          DEFAULT_CLOUD_PROFILE: !Ref DefaultCloudProfile
+      Runtime: python3.12
+      Timeout: 720
 
   CronLambdaExecutionRole:
     Condition: IsAuditAccount
@@ -194,6 +215,16 @@ Resources:
       ManagedPolicyArns:
         - "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
       Policies:
+        - PolicyName: AllowOrgList
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - organizations:ListTagsForResource
+                  - organizations:Des*
+                  - lambda:In*
+                Resource: "*"
         - PolicyName: S3Policy
           PolicyDocument:
             Version: "2012-10-17"
@@ -204,6 +235,7 @@ Resources:
                   - "s3:GetObject"
                   - "s3:CreateBucket"
                   - "s3:ListBucket"
+                  - "s3:DeleteObject"
                 Resource: !Sub "arn:aws:s3:::gc-fedclient-${AWS::AccountId}-${AWS::Region}/*"
               - Effect: Allow
                 Action:
@@ -211,6 +243,7 @@ Resources:
                   - "s3:GetObject"
                   - "s3:CreateBucket"
                   - "s3:ListBucket"
+                  - "s3:DeleteObject"
                 Resource: !Sub "arn:aws:s3:::gc-fedclient-${AWS::AccountId}-${AWS::Region}"
               - Effect: Allow
                 Action:
@@ -239,7 +272,7 @@ Resources:
                   - !Sub "arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/lambda/${OrganizationName}gc*"
                 Effect: Allow
 
-  ## Create schedule
+  ## Create schedule.
   CronjobsScheduledRule:
     Condition: IsAuditAccount
     Type: AWS::Events::Rule
