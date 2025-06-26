@@ -1348,6 +1348,7 @@ Resources:
               - "iam:ListAttachedGroupPolicies"
               - "iam:ListGroupPolicies"
               - "iam:GetPolicyVersion"
+              - "identitystore:ListGroupMemberships"
             Resource: "*"
             Effect: Allow
           - Sid: AllowCloudWatchAlarmQueries
