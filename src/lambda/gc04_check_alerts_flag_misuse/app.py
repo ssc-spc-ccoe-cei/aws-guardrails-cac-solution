@@ -182,7 +182,8 @@ def check_rule_sns_target_is_setup(logs_client, sns_client, event_bridge_client,
             # then search topic for a subscription with "email" protocol and is confirmed
             for subscription in subscriptions:
                 logger.info("Checking target subscriptions: %s", subscription)
-                if subscription.get("Protocol") == "email":
+                protocol = subscription.get("Protocol")
+                if protocol in ["email", "lambda"]:
                     subscription_arn = subscription.get("SubscriptionArn")
                     if subscription_is_confirmed(sns_client, subscription_arn):
                         return build_evaluation(
