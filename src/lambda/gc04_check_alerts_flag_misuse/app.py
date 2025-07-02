@@ -152,7 +152,7 @@ def check_cloudwatch_metric_setup(logs_client, metric_filter_pattern):
                     
                     if filter_pattern == metric_filter_pattern:
                         pattern_match_flag =  True
-                    break
+                        break
                 
                 if pattern_match_flag:
                     break

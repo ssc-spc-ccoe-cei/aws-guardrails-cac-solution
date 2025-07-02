@@ -22,6 +22,7 @@ Metadata:
           - SecurityOUID
           - TenantId
           - DefaultCloudProfile
+          - LogArchiveAccountName
       - Label:
           default: Optional Parameters
         Parameters:
@@ -52,6 +53,8 @@ Metadata:
         default: First Breakglass Account
       BGA2:
         default: Second Breakglass Account
+      LogArchiveAccountName:
+        default: Log Archive Account Name
       SecurityOUID:
         default: ID of the AWS Organizations Security OU
       RolePrefix:
@@ -122,6 +125,10 @@ Parameters:
     Type: String
     Default: "bgUser2"
     Description: Second breakglass account name
+  LogArchiveAccountName:
+    Type: String
+    Default: "LogArchive"
+    Description: Name of Log Archive account
   SecurityOUID:
     Type: String
     Default: ""
@@ -1596,6 +1603,8 @@ Resources:
           ParameterValue: !Ref BGA1
         - ParameterName: BGA2
           ParameterValue: !Ref BGA2
+        - ParameterName: LogArchiveAccountName
+          ParameterValue: !Ref LogArchiveAccountName
         - ParameterName: OrganizationName
           ParameterValue: !Ref OrganizationName
         - ParameterName: GC03AlarmList

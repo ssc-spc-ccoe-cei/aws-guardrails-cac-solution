@@ -116,8 +116,19 @@ def fetch_sso_group_ids_for_user(identity_store_client, identity_store_id, user_
 def policy_doc_gives_admin_access(policy_doc: str) -> bool:
     """
     Check if the given JSON policy document has Effect=Allow, Action=*, Resource=*
+
     """
-    document_dict = json.loads(policy_doc)
+
+    logger.info("### instance type for policy doc: %s", type(policy_doc))
+
+    if isinstance (policy_doc, str):
+        try:
+            document_dict = json.loads(policy_doc)
+        except json.JSONDecodeError:
+            return False
+    else:
+        document_dict = policy_doc
+    
     statement = document_dict.get("Statement", [])
     for statement_component in statement:
         if (

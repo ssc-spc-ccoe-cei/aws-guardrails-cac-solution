@@ -22,6 +22,8 @@ Parameters:
     Type: String
   DeployVersion:
     Type: String
+  LogArchiveAccountName:
+    Type: String
   # GC01
   S3AttestationLetterPath:
     Type: String
@@ -100,9 +102,9 @@ Parameters:
   # GC10
   S3LogBucketsPath:
     Type: String
-  LogArchiveAccountName:
-    Type: String
-    Default: LogArchive
+  #LogArchiveAccountName:
+    #Type: String
+    #Default: LogArchive
   # GC11
   S3MonitoringUseCasesPath:
     Type: String
