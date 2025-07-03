@@ -119,7 +119,7 @@ def policy_doc_gives_admin_access(policy_doc: str) -> bool:
 
     """
 
-    logger.info("### instance type for policy doc: %s", type(policy_doc))
+    logger.info("instance type for policy doc: %s", type(policy_doc))
 
     if isinstance (policy_doc, str):
         try:
@@ -553,7 +553,6 @@ def check_users(
             # Get this user's SSO group memberships
             user_group_ids = fetch_sso_group_ids_for_user(identity_store_client, instance_id, user_id)
 
-            logger.info(f"Checking SSO user: {user_name}")
             
             if user_name in privileged_user_list:
                 if at_least_one_privileged_user_has_admin_access:
@@ -606,6 +605,8 @@ def check_users(
         
             # New exact-match logic
     admin_users_detected = set([user.lower() for user in admin_users_detected])
+
+    logger.info(f"Admin Users Detected: {admin_users_detected}")
 
     priv_set = set(privileged_user_list)
     nonpriv_set = set(non_privileged_user_list)
