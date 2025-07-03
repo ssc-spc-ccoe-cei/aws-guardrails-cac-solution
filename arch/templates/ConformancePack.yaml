@@ -22,15 +22,13 @@ Parameters:
     Type: String
   DeployVersion:
     Type: String
-  LogArchiveAccountName:
-    Type: String
   # GC01
   S3AttestationLetterPath:
     Type: String
   RuleNamingConventionFilePath:
     Type: String
   PasswordPolicyMinimumPasswordLength:
-    Default: "14"
+    Default: "12"
     Type: String
   PasswordPolicyMaxPasswordAge:
     Default: "90"
@@ -102,9 +100,9 @@ Parameters:
   # GC10
   S3LogBucketsPath:
     Type: String
-  #LogArchiveAccountName:
-    #Type: String
-    #Default: LogArchive
+  LogArchiveAccountName:
+    Type: String
+    Default: LogArchive
   # GC11
   S3MonitoringUseCasesPath:
     Type: String

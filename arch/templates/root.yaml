@@ -81,9 +81,6 @@ Parameters:
   DeployVersion:
     Type: String
     Default: 2.0.0
-  LogArchiveAccountName:
-    Type: String
-    Default: "LogArchive"
 
 Resources:
   GuardRailsStack:
@@ -110,7 +107,6 @@ Resources:
         InvokeUpdate: !Ref InvokeUpdate
         BGA1: !Ref BGA1
         BGA2: !Ref BGA2
-        LogArchiveAccountName: !Ref LogArchiveAccountName
 
       Tags:
         - Key: "UpdateTrigger"
