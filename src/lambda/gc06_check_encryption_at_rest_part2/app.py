@@ -576,7 +576,8 @@ def lambda_handler(event, context):
     aws_open_search_client = get_client("opensearch", aws_account_id, execution_role_name, is_not_audit_account)
     aws_kinesis_client = get_client("kinesis", aws_account_id, execution_role_name, is_not_audit_account)
     aws_rds_client = get_client("rds", aws_account_id, execution_role_name, is_not_audit_account)
-    aws_s3_client = get_client("s3", aws_account_id, execution_role_name, is_not_audit_account)
+    #updated to set the flag to true to access buckets not in ca-central-1 region
+    aws_s3_client = get_client("s3", aws_account_id, execution_role_name, True)
     aws_sns_client = get_client("sns", aws_account_id, execution_role_name, is_not_audit_account)
 
     # Check cloud profile
