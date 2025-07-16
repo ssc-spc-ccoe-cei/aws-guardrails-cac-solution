@@ -762,7 +762,8 @@ def lambda_handler(event, context):
 
     aws_config_client = get_client("config", aws_account_id, execution_role_name, is_not_audit_account)
     aws_cloud_front_client = get_client("cloudfront", aws_account_id, execution_role_name, is_not_audit_account)
-    aws_s3_client = get_client("s3", aws_account_id, execution_role_name, is_not_audit_account)
+    # Updated boolean value to True as in audit account, s3_client was not able to access buckets created outside of ca-central-1 region
+    aws_s3_client = get_client("s3", aws_account_id, execution_role_name, True)
     aws_redshift_client = get_client("redshift", aws_account_id, execution_role_name, is_not_audit_account)
     aws_elb_v1_client = get_client("elb", aws_account_id, execution_role_name, is_not_audit_account)
     aws_elb_v2_client = get_client("elbv2", aws_account_id, execution_role_name, is_not_audit_account)

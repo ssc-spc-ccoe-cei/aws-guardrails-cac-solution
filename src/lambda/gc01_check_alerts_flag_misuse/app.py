@@ -164,7 +164,7 @@ def check_alerts_flag_misuse(event, rule_parameters, aws_account_id, evaluations
         else:
             evaluations = []
             is_compliant = False
-            rule_naming_convention = read_s3_object(aws_s3_client, rule_naming_convention_file_path)
+            rule_naming_convention = read_s3_object(aws_s3_client, rule_naming_convention_file_path).strip()
             reg = re.compile(rule_naming_convention)
             logger.info("Filtering rules by rule_naming_convention: %s", rule_naming_convention)
             filtered_rules = [r for r in rules if reg.search(r.get("Name", ""))]

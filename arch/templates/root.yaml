@@ -107,6 +107,7 @@ Resources:
         InvokeUpdate: !Ref InvokeUpdate
         BGA1: !Ref BGA1
         BGA2: !Ref BGA2
+
       Tags:
         - Key: "UpdateTrigger"
           Value: !Ref InvokeUpdate

@@ -27,11 +27,49 @@ logger = logging.getLogger()
 logger.setLevel(logging.INFO)
 
 
-def fetch_sso_users(sso_admin_client, identity_store_client):
+# def fetch_sso_users(sso_admin_client, identity_store_client):
+#     """
+#     Return two dictionaries:
+#       1) users_by_instance: { instance_arn: [ { "UserName", "UserId", ... }, ... ] }
+#       2) instance_id_by_arn: { instance_arn: identity_store_id }
+#     """
+#     instances = list_all_sso_admin_instances(sso_admin_client)
+#     users_by_instance = {}
+#     instance_id_by_arn = {}
+
+#     for i in instances:
+#         if i.get("Status") != "ACTIVE":
+#             continue
+
+#         instance_id = i.get("IdentityStoreId")
+#         instance_arn = i.get("InstanceArn")
+#         instance_id_by_arn[instance_arn] = instance_id
+#         users_by_instance[instance_arn] = []
+#         next_token = None
+
+#         try:
+#             while True:
+#                 response = (
+#                     identity_store_client.list_users(IdentityStoreId=instance_id, NextToken=next_token, target_accounts)
+#                     if next_token
+#                     else identity_store_client.list_users(IdentityStoreId=instance_id)
+#                 )
+#                 users_by_instance[instance_arn].extend(response.get("Users", []))
+#                 next_token = response.get("NextToken")
+#                 if not next_token:
+#                     break
+#         except botocore.exceptions.ClientError as ex:
+#             ex.response["Error"]["Message"] = "InternalError"
+#             ex.response["Error"]["Code"] = "InternalError"
+#             raise ex
+
+#     return users_by_instance, instance_id_by_arn
+def fetch_sso_users(sso_admin_client, identity_store_client, management_account_id):
     """
-    Return two dictionaries:
+    Returns:
       1) users_by_instance: { instance_arn: [ { "UserName", "UserId", ... }, ... ] }
       2) instance_id_by_arn: { instance_arn: identity_store_id }
+    Includes users with direct or group-based access to the management account.
     """
     instances = list_all_sso_admin_instances(sso_admin_client)
     users_by_instance = {}
@@ -41,29 +79,98 @@ def fetch_sso_users(sso_admin_client, identity_store_client):
         if i.get("Status") != "ACTIVE":
             continue
 
-        instance_id = i.get("IdentityStoreId")
-        instance_arn = i.get("InstanceArn")
+        instance_id = i["IdentityStoreId"]
+        instance_arn = i["InstanceArn"]
         instance_id_by_arn[instance_arn] = instance_id
         users_by_instance[instance_arn] = []
-        next_token = None
 
-        try:
+        # Step 1: Get all permission sets
+        permission_sets = []
+        next_token = None
+        while True:
+            response = sso_admin_client.list_permission_sets(
+                InstanceArn=instance_arn,
+                NextToken=next_token
+            ) if next_token else sso_admin_client.list_permission_sets(InstanceArn=instance_arn)
+
+            permission_sets.extend(response.get("PermissionSets", []))
+            next_token = response.get("NextToken")
+            if not next_token:
+                break
+
+        # Step 2: Collect principals with access
+        user_ids = set()
+        group_ids = set()
+
+        for ps_arn in permission_sets:
+            next_token = None
             while True:
-                response = (
-                    identity_store_client.list_users(IdentityStoreId=instance_id, NextToken=next_token)
-                    if next_token
-                    else identity_store_client.list_users(IdentityStoreId=instance_id)
+                response = sso_admin_client.list_account_assignments(
+                    InstanceArn=instance_arn,
+                    AccountId=management_account_id,
+                    PermissionSetArn=ps_arn,
+                    NextToken=next_token
+                ) if next_token else sso_admin_client.list_account_assignments(
+                    InstanceArn=instance_arn,
+                    AccountId=management_account_id,
+                    PermissionSetArn=ps_arn
                 )
-                users_by_instance[instance_arn].extend(response.get("Users", []))
+
+                for assignment in response.get("AccountAssignments", []):
+                    pid = assignment["PrincipalId"]
+                    ptype = assignment["PrincipalType"]
+                    if ptype == "USER":    
+                        user_ids.add(pid)
+                    elif ptype == "GROUP":
+                        group_ids.add(pid)
+
                 next_token = response.get("NextToken")
                 if not next_token:
                     break
-        except botocore.exceptions.ClientError as ex:
-            ex.response["Error"]["Message"] = "InternalError"
-            ex.response["Error"]["Code"] = "InternalError"
-            raise ex
+
+        # Step 3: Expand group memberships
+        for group_id in group_ids:
+            next_token = None
+            while True:
+                response = identity_store_client.list_group_memberships(
+                    IdentityStoreId=instance_id,
+                    GroupId=group_id,
+                    NextToken=next_token
+                ) if next_token else identity_store_client.list_group_memberships(
+                    IdentityStoreId=instance_id,
+                    GroupId=group_id
+                )
+
+                for membership in response.get("GroupMemberships", []):
+                    user_ids.add(membership["MemberId"]["UserId"])
+                    logger.info(f"{membership}")
+
+                next_token = response.get("NextToken")
+                if not next_token:
+                    break
+
+        # Step 4: Fetch user details
+        next_token = None
+        while True:
+            response = identity_store_client.list_users(
+                IdentityStoreId=instance_id,
+                NextToken=next_token
+            ) if next_token else identity_store_client.list_users(
+                IdentityStoreId=instance_id
+            )
+
+            for user in response.get("Users", []):
+                if user["UserId"] in user_ids:
+                    users_by_instance[instance_arn].append(user)
+                    logger.info(f"Found a user in Management account: {user}")
+
+            next_token = response.get("NextToken")
+            if not next_token:
+                break
 
     return users_by_instance, instance_id_by_arn
+
+
 
 
 def fetch_sso_group_ids_for_user(identity_store_client, identity_store_id, user_id): 
@@ -116,23 +223,35 @@ def fetch_sso_group_ids_for_user(identity_store_client, identity_store_id, user_
 def policy_doc_gives_admin_access(policy_doc: str) -> bool:
     """
     Check if the given JSON policy document has Effect=Allow, Action=*, Resource=*
+
     """
-    document_dict = json.loads(policy_doc)
+
+    logger.info("instance type for policy doc: %s", type(policy_doc))
+
+    if isinstance (policy_doc, str):
+        try:
+            document_dict = json.loads(policy_doc)
+        except json.JSONDecodeError:
+            return False
+    else:
+        document_dict = policy_doc
+    
     statement = document_dict.get("Statement", [])
     for statement_component in statement:
         if (
             statement_component.get("Effect", "") == "Allow"
             and statement_component.get("Action", "") == "*"
             and statement_component.get("Resource", "") == "*"
-            and "Principal" in statement_component
+           # and "Principal" in statement_component
         ):
-            principal = statement_component["Principal"]
-            if isinstance(principal, dict) and "AWS" in principal:
-                aws_principal = principal["AWS"]
-                if isinstance(aws_principal, str) and aws_principal == f"arn:aws:iam::{mane_id}:root":
-                    return True
-                elif isinstance(aws_principal, list) and f"arn:aws:iam::{mane_id}:root" in aws_principal:
-                    return True
+         return True
+            # principal = statement_component["Principal"]
+            # if isinstance(principal, dict) and "AWS" in principal:
+            #     aws_principal = principal["AWS"]
+            #     if isinstance(aws_principal, str) and aws_principal == f"arn:aws:iam::{mane_id}:root":
+            #         return True
+            #     elif isinstance(aws_principal, list) and f"arn:aws:iam::{mane_id}:root" in aws_principal:
+            #         return True
     return False
 
 
@@ -371,9 +490,10 @@ def permission_set_has_admin_policies(iam_client, sso_admin_client, instance_arn
                 )
             )
             managed_policies += response.get("AttachedManagedPolicies", [])
+            logger.info(f"managed policy{managed_policies}")
             next_token = response.get("NextToken")
             if not next_token:
-                break
+                break   
 
         # 2) Inline policies defined directly in the Permission Set
         response = sso_admin_client.get_inline_policy_for_permission_set(
@@ -381,7 +501,7 @@ def permission_set_has_admin_policies(iam_client, sso_admin_client, instance_arn
         )
         if len(response.get("InlinePolicy", "")) > 1:
             inline_policies.append({"PolicyDocument": response["InlinePolicy"]})
-
+        
         # 3) Customer-managed policies attached to the Permission Set
         next_token = None
         while True:
@@ -402,7 +522,7 @@ def permission_set_has_admin_policies(iam_client, sso_admin_client, instance_arn
             if not next_token:
                 break
 
-        return policies_grant_admin_access(managed_policies, inline_policies)
+        return policies_grant_admin_access(iam_client, managed_policies, inline_policies)
     except botocore.exceptions.ClientError as ex:
         ex.response["Error"]["Message"] = "InternalError"
         ex.response["Error"]["Code"] = "InternalError"
@@ -477,6 +597,7 @@ def user_assigned_to_permission_set(sso_admin_client, user_id, user_group_ids, i
             for assignment in response.get("AccountAssignments", []):
                 principal_id = assignment.get("PrincipalId")
                 principal_type = assignment.get("PrincipalType")
+               # logger.info (f"assigment:{assigment}")
 
                 # Direct user assignment
                 if principal_type == "USER" and principal_id == user_id:
@@ -526,7 +647,8 @@ def check_users(
         inline_policies = fetch_inline_user_policies(iam_client, user_name)
 
         #  If this user has admin privileges, add them to admin_users_detected
-        if policies_grant_admin_access(managed_policies, inline_policies):
+        
+        if policies_grant_admin_access(iam_client, managed_policies, inline_policies):
             admin_users_detected.add(user_name)
 
     # === SSO (Identity Center) Checks ===
@@ -535,66 +657,26 @@ def check_users(
             iam_client, sso_admin_client, instance_arn, organizations_client
         )
         instance_id = sso_instance_id_by_arn[instance_arn]
+        
 
         for user in sso_users:
             user_name = user.get("UserName")
             user_id = user.get("UserId")
-            # Get this user's SSO group memberships
             user_group_ids = fetch_sso_group_ids_for_user(identity_store_client, instance_id, user_id)
-
-            logger.info(f"Checking SSO user: {user_name}")
             
             if user_name in privileged_user_list:
                 if at_least_one_privileged_user_has_admin_access:
                     continue
-
-                # # Check if user or user's groups is assigned to an admin permission set
-                # for a_id, perm_sets in admin_permission_sets_by_account.items():
-                #     for p_arn in perm_sets:
-                #         if user_assigned_to_permission_set(sso_admin_client, user_id, user_group_ids, instance_arn, a_id, p_arn):
-                #             at_least_one_privileged_user_has_admin_access = True
-                #             break
-                #     if at_least_one_privileged_user_has_admin_access:
-                #         break
-            #  If user is assigned to any admin permission set, add to admin_users_detected
-            # for a_id, perm_sets in admin_permission_sets_by_account.items():
-            #     for p_arn in perm_sets:
-            #         if user_assigned_to_permission_set(sso_admin_client, user_id, user_group_ids, instance_arn, a_id, p_arn):
-            #             admin_users_detected.add(user_name)
-            #             break
-
-            # elif user_name in non_privileged_user_list:
-            #     # Check if user or user's groups is assigned to an admin permission set
-            #     for a_id, perm_sets in admin_permission_sets_by_account.items():
-            #         for p_arn in perm_sets:
-            #             if user_assigned_to_permission_set(sso_admin_client, user_id, user_group_ids, instance_arn, a_id, p_arn):
-            #                 non_privileged_user_with_admin_access.append(user_name)
-            #                 break
-            #  If user is assigned to any admin permission set, add to admin_users_detected
             for a_id, perm_sets in admin_permission_sets_by_account.items():
+               # logger.info(f"{admin_permission_sets_by_account}")
                 for p_arn in perm_sets:
-                    if user_assigned_to_permission_set(sso_admin_client, user_id, user_group_ids, instance_arn, a_id, p_arn):
+                    if user_assigned_to_permission_set(sso_admin_client, user_id, user_group_ids, instance_arn, a_id, p_arn): 
                         admin_users_detected.add(user_name)
+                        logger.info(f"Found admin user {user_name}") 
                         break
 
-    # === Final evaluations ===
-    # if at_least_one_privileged_user_has_admin_access and len(non_privileged_user_with_admin_access) == 0:
-    #     evaluations.append(build_evaluation(aws_account_id, "COMPLIANT", event))
-    # else:
-    #     failed_check_strings = []
-    #     if not at_least_one_privileged_user_has_admin_access:
-    #         failed_check_strings.append("no privileged user with admin access was found")
-    #     if len(non_privileged_user_with_admin_access) > 0:
-    #         failed_check_strings.append(
-    #             f"non_privileged users {non_privileged_user_with_admin_access} have admin access"
-    #         )
-
-    #     annotation = " and ".join([e for e in failed_check_strings if e]).capitalize()
-    #     evaluations.append(build_evaluation(aws_account_id, "NON_COMPLIANT", event, annotation=annotation))
-        
-        
-            # New exact-match logic
     admin_users_detected = set([user.lower() for user in admin_users_detected])
+    logger.info(f"Admin Users Detected: {admin_users_detected}")
 
     priv_set = set(privileged_user_list)
     nonpriv_set = set(non_privileged_user_list)
@@ -623,16 +705,58 @@ def check_users(
     return evaluations
 
 
-def policies_grant_admin_access(managed_policies, inline_policies):
+
+# def policies_grant_admin_access(managed_policies, inline_policies):
+#     """
+#     Return True if any of the given policies grants 'AdministratorAccess' 
+#     or if any inline document is effectively 'Action:*'/'Resource:*'.
+#     """
+#     return any(
+#         p.get("PolicyName", p.get("Name", "")) == "AdministratorAccess" for p in managed_policies
+#     ) or any(
+#         policy_doc_gives_admin_access(p.get("PolicyDocument", "{}")) for p in inline_policies
+#     )
+
+def policies_grant_admin_access(iam_client, managed_policies, inline_policies):
     """
-    Return True if any of the given policies grants 'AdministratorAccess' 
-    or if any inline document is effectively 'Action:*'/'Resource:*'.
+    Return True if any of the given policies grants 'AdministratorAccess'
+    or if any policy document (managed or inline) effectively grants 'Action:*' and 'Resource:*'.
+    Assumes all policy documents are already included in the input.
     """
-    return any(
-        p.get("PolicyName", p.get("Name", "")) == "AdministratorAccess" for p in managed_policies
-    ) or any(
-        policy_doc_gives_admin_access(p.get("PolicyDocument", "{}")) for p in inline_policies
+
+    # Check for AWS managed AdministratorAccess policy by name
+    admin_access_policy_flag = any(
+        p.get("PolicyName", p.get("Name", "")) == "AdministratorAccess"
+        for p in managed_policies
     )
+
+    custom_policy_flag = False
+    # check in custom managed policies for admin access
+    if not admin_access_policy_flag:
+        for p in managed_policies:
+            p_response = iam_client.get_policy(PolicyArn=p.get("PolicyArn"))
+            default_version_id = p_response["Policy"]["DefaultVersionId"]
+            version_response = iam_client.get_policy_version(PolicyArn=p.get("PolicyArn"), VersionId=default_version_id)
+            policy_doc_response = version_response["PolicyVersion"]["Document"]
+            if policy_doc_response:
+                if policy_doc_gives_admin_access(policy_doc_response):
+                    custom_policy_flag = True
+                    break;
+
+    # Check for admin access in managed policies (including customer managed)
+    # custom_policy_flag = any(
+    #     "PolicyDocument" in p and policy_doc_gives_admin_access(p["PolicyDocument"])
+    #     for p in managed_policies
+    # )
+
+    # Check for admin access in inline policies
+    inline_policy_flag = any(
+        "PolicyDocument" in p and policy_doc_gives_admin_access(p["PolicyDocument"])
+        for p in inline_policies
+    )
+
+    return admin_access_policy_flag or custom_policy_flag or inline_policy_flag
+
 
 
 def lambda_handler(event, context):
@@ -723,7 +847,8 @@ def lambda_handler(event, context):
         non_privileged_users_list = [user.lower() for user in get_lines_from_s3_file(aws_s3_client, non_privileged_users_file_path)]
 
         # Fetch SSO info
-        sso_users_by_instance, sso_instance_id_by_arn = fetch_sso_users(aws_sso_admin_client, aws_identity_store_client)
+        sso_users_by_instance, sso_instance_id_by_arn = fetch_sso_users(aws_sso_admin_client, aws_identity_store_client, mane_id)
+       # logger.info(f"{sso_users_by_instance}")
 
         # Main check
         evaluations += check_users(

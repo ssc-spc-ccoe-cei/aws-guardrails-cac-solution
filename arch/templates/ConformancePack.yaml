@@ -28,7 +28,7 @@ Parameters:
   RuleNamingConventionFilePath:
     Type: String
   PasswordPolicyMinimumPasswordLength:
-    Default: "14"
+    Default: "12"
     Type: String
   PasswordPolicyMaxPasswordAge:
     Default: "90"
