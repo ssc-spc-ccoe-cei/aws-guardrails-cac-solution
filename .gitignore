@@ -1,3 +1,4 @@
+_temp/
 **/build/
 **/build.toml
 out.yaml
