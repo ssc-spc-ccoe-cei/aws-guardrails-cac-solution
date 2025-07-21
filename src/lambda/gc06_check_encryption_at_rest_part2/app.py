@@ -233,17 +233,25 @@ def assess_eks_encryption_at_rest(eks_client, event):
             response = eks_client.describe_cluster(name=cluster)
 
             if response:
-                encryption_config = response.get("cluster", {}).get("encryptionConfig", [])
-                if encryption_config:
-                    # check if there are resources of type secrets
-                    compliance_annotation = "Secrets are not encrypted"
-                    for config in encryption_config:
-                        if "secrets" in config.get("resources", []):
-                            compliance_status = "COMPLIANT"
-                            compliance_annotation = "Secrets are encrypted"
-                            break
+                cluster_version = response.get("cluster", {}).get("version", [])
+                # check is version is greater than 1.27
+                if cluster_version and float(cluster_version) > 1.27:
+                    compliance_status = "COMPLIANT"
+                    compliance_annotation = "Cluster version is greater than 1.27, compliance check is not required"
+                
                 else:
-                    compliance_annotation = "Empty encryptionConfig"
+
+                    encryption_config = response.get("cluster", {}).get("encryptionConfig", [])
+                    if encryption_config:
+                        # check if there are resources of type secrets
+                        compliance_annotation = "Secrets are not encrypted"
+                        for config in encryption_config:
+                            if "secrets" in config.get("resources", []):
+                                compliance_status = "COMPLIANT"
+                                compliance_annotation = "Secrets are encrypted"
+                                break
+                    else:
+                        compliance_annotation = "Empty encryptionConfig"
 
             if compliance_status == "NON_COMPLIANT":
                 NONCOMPLIANT_SERVICES.add("EKS")
