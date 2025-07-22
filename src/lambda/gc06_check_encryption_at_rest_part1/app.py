@@ -214,6 +214,8 @@ def assess_cloudtrail_encryption_at_rest(s3_client, AWScloudtrail_client, event)
     local_evaluations = []
     trails = []
     resource_type = "AWS::CloudTrail::Trail"
+    AWS_CONTROL_TOWER_CLOUDTRAIL_NAME = "aws-controltower-BaselineCloudTrail"
+
     try:
         response = AWScloudtrail_client.describe_trails()
         trails = response.get("trailList", [])
@@ -223,29 +225,40 @@ def assess_cloudtrail_encryption_at_rest(s3_client, AWScloudtrail_client, event)
     except ValueError:
         logger.error("CloudTrail - Error while calling describe_trails")
         NONCOMPLIANT_SERVICES.add("CloudTrail")
+
     logger.info("CloudTrail - %s trails found.", len(trails))
+
     for trail in trails:
         compliance_status = "NON_COMPLIANT"
         annotation = "Not using KMS"
-        if trail.get("KmsKeyId", ""):
+        trail_name = trail.get("Name", "INVALID")
+
+        #ignore control tower cloudtrail 
+        if trail_name == AWS_CONTROL_TOWER_CLOUDTRAIL_NAME:
             compliance_status = "COMPLIANT"
-            annotation = "KMS key confirmed"
+            annotation = "AWS Control Tower Trail"
+        
         else:
-            logger.info("### trail doesn't have kms keys %s", trail)
-            s3_bucket_name = trail.get("S3BucketName", "")
-            if s3_bucket_name:
-                bucket_encrypted_flag = check_s3_bucket_encryption(s3_client, s3_bucket_name)
-                if bucket_encrypted_flag:
-                    logger.info("### trail bucket %s  has encryption", s3_bucket_name)
-                    compliance_status = "COMPLIANT"
-                    annotation = "Trail bucket has encryption enabled"
-                else:
-                    logger.info("### trail bucket %s  has no encryption", s3_bucket_name)
-                    compliance_status = "NON_COMPLIANT"
-                    annotation = "Trail bucket has no encryption enabled"
+
+            if trail.get("KmsKeyId", ""):
+                compliance_status = "COMPLIANT"
+                annotation = "KMS key confirmed"
+            else:
+                logger.info("### trail doesn't have kms keys %s", trail)
+                s3_bucket_name = trail.get("S3BucketName", "")
+                if s3_bucket_name:
+                    bucket_encrypted_flag = check_s3_bucket_encryption(s3_client, s3_bucket_name)
+                    if bucket_encrypted_flag:
+                        logger.info("### trail bucket %s  has encryption", s3_bucket_name)
+                        compliance_status = "COMPLIANT"
+                        annotation = "Trail bucket has encryption enabled"
+                    else:
+                        logger.info("### trail bucket %s  has no encryption", s3_bucket_name)
+                        compliance_status = "NON_COMPLIANT"
+                        annotation = "Trail bucket has no encryption enabled"
         
         logger.info(
-            "CloudTrail - Trail %s is %s", trail.get("TrailARN", trail.get("Name", "INVALID")), compliance_status
+            "### CloudTrail - Trail %s is %s", trail.get("TrailARN", trail.get("Name", "INVALID")), compliance_status
         )
         # build evaluation
         local_evaluations.append(
