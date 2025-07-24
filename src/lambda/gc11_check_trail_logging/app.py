@@ -10,7 +10,7 @@ from boto_util.organizations import get_account_tags
 from boto_util.client import get_client
 from boto_util.config import build_evaluation, submit_evaluations, aws_config_is_enabled
 from boto_util.cloud_trail import list_all_cloud_trails
-
+import botocore.exceptions
 # Logging setup
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
@@ -24,10 +24,11 @@ def event_selectors_are_configured_correctly(event_selectors):
     return True
 
 
-def assess_cloudtrail_configurations(cloudtrail_client, event: dict) -> tuple[list[dict], bool]:
+def assess_cloudtrail_configurations(s3_client, cloudtrail_client, event: dict) -> tuple[list[dict], bool]:
     resource_type = "AWS::CloudTrail::Trail"
     evaluations = []
     all_resources_are_compliant = True
+    AWS_CONTROL_TOWER_CLOUDTRAIL_NAME = "aws-controltower-BaselineCloudTrail"
 
     trail_list = list_all_cloud_trails(cloudtrail_client)
 
@@ -44,34 +45,56 @@ def assess_cloudtrail_configurations(cloudtrail_client, event: dict) -> tuple[li
         trail_arn = trail.get("TrailARN", trail_name)
         trail_status = cloudtrail_client.get_trail_status(Name=trail_arn)
 
-        if not trail_status.get("IsLogging", False):
-            compliance_type = "NON_COMPLIANT"
-            annotation = f"Cloud Trail '{trail_name}' is NOT logging."
-        elif not trail.get("IncludeGlobalServiceEvents", False):
-            compliance_type = "NON_COMPLIANT"
-            annotation = f"Cloud Trail '{trail_name}' does NOT have IncludeGlobalServiceEvents set to True."
-        elif not trail.get("IsMultiRegionTrail", False):
-            compliance_type = "NON_COMPLIANT"
-            annotation = f"Cloud Trail '{trail_name}' is not a multi-region trail."
-        elif not trail.get("LogFileValidationEnabled", False):
-            compliance_type = "NON_COMPLIANT"
-            annotation = f"Cloud Trail '{trail_name}' does not have log file validation enabled."
-        elif not trail.get("KmsKeyId", False):
-            compliance_type = "NON_COMPLIANT"
-            annotation = f"Cloud Trail '{trail_name}' is not encrypted with a KMS key."
-             
+        #ignore control tower cloudtrail from checks
+        if trail_name == AWS_CONTROL_TOWER_CLOUDTRAIL_NAME:
+            logger.info("### Control tower trail ###")
+            compliance_type = "COMPLIANT"
+            annotation = "AWS Control Tower Trail"
+        
         else:
-            response = cloudtrail_client.get_event_selectors(TrailName=trail_arn)
-            event_selectors = response.get("EventSelectors", [])
-            if not event_selectors:
+
+            if not trail_status.get("IsLogging", False):
                 compliance_type = "NON_COMPLIANT"
-                annotation = f"Cloud Trail '{trail_name}' does have any event selectors."
-            elif not event_selectors_are_configured_correctly(event_selectors):
+                annotation = f"Cloud Trail '{trail_name}' is NOT logging."
+            elif not trail.get("IncludeGlobalServiceEvents", False):
                 compliance_type = "NON_COMPLIANT"
-                annotation = f"Cloud Trail '{trail_name}' has an improperly configured event selector."
+                annotation = f"Cloud Trail '{trail_name}' does NOT have IncludeGlobalServiceEvents set to True."
+            elif not trail.get("IsMultiRegionTrail", False):
+                compliance_type = "NON_COMPLIANT"
+                annotation = f"Cloud Trail '{trail_name}' is not a multi-region trail."
+            elif not trail.get("LogFileValidationEnabled", False):
+                compliance_type = "NON_COMPLIANT"
+                annotation = f"Cloud Trail '{trail_name}' does not have log file validation enabled."
+            elif not trail.get("KmsKeyId", False):
+                compliance_type = "NON_COMPLIANT"
+                annotation = f"Cloud Trail '{trail_name}' is not encrypted with a KMS key."
+                #check for s3 bucket encryption as well
+                logger.info("### trail doesn't have kms keys %s", trail)
+                s3_bucket_name = trail.get("S3BucketName", "")
+                if s3_bucket_name:
+                    bucket_encrypted_flag = check_s3_bucket_encryption(s3_client, s3_bucket_name)
+                    if bucket_encrypted_flag:
+                        logger.info("### trail bucket %s  has encryption", s3_bucket_name)
+                        compliance_status = "COMPLIANT"
+                        annotation = "Trail bucket has encryption enabled"
+                    else:
+                        logger.info("### trail bucket %s  has no encryption", s3_bucket_name)
+                        compliance_status = "NON_COMPLIANT"
+                        annotation = "Trail bucket has no encryption enabled"
+
+                
             else:
-                compliance_type = "COMPLIANT"
-                annotation = f"Cloud Trail '{trail_name}' has the required configuration."
+                response = cloudtrail_client.get_event_selectors(TrailName=trail_arn)
+                event_selectors = response.get("EventSelectors", [])
+                if not event_selectors:
+                    compliance_type = "NON_COMPLIANT"
+                    annotation = f"Cloud Trail '{trail_name}' does have any event selectors."
+                elif not event_selectors_are_configured_correctly(event_selectors):
+                    compliance_type = "NON_COMPLIANT"
+                    annotation = f"Cloud Trail '{trail_name}' has an improperly configured event selector."
+                else:
+                    compliance_type = "COMPLIANT"
+                    annotation = f"Cloud Trail '{trail_name}' has the required configuration."
 
         logger.info(f"{compliance_type}: {annotation}")
         evaluations.append(build_evaluation(trail_arn, compliance_type, event, resource_type, annotation))
@@ -79,6 +102,24 @@ def assess_cloudtrail_configurations(cloudtrail_client, event: dict) -> tuple[li
             all_resources_are_compliant = False
 
     return evaluations, all_resources_are_compliant
+
+def check_s3_bucket_encryption(s3_client, bucket_name):
+    """
+    Check if S3 bucket has encryption enabled
+    :return True if bucket is encrypted, else False
+    """
+    # s3_client = get_client("s3")
+
+    try:
+        response = s3_client.get_bucket_encryption(Bucket=bucket_name)
+        encryption_rules = response.get('ServerSideEncryptionConfiguration', {}).get('Rules', [])
+
+        if encryption_rules:
+            return True
+        return False
+    except botocore.exceptions.ClientError as ex:
+        logger.error("S3 error while checking bucket encryption for %s: %s", bucket_name, ex)
+        return False
 
 
 def lambda_handler(event, context):
@@ -106,7 +147,8 @@ def lambda_handler(event, context):
 
     aws_config_client = get_client("config", aws_account_id, execution_role_name, is_not_audit_account)
     aws_cloudtrail_client = get_client("cloudtrail", aws_account_id, execution_role_name, is_not_audit_account)
-    
+    aws_s3_client = get_client("s3", aws_account_id, execution_role_name, is_not_audit_account)
+
     # Check cloud profile
     tags = get_account_tags(get_client("organizations", assume_role=False), aws_account_id)
     cloud_profile = get_cloud_profile_from_tags(tags)
@@ -129,7 +171,7 @@ def lambda_handler(event, context):
             gr_requirement_type=gr_requirement_type
         )])
         
-    evaluations, all_cloudtrail_resources_are_compliant = assess_cloudtrail_configurations(aws_cloudtrail_client, event)
+    evaluations, all_cloudtrail_resources_are_compliant = assess_cloudtrail_configurations(aws_s3_client, aws_cloudtrail_client, event)
 
     if not evaluations:
         compliance_type = "NON_COMPLIANT"

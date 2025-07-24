@@ -198,6 +198,7 @@ def check_alerts_flag_misuse(event, rule_parameters, aws_account_id, evaluations
                 #if Eventbridge rules are not compliant, check for CloudWatch alarms with confirmed email subscriptions
                 eval_cw = check_cloudwatch_alarms_naming_convention(aws_sns_client, aws_cloudwatch_client, rule_naming_convention, event, aws_account_id)
                 logger.info("### CW EVAL: %s", eval_cw)
+                evaluations.clear()
                 if eval_cw.get("ComplianceType") == "COMPLIANT":
                     evaluations.append(eval_cw)
                 else:

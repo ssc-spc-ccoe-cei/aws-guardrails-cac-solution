@@ -233,7 +233,7 @@ def assess_cloudtrail_encryption_at_rest(s3_client, AWScloudtrail_client, event)
         annotation = "Not using KMS"
         trail_name = trail.get("Name", "INVALID")
 
-        #ignore control tower cloudtrail 
+        #ignore control tower cloudtrail from compliance check. it will be always logged into s3 bucket with default encryption
         if trail_name == AWS_CONTROL_TOWER_CLOUDTRAIL_NAME:
             compliance_status = "COMPLIANT"
             annotation = "AWS Control Tower Trail"
