@@ -1426,6 +1426,7 @@ Resources:
               - "sso:ListCustomerManagedPolicyReferencesInPermissionSet"
               - "sso:ListPermissionSetsProvisionedToAccount"
               - "sso:ListAccountAssignments"
+              - "sso:ListPermissionSets"
               - "sns:GetSubscriptionAttributes"
               - "sns:GetTopicAttributes"
               - "sns:ListSubscriptionsByTopic"
