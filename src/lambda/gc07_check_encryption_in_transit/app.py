@@ -516,7 +516,7 @@ def assess_rest_api_stages_ssl_enforcement(api_gw_client, event: dict):
                                         if response3:
                                             stages = response3.get("item")
                                             if len(stages) <= 0:
-                                                logger.error(
+                                                logger.info(
                                                     "APIGW - No stages found for API %s and deployment ID %s",
                                                     api_name,
                                                     deployment_id,
@@ -538,8 +538,16 @@ def assess_rest_api_stages_ssl_enforcement(api_gw_client, event: dict):
                                                         compliance_annotation = "REST API stage has an associated client certificate but no integration type."
                                                 else:
                                                     if HTTP or (HTTP and AWS):
-                                                        compliance_status = "NON_COMPLIANT"
-                                                        compliance_annotation = "REST API stage does not have an associated client certificate and an HTTP integration type."
+                                                        custom_domains = fetch_custom_domain_names(api_gw_client)
+                                                        logger.info("###Custom domains : %s ", str(custom_domains))
+                                                        if api_id in custom_domains:
+                                                            logger.info("###REST API Found in Custom domains : %s ", api_id)
+                                                            compliance_status = "COMPLIANT"
+                                                            compliance_annotation = "REST API has custom domain with mTLS enabled"
+                                                        else:
+                                                            compliance_status = "NON_COMPLIANT"
+                                                            compliance_annotation = "REST API stage does not have an associated client certificate and an HTTP integration type."
+                                                   
                                                     elif AWS:
                                                         compliance_status = "NOT_APPLICABLE"
                                                         compliance_annotation = "REST API stage does not have an associated client certificate and lambda integration type."
@@ -622,6 +630,58 @@ def assess_rest_api_stages_ssl_enforcement(api_gw_client, event: dict):
         raise ex
     # logger.info("APIGW - reporting %s evaluations.", len(local_evaluations))
     return local_evaluations
+
+
+def fetch_custom_domain_names(api_gw_client):
+
+     # Get custom domain names for checking later
+    custom_domain_names = {}
+    try:
+        domain_response = api_gw_client.get_domain_names(limit=PAGE_SIZE)
+        b_more_domain_data = True
+        i_domain_retries = 0
+        while b_more_domain_data and i_domain_retries < MAXIMUM_API_RETRIES:
+            if domain_response:
+                position = domain_response.get("position", "")
+                for domain in domain_response.get("items", []):
+                    
+                    
+
+                   
+                    domain_name = domain.get("domainName")
+                    mTLsflag = domain.get("mutualTlsAuthentication")
+                    if domain_name and mTLsflag:
+                        # Get the API mappings for this domain
+                        try:
+                            mapping_response = api_gw_client.get_base_path_mappings(domainName=domain_name, limit=PAGE_SIZE)
+                            if mapping_response and "items" in mapping_response:
+                                for mapping in mapping_response.get("items", []):
+                                    api_id = mapping.get("restApiId")
+                                    if api_id:
+                                        if api_id not in custom_domain_names:
+                                            custom_domain_names[api_id] = []
+                                        custom_domain_names[api_id].append(domain_name)
+                        except botocore.exceptions.ClientError as ex:
+                            logger.error(f"Error getting base path mappings for domain {domain_name}: {ex}")
+                
+                if position:
+                    time.sleep(INTERVAL_BETWEEN_API_CALLS)
+                    try:
+                        domain_response = api_gw_client.get_domain_names(position=position, limit=PAGE_SIZE)
+                    except botocore.exceptions.ClientError as ex:
+                        i_domain_retries += 1
+                        if is_throttling_exception(ex):
+                            time.sleep(THROTTLE_BACKOFF)
+                        else:
+                            raise ex
+                else:
+                    b_more_domain_data = False
+            else:
+                b_more_domain_data = False
+    except botocore.exceptions.ClientError as ex:
+        logger.error(f"Error getting domain names: {ex}")
+
+    return custom_domain_names
 
 
 def assess_open_search_node_to_node_ssl_enforcement(open_search_client, event: dict) -> list[dict]:

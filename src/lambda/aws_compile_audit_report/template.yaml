@@ -5,8 +5,8 @@ Description: >
 
 Globals:
   Function:
-    Timeout: 360
-    MemorySize: 128
+    Timeout: 900
+    MemorySize: 1024
 
 Resources:
   CronjobsLambda:

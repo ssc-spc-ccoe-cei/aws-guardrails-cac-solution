@@ -29,8 +29,8 @@ config = {
     "ORG_NAME": get_required_env_var("ORG_NAME"),
     "TENANT_ID": get_required_env_var("TENANT_ID"),
     "SOURCE_TARGET_BUCKET": get_required_env_var("source_target_bucket"),
-    "MAX_CONCURRENCY": int(os.environ.get("MAX_CONCURRENCY", "10")),
-    "TIME_LIMIT_BUFFER_SEC": 30,
+    "MAX_CONCURRENCY": int(os.environ.get("MAX_CONCURRENCY", "20")),
+    "TIME_LIMIT_BUFFER_SEC": 60,
     "MAX_RETRIES": 3,
     "CHUNK_FILE_PREFIX": "chunk_",
     "STATE_FILE_NAME": "processing_state.json",
@@ -64,27 +64,20 @@ def lambda_handler(event, context):
     logger.info("Lambda invocation started (structured).")
     
     clients = create_boto3_clients()
-
+    s3_client = boto3.client("s3")
     # Delete state file before proceeding
     try:
-        s3 = boto3.client("s3")
-        objects = s3.list_objects_v2(Bucket=config["SOURCE_TARGET_BUCKET"], Prefix="state")
-        if 'Contents' in objects:
-            for obj in objects['Contents']:
-                s3.delete_object(Bucket=config["SOURCE_TARGET_BUCKET"], Key=obj["Key"])
-               # logger.info(f"Delete complete{obj}")
+        
+        # Use batch delete for efficiency when there are many objects
+        delete_s3_objects_with_prefix(s3_client, config["SOURCE_TARGET_BUCKET"], "state")
     except Exception as e:
         logger.info("Failed to delete S3 states folder: %s", str(e))
  
     # Delete Chunk files before proceeding
 
     try:
-        s3 = boto3.client("s3")
-        objects = s3.list_objects_v2(Bucket=config["SOURCE_TARGET_BUCKET"], Prefix="chunks")
-        if 'Contents' in objects:
-            for obj in objects['Contents']:
-                s3.delete_object(Bucket=config["SOURCE_TARGET_BUCKET"], Key=obj["Key"])
-               # logger.info(f"Delete complete{obj}")
+        
+        delete_s3_objects_with_prefix(s3_client, config["SOURCE_TARGET_BUCKET"], "chunks")
     except Exception as e:
         logger.info("Failed to delete S3 chunks folder: %s", str(e))
 
@@ -474,7 +467,17 @@ def self_invoke(lambda_client, event, invocation_id, current_concurrency):
         return {"status": "error_self_invoke", "message": str(e)}
 
 def near_time_limit(context, buffer_sec):
-    return (context.get_remaining_time_in_millis() / 1000.0) < buffer_sec
+    # Get the remaining time in seconds
+    remaining_time = context.get_remaining_time_in_millis() / 1000.0
+    
+    # Calculate the percentage of time remaining compared to the total timeout
+    # Assuming the total timeout is configured in the template.yaml
+    total_timeout = 900  # 15 minutes (from template.yaml)
+    percentage_remaining = (remaining_time / total_timeout) * 100
+    
+    # Return True if either the buffer time is reached or less than 20% of the total time remains
+    return remaining_time < buffer_sec or percentage_remaining < 20
+
 
 
 def upload_chunk_to_s3(s3_client, local_path, s3_key):
@@ -543,27 +546,40 @@ def merge_chunk_files_in_s3(chunk_keys, temp_dir, s3_client):
 
     merged_path = os.path.join(temp_dir, f"merged_{uuid.uuid4()}.csv")
     header_written = False
-
+    batch_size = 10  # Process chunks in batches to avoid memory issues
+    
     try:
         with open(merged_path, "w", newline="") as outfile:
             writer = None
-
-            for s3_key in chunk_keys:
-                chunk_local_path = os.path.join(temp_dir, f"chunk_{uuid.uuid4()}.csv")
-                download_chunk_from_s3(s3_client, s3_key, chunk_local_path)
-
-                with open(chunk_local_path, "r") as infile:
-                    reader = csv.reader(infile)
-                    for i, row in enumerate(reader):
-                        if i == 0:
-                            if not header_written:
-                                writer = csv.writer(outfile)
-                                writer.writerow(row)
-                                header_written = True
-                        else:
-                            writer.writerow(row)
-
-                os.remove(chunk_local_path)
+            
+            # Process chunks in batches
+            for i in range(0, len(chunk_keys), batch_size):
+                batch_keys = chunk_keys[i:i+batch_size]
+              
+                # Process each chunk in the batch
+                for s3_key in batch_keys:
+                    chunk_local_path = os.path.join(temp_dir, f"chunk_{uuid.uuid4()}.csv")
+                    download_chunk_from_s3(s3_client, s3_key, chunk_local_path)
+                    
+                    try:
+                        with open(chunk_local_path, "r") as infile:
+                            reader = csv.reader(infile)
+                            for i, row in enumerate(reader):
+                                if i == 0:  # Header row
+                                    if not header_written:
+                                        writer = csv.writer(outfile)
+                                        writer.writerow(row)
+                                        header_written = True
+                                else:  # Data rows
+                                    writer.writerow(row)
+                    except Exception as e:
+                        logger.error(f"Error processing chunk {s3_key}: {str(e)}")
+                        continue
+                    finally:
+                        # Clean up the local chunk file
+                        if os.path.exists(chunk_local_path):
+                            os.remove(chunk_local_path)
+        
         return merged_path
     except IOError as e:
         logger.error("Error merging chunk files: %s", str(e))
@@ -573,3 +589,37 @@ def cleanup_temp_directory(temp_dir):
     if os.path.exists(temp_dir):
         shutil.rmtree(temp_dir, ignore_errors=True)
         logger.info("Cleaned up temp directory: %s", temp_dir)
+
+
+#added for batch delete
+
+def delete_s3_objects_with_prefix(s3_client, bucket, prefix):
+    """
+    Efficiently delete all objects in an S3 bucket with a given prefix.
+    Uses batch delete for better performance when there are many objects.
+    """
+    logger.info(f"Deleting objects with prefix '{prefix}' from bucket '{bucket}'")
+    
+    # List all objects with the prefix
+    paginator = s3_client.get_paginator('list_objects_v2')
+    pages = paginator.paginate(Bucket=bucket, Prefix=prefix)
+    
+    delete_count = 0
+    for page in pages:
+        if 'Contents' not in page:
+            logger.info(f"No objects found with prefix '{prefix}'")
+            return
+            
+        # Prepare objects for batch delete (up to 1000 at a time)
+        objects_to_delete = [{'Key': obj['Key']} for obj in page.get('Contents', [])]
+        if not objects_to_delete:
+            continue
+            
+        # Delete the batch of objects
+        s3_client.delete_objects(
+            Bucket=bucket,
+            Delete={'Objects': objects_to_delete}
+        )
+        delete_count += len(objects_to_delete)
+    
+    logger.info(f"Successfully deleted {delete_count} objects with prefix '{prefix}'")

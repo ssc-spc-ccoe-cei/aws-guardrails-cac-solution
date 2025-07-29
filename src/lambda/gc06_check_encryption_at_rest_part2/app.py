@@ -216,7 +216,7 @@ def assess_efs_encryption_at_rest(efs_client, event):
 #################################################################
 # Amazon EKS specific support functions
 #   - EKS_SECRETS_ENCRYPTED
-def assess_eks_encryption_at_rest(eks_client, event):
+def assess_eks_encryption_at_rest(eks_client, event, k8s_min_version):
     """
     Finds Amazon EKS clusters that do not have secrets encrypted at rest
     """
@@ -233,17 +233,25 @@ def assess_eks_encryption_at_rest(eks_client, event):
             response = eks_client.describe_cluster(name=cluster)
 
             if response:
-                encryption_config = response.get("cluster", {}).get("encryptionConfig", [])
-                if encryption_config:
-                    # check if there are resources of type secrets
-                    compliance_annotation = "Secrets are not encrypted"
-                    for config in encryption_config:
-                        if "secrets" in config.get("resources", []):
-                            compliance_status = "COMPLIANT"
-                            compliance_annotation = "Secrets are encrypted"
-                            break
+                cluster_version = response.get("cluster", {}).get("version", [])
+                # check if version is greater than 1.27
+                if cluster_version and float(cluster_version) > k8s_min_version:
+                    compliance_status = "COMPLIANT"
+                    compliance_annotation = "Cluster version is greater than 1.27, compliance check is not required"
+                
                 else:
-                    compliance_annotation = "Empty encryptionConfig"
+
+                    encryption_config = response.get("cluster", {}).get("encryptionConfig", [])
+                    if encryption_config:
+                        # check if there are resources of type secrets
+                        compliance_annotation = "Secrets are not encrypted"
+                        for config in encryption_config:
+                            if "secrets" in config.get("resources", []):
+                                compliance_status = "COMPLIANT"
+                                compliance_annotation = "Secrets are encrypted"
+                                break
+                    else:
+                        compliance_annotation = "Empty encryptionConfig"
 
             if compliance_status == "NON_COMPLIANT":
                 NONCOMPLIANT_SERVICES.add("EKS")
@@ -569,6 +577,8 @@ def lambda_handler(event, context):
     INTERVAL_BETWEEN_API_CALLS = 0.1
     THROTTLE_BACKOFF = 2
 
+    KUBERNETES_MIN_VERSION = 1.27
+
     # establish AWS API clients
     aws_config_client = get_client("config", aws_account_id, execution_role_name, is_not_audit_account)
     aws_efs_client = get_client("efs", aws_account_id, execution_role_name, is_not_audit_account)
@@ -619,7 +629,7 @@ def lambda_handler(event, context):
     evaluations.extend(assess_efs_encryption_at_rest(aws_efs_client, event))
 
     # EKS
-    evaluations.extend(assess_eks_encryption_at_rest(aws_eks_client, event))
+    evaluations.extend(assess_eks_encryption_at_rest(aws_eks_client, event, KUBERNETES_MIN_VERSION))
 
     # ElasticSearch/OpenSearch
     evaluations.extend(assess_open_search_encryption_at_rest(aws_open_search_client, event))

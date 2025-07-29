@@ -116,7 +116,7 @@ def check_rule_sns_or_log_grp_target_is_setup(sns_client, event_bridge_client, r
 
    # is target an SNS input transformer?
   
-def check_alerts_flag_misuse(event, rule_parameters, aws_account_id, evaluations, aws_s3_client, aws_guard_duty_client, aws_event_bridge_client, aws_sns_client):
+def check_alerts_flag_misuse(event, rule_parameters, aws_account_id, evaluations, aws_s3_client, aws_guard_duty_client, aws_event_bridge_client, aws_sns_client, aws_cloudwatch_client):
     rules = list_all_event_bridge_rules(aws_event_bridge_client)
 
     guard_duty_is_setup = False
@@ -167,17 +167,22 @@ def check_alerts_flag_misuse(event, rule_parameters, aws_account_id, evaluations
             rule_naming_convention = read_s3_object(aws_s3_client, rule_naming_convention_file_path).strip()
             reg = re.compile(rule_naming_convention)
             logger.info("Filtering rules by rule_naming_convention: %s", rule_naming_convention)
+
+           
+            
+
             filtered_rules = [r for r in rules if reg.search(r.get("Name", ""))]
 
                 # are there any rules matching the naming convention?
             if len(filtered_rules) > 0:
                     # yes, check that an SNS target is setup that sends an email notification to authorized personnel or a log group is setup
                 for rule in filtered_rules:
+                    
                     eval = check_rule_sns_or_log_grp_target_is_setup(aws_sns_client, aws_event_bridge_client, rule, event)
                     if eval.get("ComplianceType") == "COMPLIANT":
                         is_compliant = True
                         evaluations.append(eval)
-
+      
                 # are EventBridge rules setup to notify authorized personnel of misuse?
             if is_compliant:
                     # yes, append COMPLIANT results for account
@@ -190,18 +195,106 @@ def check_alerts_flag_misuse(event, rule_parameters, aws_account_id, evaluations
                         )
                     )
             else:
-                    # no, append to NON_COMPLIANT results for account
-                evaluations.append(
-                        build_evaluation(
-                            aws_account_id,
-                            "NON_COMPLIANT",
-                            event,
-                            annotation="GuardDuty is not enabled OR there are no EventBridge rules setup to notify authorized personnel of misuse or suspicious activity.",
+                #if Eventbridge rules are not compliant, check for CloudWatch alarms with confirmed email subscriptions
+                eval_cw = check_cloudwatch_alarms_naming_convention(aws_sns_client, aws_cloudwatch_client, rule_naming_convention, event, aws_account_id)
+                logger.info("### CW EVAL: %s", eval_cw)
+                evaluations.clear()
+                if eval_cw.get("ComplianceType") == "COMPLIANT":
+                    evaluations.append(eval_cw)
+                else:
+                # no, append to NON_COMPLIANT results for account
+                    evaluations.append(
+                            build_evaluation(
+                                aws_account_id,
+                                "NON_COMPLIANT",
+                                event,
+                                annotation="GuardDuty is not enabled OR there are no EventBridge rules setup or no Cloudwatch alarms with confirmed email subscription are setup to notify authorized personnel of misuse or suspicious activity.",
+                            )
                         )
-                    )
                 
     return evaluations
 
+
+def check_cloudwatch_alarms_naming_convention(aws_sns_client, aws_cloudwatch_client, rule_naming_convention, event, aws_account_id):
+    """
+    Check if CloudWatch alarms are created based on given naming convention rules
+    """
+    
+    cloudwatch_compliance_flag = False
+    try:
+        # Compile the regex pattern for alarm naming convention
+        reg = re.compile(rule_naming_convention)
+        
+        # Get all CloudWatch alarms
+        response = aws_cloudwatch_client.describe_alarms()
+        alarms = response.get('MetricAlarms', [])
+        
+        # Continue paginating if there are more alarms
+        while response.get('NextToken'):
+            response = aws_cloudwatch_client.describe_alarms(NextToken=response['NextToken'])
+            alarms.extend(response.get('MetricAlarms', []))
+        
+        # Filter alarms by naming convention
+        matching_alarms = [alarm for alarm in alarms if reg.search(alarm.get('AlarmName', ''))]
+        
+        logger.info("### matching alarms %s ", matching_alarms)
+
+        #Filter alarms that have SNS actions
+        alarms_with_sns = []
+
+        if matching_alarms:
+            for alarm in matching_alarms:
+                alarm_actions = alarm.get('AlarmActions', [])
+                sns_actions = [action for action in alarm_actions if action.startswith('arn:aws:sns:')]
+                
+                if sns_actions:
+                    alarms_with_sns.append({
+                    'name': alarm.get('AlarmName'),
+                    'sns_actions': sns_actions
+                    })
+            
+            #check for email protocol
+            for alarm in alarms_with_sns:
+                for sns_arn in alarm['sns_actions']:
+                    subscriptions = list_all_sns_subscriptions_by_topic(aws_sns_client, sns_arn)
+                    email_subscriptions = [sub for sub in subscriptions if sub.get('Protocol') == 'email']
+                    
+                    confirmed_email_subscriptions = [
+                        sub for sub in email_subscriptions 
+                        if subscription_is_confirmed(aws_sns_client, sub.get('SubscriptionArn'))
+                    ]
+
+                    logger.info("###confirmed_email_subscriptions %s ", confirmed_email_subscriptions)
+
+                    if confirmed_email_subscriptions:
+                        cloudwatch_compliance_flag = True
+                        break
+                        
+
+        
+        # Check if any alarms match the naming convention
+        if cloudwatch_compliance_flag:
+            return build_evaluation(
+                aws_account_id,
+                "COMPLIANT",
+                event,
+                annotation=f"CloudWatch alarms are created based on naming convention rules with confirmed email subscriptions. Found {len(matching_alarms)} matching alarms."
+            )
+        else:
+            return build_evaluation(
+                aws_account_id,
+                "NON_COMPLIANT",
+                event,
+                annotation="No CloudWatch alarms found matching the required naming convention and confirmed email subscriptions."
+            )
+    except botocore.exceptions.ClientError as ex:
+        logger.error("Error checking CloudWatch alarms: %s", ex)
+        return build_evaluation(
+            aws_account_id,
+            "NON_COMPLIANT",
+            event,
+            annotation=f"Error checking CloudWatch alarms: {str(ex)}"
+        )
 
 def lambda_handler(event, context):
     """
@@ -243,6 +336,7 @@ def lambda_handler(event, context):
     aws_guard_duty_client = get_client("guardduty", aws_account_id, execution_role_name, is_not_audit_account)
     aws_event_bridge_client = get_client("events", aws_account_id, execution_role_name, is_not_audit_account)
     aws_sns_client = get_client("sns", aws_account_id, execution_role_name, is_not_audit_account)
+    aws_cloudwatch_client = get_client("cloudwatch", aws_account_id, execution_role_name, is_not_audit_account)
     
     # Check cloud profile
     tags = get_account_tags(get_client("organizations", assume_role=False), aws_account_id)
@@ -266,7 +360,7 @@ def lambda_handler(event, context):
             gr_requirement_type=gr_requirement_type
         )])
     
-    evaluations = check_alerts_flag_misuse(event, rule_parameters, aws_account_id, evaluations, aws_s3_client, aws_guard_duty_client, aws_event_bridge_client, aws_sns_client)
+    evaluations = check_alerts_flag_misuse(event, rule_parameters, aws_account_id, evaluations, aws_s3_client, aws_guard_duty_client, aws_event_bridge_client, aws_sns_client, aws_cloudwatch_client)
 
     logger.info("AWS Config updating evaluations: %s", evaluations)
     submit_evaluations(aws_config_client, event, evaluations)
