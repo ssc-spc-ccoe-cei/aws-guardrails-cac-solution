@@ -67,7 +67,7 @@ def lambda_handler(event, context):
     is_not_audit_account = aws_account_id != audit_account_id
 
     aws_config_client = get_client("config", aws_account_id, execution_role_name, is_not_audit_account)
-    aws_account_client = get_client("account", aws_account_id, execution_role_name, is_not_audit_account)
+    aws_account_client = get_client("account", aws_account_id, execution_role_name, True)
     
     # Check cloud profile
     tags = get_account_tags(get_client("organizations", assume_role=False), aws_account_id)
