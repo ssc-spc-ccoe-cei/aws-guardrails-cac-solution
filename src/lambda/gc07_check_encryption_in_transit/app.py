@@ -516,7 +516,7 @@ def assess_rest_api_stages_ssl_enforcement(api_gw_client, event: dict):
                                         if response3:
                                             stages = response3.get("item")
                                             if len(stages) <= 0:
-                                                logger.error(
+                                                logger.info(
                                                     "APIGW - No stages found for API %s and deployment ID %s",
                                                     api_name,
                                                     deployment_id,
