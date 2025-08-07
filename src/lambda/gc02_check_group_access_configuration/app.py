@@ -281,7 +281,16 @@ def check_identity_center_admin_group(
 
 def policy_doc_gives_admin_access(policy_doc: str) -> bool:
 
-    document_dict = json.loads(policy_doc)
+    # Handle both string and dictionary inputs 
+    if isinstance(policy_doc, str):
+        try:
+            document_dict = json.loads(policy_doc)
+        except json.JSONDecodeError:
+            # if the string is not valid, return False
+            return False
+    else:
+        document_dict = policy_doc
+
     statements = document_dict.get("Statement", [])
 
     for statement_component in statements:
