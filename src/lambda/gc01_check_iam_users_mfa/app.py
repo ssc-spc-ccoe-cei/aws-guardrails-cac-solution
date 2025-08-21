@@ -22,7 +22,7 @@ def check_iam_users_mfa(iam_client, aws_account_id, event, bg_accounts):
     iam_users = [x for x in list_all_iam_users(iam_client) if x.get("UserName") not in bg_accounts]
 
     if not iam_users:
-        return [build_evaluation(aws_account_id, "NOT_APPLICABLE", event, annotation="No IAM Users found")]
+        return [build_evaluation(aws_account_id, "COMPLIANT", event, annotation="No IAM Users found")]
 
     resource_type = "AWS::IAM::User"
     evaluations = []
