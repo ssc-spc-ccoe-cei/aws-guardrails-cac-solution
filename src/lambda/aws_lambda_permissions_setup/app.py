@@ -92,7 +92,6 @@ def apply_lambda_permissions():
         f"{organization_name}gc07_check_certificate_authorities": ["GC07CheckCertificateAuthoritiesLambda"],
         f"{organization_name}gc07_check_cryptographic_algorithms": ["GC07CheckCryptographicAlgorithmsLambda"],
         f"{organization_name}gc07_check_encryption_in_transit": ["GC07CheckEncryptionInTransitLambda"],
-        f"{organization_name}gc07_check_secure_network_transmission_policy": ["GC07CheckSecureNetworkTransmissionPolicyLambda"],
         f"{organization_name}gc08_check_cloud_deployment_guide": ["GC08CheckCloudDeploymentGuideLambda"],
         f"{organization_name}gc08_check_cloud_segmentation_design": ["GC08CheckCloudSegmentationDesignLambda"],
         f"{organization_name}gc08_check_target_network_architecture": ["GC08CheckTargetNetworkArchitectureLambda"],
