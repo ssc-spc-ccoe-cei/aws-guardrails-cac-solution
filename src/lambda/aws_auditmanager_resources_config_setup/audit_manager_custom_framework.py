@@ -599,27 +599,7 @@ frameworks_data = [
             {
                 "name": "09-Network Security Services",
                 "controls": [
-                    {
-                        "type": "Custom",
-                        "name": "gc09_check_netsec_architecture",
-                        "description": "Confirm that a Network Security Architecture document has been provided.Source: https://github.com/canada-ca/cloud-guardrails/blob/master/EN/09_Network-Security-Services.md",
-                        "testingInformation": "",
-                        "actionPlanTitle": "Provide a Network Security Architecture document that meets GC requirements",
-                        "actionPlanInstructions": "Upload the file to an S3 bucket and provide the path to the AWS Config control.",
-                        "controlSources": "AWS Config",
-                        "controlMappingSources": [
-                            {
-                                "sourceName": "S3-check",
-                                "sourceSetUpOption": "System_Controls_Mapping",
-                                "sourceType": "AWS_Config",
-                                "sourceKeyword": {
-                                    "keywordInputType": "SELECT_FROM_LIST",
-                                    "keywordValue": "Custom_gc09_check_netsec_architecture-conformance-pack",
-                                },
-                            }
-                        ],
-                        "tags": {},
-                    },
+                    
                     {
                         "type": "Custom",
                         "name": "gc09_check_non_public_storage_accounts",
