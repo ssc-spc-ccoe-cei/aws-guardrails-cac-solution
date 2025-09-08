@@ -351,44 +351,26 @@ def process_evidence_items(evidence_items, control_set_id, control_id, org_clien
 
             resources = item.get("resourcesIncluded", [])
             if not resources:
-                rows.append([
-                    aws_account_id,
-                    str(cloud_profile.value),
-                    data_source,
-                    control_set_id,
-                    control_id,
-                    time_str,
-                    "None",
-                    "None",
-                    config["ORG_ID"],
-                    config["ORG_NAME"],
-                    config["TENANT_ID"],
-                    config["CAC_VERSION"],
-                ])
+                #skip NOT_APPLICABLE records when there are no resources
+                continue
+                
             else:
                 for r in resources:
                     val = r.get("value")
                     if not val:
-                        rows.append([
-                            aws_account_id,
-                            str(cloud_profile.value),
-                            data_source,
-                            control_set_id,
-                            control_id,
-                            time_str,
-                            "None",
-                            "None",
-                            config["ORG_ID"],
-                            config["ORG_NAME"],
-                            config["TENANT_ID"],
-                            config["CAC_VERSION"],
-                        ])
+                        #SKIP NOT_APPLICABLE records when there's no value
+                        continue
+                        
                     else:
                         try:
                             val_json = json.loads(val)
                         except json.JSONDecodeError:
                             val_json = {}
 
+                    #skip if compliance type is 
+                        if val_json.get("complianceType", "NOT_APPLICABLE") == "NOT_APPLICABLE":
+                            continue
+                        
                         rows.append([
                             aws_account_id,
                             str(cloud_profile.value),
@@ -398,6 +380,7 @@ def process_evidence_items(evidence_items, control_set_id, control_id, org_clien
                             time_str,
                             val_json.get("complianceResourceType", "None"),
                             val_json.get("complianceResourceId", "None"),
+                            val_json.get("complianceType", "NOT_APPLICABLE"),
                             config["ORG_ID"],
                             config["ORG_NAME"],
                             config["TENANT_ID"],
