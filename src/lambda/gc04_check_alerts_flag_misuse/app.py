@@ -194,6 +194,16 @@ def check_rule_sns_target_is_setup(logs_client, sns_client, event_bridge_client,
                             annotation="An Event rule that has a SNS topic and subscription to send notification emails is setup and confirmed.",
                         )
         
+        elif target_arn.startswith("arn:aws:logs:"):
+            return build_evaluation(
+                            rule.get("Name"),
+                            "COMPLIANT",
+                            event,
+                            resource_type=resource_type,
+                            annotation="An Event rule that has a CloudWatch log group is setup and confirmed.",
+                        )
+    
+        
        
         
 
