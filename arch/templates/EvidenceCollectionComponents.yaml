@@ -136,7 +136,7 @@ Resources:
       Handler: app.lambda_handler
       Role: !GetAtt LambdaExecutionRole.Arn
       Timeout: 30
-      Runtime: python3.9
+      Runtime: python3.12
       Environment:
         Variables:
           target_bucket: !Ref DestBucketName
