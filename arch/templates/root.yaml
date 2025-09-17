@@ -48,6 +48,12 @@ Parameters:
   BGA2:
     Type: String
     Default: "bgUser2"
+  BGA3:
+    Type: String
+    Default: "bgUser3"
+  BGA4:
+    Type: String
+    Default: "bgUser4"
   OrganizationName:
     Type: String
     Default: "SSC-Test"
@@ -110,6 +116,8 @@ Resources:
         InvokeUpdate: !Ref InvokeUpdate
         BGA1: !Ref BGA1
         BGA2: !Ref BGA2
+        BGA3: !Ref BGA3
+        BGA4: !Ref BGA4
         LogArchiveAccountName: !Ref LogArchiveAccountName
 
 

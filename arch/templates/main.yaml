@@ -12,6 +12,8 @@ Metadata:
           - AuditAccountID
           - BGA1
           - BGA2
+          - BGA3
+          - BGA4
           - ExecutionName
           - ExecutionName2
           - OrganizationId
@@ -53,6 +55,10 @@ Metadata:
       BGA1:
         default: First Breakglass Account
       BGA2:
+        default: Second Breakglass Account
+      BGA3:
+        default: First Breakglass Account
+      BGA4:
         default: Second Breakglass Account
       LogArchiveAccountName:
         default: Log Archive Account Name
@@ -126,6 +132,14 @@ Parameters:
     Type: String
     Default: "bgUser2"
     Description: Second breakglass account name
+  BGA3:
+    Type: String
+    Default: "bgUser3"
+    Description: Third breakglass account name
+  BGA4:
+    Type: String
+    Default: "bgUser4"
+    Description: Fourth breakglass account name
   LogArchiveAccountName:
     Type: String
     Default: "LogArchive"
@@ -1606,6 +1620,10 @@ Resources:
           ParameterValue: !Ref BGA1
         - ParameterName: BGA2
           ParameterValue: !Ref BGA2
+        - ParameterName: BGA3
+          ParameterValue: !Ref BGA3
+        - ParameterName: BGA4
+          ParameterValue: !Ref BGA4
         - ParameterName: OrganizationName
           ParameterValue: !Ref OrganizationName
         - ParameterName: GC03AlarmList

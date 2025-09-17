@@ -18,6 +18,10 @@ Parameters:
     Type: String
   BGA2:
     Type: String
+  BGA3:
+    Type: String
+  BGA4:
+    Type: String
   OrganizationName:
     Type: String
   DeployVersion:
@@ -350,6 +354,16 @@ Resources:
             - bgUser2
             - Ref: BGA2
             - Ref: AWS::NoValue
+        BgUser3:
+          Fn::If:
+            - bgUser3
+            - Ref: BGA3
+            - Ref: AWS::NoValue
+        BgUser4:
+          Fn::If:
+            - bgUser4
+            - Ref: BGA4
+            - Ref: AWS::NoValue
       Scope:
         ComplianceResourceTypes:
           - AWS::Account
@@ -649,6 +663,16 @@ Resources:
           Fn::If:
             - bgUser2
             - Ref: BGA2
+            - Ref: AWS::NoValue
+        BgUser3:
+          Fn::If:
+            - bgUser3
+            - Ref: BGA3
+            - Ref: AWS::NoValue
+        BgUser4:
+          Fn::If:
+            - bgUser4
+            - Ref: BGA4
             - Ref: AWS::NoValue
       Scope:
         ComplianceResourceTypes:
@@ -1519,6 +1543,17 @@ Resources:
             - bgUser2
             - Ref: BGA2
             - Ref: AWS::NoValue
+        BgUser3:
+          Fn::If:
+            - bgUser3
+            - Ref: BGA3
+            - Ref: AWS::NoValue
+        BgUser4:
+          Fn::If:
+            - bgUser4
+            - Ref: BGA4
+            - Ref: AWS::NoValue
+
       Scope:
         ComplianceResourceTypes:
           - AWS::Account
@@ -1562,6 +1597,16 @@ Conditions:
       - Fn::Equals:
           - ""
           - Ref: BGA2
+  bgUser3:
+    Fn::Not:
+      - Fn::Equals:
+          - ""
+          - Ref: BGA3
+  bgUser4:
+    Fn::Not:
+      - Fn::Equals:
+          - ""
+          - Ref: BGA4
   # GC01
   s3AttestationLetterPath:
     Fn::Not:
