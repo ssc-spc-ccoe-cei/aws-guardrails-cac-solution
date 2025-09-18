@@ -40,7 +40,7 @@ def subscription_is_confirmed(sns_client, subscription_arn: str) -> bool:
         raise ex
 
 
-def rule_is_configured_to_notify_authorized_personnel(sns_client, event_bridge_client, rule_name: str) -> bool:
+def rule_is_configured_to_notify_authorized_personnel(sns_client, event_bridge_client, rule_name, log_source_attestation_file_path) -> bool:
     targets = list_all_event_bridge_rule_targets(event_bridge_client, rule_name)
 
     for target in targets:
@@ -57,6 +57,21 @@ def rule_is_configured_to_notify_authorized_personnel(sns_client, event_bridge_c
                     sns_client, subscription.get("SubscriptionArn")
                 ):
                     return True
+
+        if "log" in target_arn.lower():
+            return True
+        else:
+            logger.info("### Check for attestation file path")
+            s3_client = get_client("s3")
+            log_source_attestation_file_exists_flag = check_s3_object_exists(s3_client, log_source_attestation_file_path)
+
+            if log_source_attestation_file_exists_flag:
+                logger.info("### Log source attestation file exists")
+                return True
+            else:
+                logger.info("### Log source attestation file doesn't exist")
+                return False
+
 
     return False
 
@@ -128,6 +143,9 @@ def lambda_handler(event, context):
     file_param_name = "s3ObjectPath"
     rule_names_file_path = rule_parameters.get(file_param_name, "")
 
+    log_source_attestation_file_path = rule_parameters.get("LogSourceNonComplianceAttestationFilePath", "")
+
+
     if not check_s3_object_exists(aws_s3_client, rule_names_file_path):
         annotation = f"No file found for s3 path '{rule_names_file_path}' via '{file_param_name}' input parameter."
         logger.info(annotation)
@@ -166,7 +184,7 @@ def lambda_handler(event, context):
                         build_evaluation(rule.get("Name"), "NON_COMPLIANT", event, rule_resource_type, annotation)
                     )
                 elif not rule_is_configured_to_notify_authorized_personnel(
-                    aws_sns_client, aws_event_bridge_client, rule_name
+                    aws_sns_client, aws_event_bridge_client, rule_name, log_source_attestation_file_path
                 ):
                     annotation = f"Rule with name '{rule_name}' is NOT configured to send notifications."
                     evaluations.append(

@@ -64,6 +64,9 @@ Parameters:
     Type: String
   NonPrivilegedUsersFilePath:
     Type: String
+  LogSourceAttestationFilePath:
+    Type: String
+
   # GC02
   S3AccountManagementPlanPath:
     Type: String
@@ -115,6 +118,8 @@ Parameters:
   S3AccountMgmtApprovalsPath:
     Type: String
   S3EmergencyAccountAlertsRuleNamesPath:
+    Type: String
+  LogSourceNonComplianceAttestationFilePath:
     Type: String
 
 Resources:
@@ -236,6 +241,11 @@ Resources:
           Fn::If:
             - auditAccountID
             - Ref: AuditAccountID
+            - Ref: AWS::NoValue
+        LogSourceAttestationFilePath:
+          Fn::If:
+            - logSourceAttestationFilePath
+            - Ref: LogSourceAttestationFilePath
             - Ref: AWS::NoValue
       Scope:
         ComplianceResourceTypes:
@@ -1501,6 +1511,11 @@ Resources:
             - auditAccountID
             - Ref: AuditAccountID
             - Ref: AWS::NoValue
+        LogSourceNonComplianceAttestationFilePath:
+          Fn::If:
+            - logSourceNonComplianceAttestationFilePath
+            - Ref: LogSourceNonComplianceAttestationFilePath
+            - Ref: AWS::NoValue
       Scope:
         ComplianceResourceTypes:
           - AWS::Account
@@ -1673,6 +1688,11 @@ Conditions:
       - Fn::Equals:
           - ""
           - Ref: NonPrivilegedUsersFilePath
+  logSourceAttestationFilePath:
+    Fn::Not:
+      - Fn::Equals:
+          - ""
+          - Ref: LogSourceAttestationFilePath
   # GC02
   s3AccountManagementPlanPath:
     Fn::Not:
@@ -1782,3 +1802,8 @@ Conditions:
       - Fn::Equals:
           - ""
           - Ref: S3EmergencyAccountAlertsRuleNamesPath
+  logSourceNonComplianceAttestationFilePath:
+    Fn::Not:
+      - Fn::Equals:
+          - ""
+          - Ref: LogSourceNonComplianceAttestationFilePath

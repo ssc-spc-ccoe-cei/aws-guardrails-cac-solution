@@ -1667,6 +1667,14 @@ Resources:
                   GenerateEvidenceBucketName,
                   !GetAtt GenerateEvidenceBucketName.EvidenceBucketName,
                   !Ref EvidenceBucketName,
+        - ParameterName: LogSourceAttestationFilePath
+          ParameterValue: !Sub
+            - "s3://${ClientEvidenceBucket}/gc-01/logSource_attestation.pdf"
+            - ClientEvidenceBucket:
+                !If [
+                  GenerateEvidenceBucketName,
+                  !GetAtt GenerateEvidenceBucketName.EvidenceBucketName,
+                  !Ref EvidenceBucketName,
                 ]
         - ParameterName: S3AccountManagementPlanPath
           ParameterValue: !Sub
@@ -1815,6 +1823,14 @@ Resources:
         - ParameterName: S3EmergencyAccountAlertsRuleNamesPath
           ParameterValue: !Sub
             - "s3://${ClientEvidenceBucket}/gc-13/rule_names.txt"
+            - ClientEvidenceBucket:
+                !If [
+                  GenerateEvidenceBucketName,
+                  !GetAtt GenerateEvidenceBucketName.EvidenceBucketName,
+                  !Ref EvidenceBucketName,
+        - ParameterName: LogSourceNonComplianceAttestationFilePath
+          ParameterValue: !Sub
+            - "s3://${ClientEvidenceBucket}/gc-13/logSource_attestation.pdf"
             - ClientEvidenceBucket:
                 !If [
                   GenerateEvidenceBucketName,
