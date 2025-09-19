@@ -276,6 +276,13 @@ def lambda_handler(event, context):
     aws_orgs_client = get_client("organizations", aws_account_id, execution_role_name, is_not_audit_account)
     tags = get_account_tags(get_client("organizations", assume_role=False), aws_account_id)
     cloud_profile = get_cloud_profile_from_tags(tags)
+
+    # perform the check only for management account - issue 196
+
+    if aws_account_id != get_organizations_mgmt_account_id(aws_orgs_client):
+        logger.info("Not checked in account %s as this is not the Management Account", aws_account_id)
+        return
+
     gr_requirement_type = check_guardrail_requirement_by_cloud_usage_profile(GuardrailType.Guardrail12, cloud_profile)
     if gr_requirement_type == GuardrailRequirementType.Recommended:
         evaluation = build_evaluation(aws_account_id, "COMPLIANT", event, gr_requirement_type=gr_requirement_type)
