@@ -1667,6 +1667,7 @@ Resources:
                   GenerateEvidenceBucketName,
                   !GetAtt GenerateEvidenceBucketName.EvidenceBucketName,
                   !Ref EvidenceBucketName,
+                ]
         - ParameterName: LogSourceAttestationFilePath
           ParameterValue: !Sub
             - "s3://${ClientEvidenceBucket}/gc-01/logSource_attestation.pdf"
@@ -1828,6 +1829,7 @@ Resources:
                   GenerateEvidenceBucketName,
                   !GetAtt GenerateEvidenceBucketName.EvidenceBucketName,
                   !Ref EvidenceBucketName,
+                ]
         - ParameterName: LogSourceNonComplianceAttestationFilePath
           ParameterValue: !Sub
             - "s3://${ClientEvidenceBucket}/gc-13/logSource_attestation.pdf"
