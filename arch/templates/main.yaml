@@ -57,9 +57,9 @@ Metadata:
       BGA2:
         default: Second Breakglass Account
       BGA3:
-        default: First Breakglass Account
+        default: Third Breakglass Account
       BGA4:
-        default: Second Breakglass Account
+        default: Fourth Breakglass Account
       LogArchiveAccountName:
         default: Log Archive Account Name
       SecurityOUID:
@@ -1624,6 +1624,8 @@ Resources:
           ParameterValue: !Ref BGA3
         - ParameterName: BGA4
           ParameterValue: !Ref BGA4
+        - ParameterName: LogArchiveAccountName
+          ParameterValue: !Ref LogArchiveAccountName
         - ParameterName: OrganizationName
           ParameterValue: !Ref OrganizationName
         - ParameterName: GC03AlarmList
