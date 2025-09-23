@@ -37,6 +37,7 @@ config = {
     "DATE_FORMAT": "%Y-%m-%d",
     "STATE_S3_PREFIX": "state/",
     "CHUNK_S3_PREFIX": "chunks/",
+    'CUTOFF': datetime.datetime.now(tz=datetime.timezone.utc) - datetime.timedelta(days=7)
 }
 
 logger = logging.getLogger(__name__)
@@ -145,7 +146,7 @@ def process_assessments(event, context, current_concurrency, clients):
     state["current_assessment_id"] = assessment_id
     save_state_to_s3(clients["s3"], state)
 
-    folders = list(get_todays_evidence_folders_paginated(clients["auditmanager"], assessment_id))
+    folders = list(get_recent_evidence_folders_paginated(clients["auditmanager"], assessment_id))
     if not folders:
         state["assessment_index"] += 1
         state["folder_index"] = 0
@@ -271,11 +272,9 @@ def get_all_assessments_paginated(auditmanager_client):
         if not next_token:
             break
 
-def get_todays_evidence_folders_paginated(auditmanager_client, assessment_id):
+def get_recent_evidence_folders_paginated(auditmanager_client, assessment_id):
     """Manually paginate get_evidence_folders_by_assessment."""
     next_token = None
-    # Add an hour to date cutoff to account for small variance in lambda start time
-    cutoff = datetime.datetime.now(tz=datetime.timezone.utc) - datetime.timedelta(days=1,hours=1)
     while True:
         if not next_token:
             resp = safe_aws_call(
@@ -296,7 +295,7 @@ def get_todays_evidence_folders_paginated(auditmanager_client, assessment_id):
         for folder in resp.get("evidenceFolders", []):
             # Only return recent folders
             folder_date = folder.get("date")
-            if folder_date and folder_date > cutoff:
+            if folder_date and folder_date > config['CUTOFF']:
                 yield folder
 
         next_token = resp.get("nextToken")
@@ -350,11 +349,10 @@ OUTPUT_HEADER = [
 
 def process_evidence_items(evidence_items, control_set_id, control_id, org_client):
     rows = []
-    cutoff = datetime.datetime.now(tz=datetime.timezone.utc) - datetime.timedelta(days=1)
 
     for item in evidence_items:
         evidence_time = item.get("time")
-        if evidence_time and evidence_time > cutoff:
+        if evidence_time and evidence_time > config['CUTOFF']:
             aws_account_id = item.get("evidenceAwsAccountId", "UNKNOWN")
             tags = get_account_tags_cached(org_client, aws_account_id)
             cloud_profile = get_cloud_profile_from_tags(tags)
