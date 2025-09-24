@@ -37,6 +37,7 @@ config = {
     "DATE_FORMAT": "%Y-%m-%d",
     "STATE_S3_PREFIX": "state/",
     "CHUNK_S3_PREFIX": "chunks/",
+    'CUTOFF': datetime.datetime.now(tz=datetime.timezone.utc) - datetime.timedelta(days=7)
 }
 
 logger = logging.getLogger(__name__)
@@ -145,7 +146,7 @@ def process_assessments(event, context, current_concurrency, clients):
     state["current_assessment_id"] = assessment_id
     save_state_to_s3(clients["s3"], state)
 
-    folders = list(get_all_evidence_folders_paginated(clients["auditmanager"], assessment_id))
+    folders = list(get_recent_evidence_folders_paginated(clients["auditmanager"], assessment_id))
     if not folders:
         state["assessment_index"] += 1
         state["folder_index"] = 0
@@ -162,6 +163,10 @@ def process_assessments(event, context, current_concurrency, clients):
         control_id = folder["controlName"]
 
         chunk_file_local = os.path.join(temp_dir, f"{config['CHUNK_FILE_PREFIX']}{uuid.uuid4()}.csv")
+
+
+        # Track if we actually write any data rows (beyond header)
+        has_data_rows = False
 
         try:
             with open(chunk_file_local, "w", newline="") as csvfile:
@@ -188,11 +193,14 @@ def process_assessments(event, context, current_concurrency, clients):
                             )
                         )
                     for f in concurrent.futures.as_completed(futures):
-                        for row in f.result():
+                        rows = f.result()
+                        if rows:  # Check if we got any data rows
+                            has_data_rows = True
+                        for row in rows:
                             writer.writerow(row)
 
             # Upload chunk file to S3, then remove it locally
-            if os.path.getsize(chunk_file_local) > 0:
+            if has_data_rows:
                 chunk_s3_key = f'{config["CHUNK_S3_PREFIX"]}{uuid.uuid4()}.csv'
                 upload_chunk_to_s3(clients["s3"], chunk_file_local, chunk_s3_key)
                 # Track S3 key in state
@@ -264,7 +272,7 @@ def get_all_assessments_paginated(auditmanager_client):
         if not next_token:
             break
 
-def get_all_evidence_folders_paginated(auditmanager_client, assessment_id):
+def get_recent_evidence_folders_paginated(auditmanager_client, assessment_id):
     """Manually paginate get_evidence_folders_by_assessment."""
     next_token = None
     while True:
@@ -285,7 +293,10 @@ def get_all_evidence_folders_paginated(auditmanager_client, assessment_id):
             )
 
         for folder in resp.get("evidenceFolders", []):
-            yield folder
+            # Only return recent folders
+            folder_date = folder.get("date")
+            if folder_date and folder_date > config['CUTOFF']:
+                yield folder
 
         next_token = resp.get("nextToken")
         if not next_token:
@@ -338,11 +349,10 @@ OUTPUT_HEADER = [
 
 def process_evidence_items(evidence_items, control_set_id, control_id, org_client):
     rows = []
-    cutoff = datetime.datetime.now(tz=datetime.timezone.utc) - datetime.timedelta(days=1)
 
     for item in evidence_items:
         evidence_time = item.get("time")
-        if evidence_time and evidence_time > cutoff:
+        if evidence_time and evidence_time > config['CUTOFF']:
             aws_account_id = item.get("evidenceAwsAccountId", "UNKNOWN")
             tags = get_account_tags_cached(org_client, aws_account_id)
             cloud_profile = get_cloud_profile_from_tags(tags)
@@ -351,46 +361,25 @@ def process_evidence_items(evidence_items, control_set_id, control_id, org_clien
 
             resources = item.get("resourcesIncluded", [])
             if not resources:
-                rows.append([
-                    aws_account_id,
-                    str(cloud_profile.value),
-                    data_source,
-                    control_set_id,
-                    control_id,
-                    time_str,
-                    "None",
-                    "None",
-                    "NOT_APPLICABLE",
-                    config["ORG_ID"],
-                    config["ORG_NAME"],
-                    config["TENANT_ID"],
-                    config["CAC_VERSION"],
-                ])
+                #skip NOT_APPLICABLE records when there are no resources
+                continue
+        
             else:
                 for r in resources:
                     val = r.get("value")
                     if not val:
-                        rows.append([
-                            aws_account_id,
-                            str(cloud_profile.value),
-                            data_source,
-                            control_set_id,
-                            control_id,
-                            time_str,
-                            "None",
-                            "None",
-                            "NOT_APPLICABLE",
-                            config["ORG_ID"],
-                            config["ORG_NAME"],
-                            config["TENANT_ID"],
-                            config["CAC_VERSION"],
-                        ])
+                        #SKIP NOT_APPLICABLE records when there's no value
+                        continue
+                    
                     else:
                         try:
                             val_json = json.loads(val)
                         except json.JSONDecodeError:
                             val_json = {}
-
+                    #skip if compliance type is NOT_APPLICABLE
+                        if val_json.get("complianceType", "NOT_APPLICABLE") == "NOT_APPLICABLE":
+                            continue
+                        
                         rows.append([
                             aws_account_id,
                             str(cloud_profile.value),
