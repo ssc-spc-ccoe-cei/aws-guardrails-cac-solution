@@ -87,7 +87,7 @@ Parameters:
   DeployVersion:
     Type: String
     Default: 2.0.0
-   LogArchiveAccountName:
+  LogArchiveAccountName:
     Type: String
     Default: "LogArchive"
 
