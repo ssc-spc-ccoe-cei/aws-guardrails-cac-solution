@@ -21,6 +21,8 @@ def get_required_env_var(name: str) -> str:
     if not value:
         raise EnvironmentError(f"Required environment variable {name} is missing or empty.")
     return value
+    
+CURRENT_DT = datetime.datetime.now(tz=datetime.timezone.utc)
 
 config = {
     "ASSESSMENT_NAME": get_required_env_var("ASSESSMENT_NAME"),
@@ -37,7 +39,8 @@ config = {
     "DATE_FORMAT": "%Y-%m-%d",
     "STATE_S3_PREFIX": "state/",
     "CHUNK_S3_PREFIX": "chunks/",
-    'CUTOFF': datetime.datetime.now(tz=datetime.timezone.utc) - datetime.timedelta(days=7)
+    'EVIDENCE_FOLDER_CUTOFF': CURRENT_DT - datetime.timedelta(days=7),
+    'EVIDENCE_ITEM_CUTOFF': CURRENT_DT - datetime.timedelta(days=1)
 }
 
 logger = logging.getLogger(__name__)
@@ -295,7 +298,7 @@ def get_recent_evidence_folders_paginated(auditmanager_client, assessment_id):
         for folder in resp.get("evidenceFolders", []):
             # Only return recent folders
             folder_date = folder.get("date")
-            if folder_date and folder_date > config['CUTOFF']:
+            if folder_date and folder_date > config['EVIDENCE_FOLDER_CUTOFF']:
                 yield folder
 
         next_token = resp.get("nextToken")
@@ -352,7 +355,7 @@ def process_evidence_items(evidence_items, control_set_id, control_id, org_clien
 
     for item in evidence_items:
         evidence_time = item.get("time")
-        if evidence_time and evidence_time > config['CUTOFF']:
+        if evidence_time and evidence_time > config['EVIDENCE_ITEM_CUTOFF']:
             aws_account_id = item.get("evidenceAwsAccountId", "UNKNOWN")
             tags = get_account_tags_cached(org_client, aws_account_id)
             cloud_profile = get_cloud_profile_from_tags(tags)
