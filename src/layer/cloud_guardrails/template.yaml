@@ -1,0 +1,13 @@
+Transform: AWS::Serverless-2016-10-31
+Description: >
+  A layer that contains common code for the cloud guardrail lambdas
+
+Resources:
+  CloudGuardrailsCommonLayer:
+    Type: AWS::Serverless::LayerVersion
+    Properties:
+      ContentUri: .
+      CompatibleRuntimes:
+        - python3.12
+    Metadata:
+      BuildMethod: python3.12

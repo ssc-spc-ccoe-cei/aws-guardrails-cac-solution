@@ -1,12 +1,12 @@
 AWSTemplateFormatVersion: '2010-09-09'
 Transform: AWS::Serverless-2016-10-31
 Description: >
-  compile-audit-report
+  aws_compile_audit_report
 
 Globals:
   Function:
-    Timeout: 360
-    MemorySize: 128
+    Timeout: 900
+    MemorySize: 1024
 
 Resources:
   CronjobsLambda:

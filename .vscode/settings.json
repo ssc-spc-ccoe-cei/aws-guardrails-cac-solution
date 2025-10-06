@@ -1,0 +1,63 @@
+{
+  "[yaml]": {
+    "editor.defaultFormatter": "esbenp.prettier-vscode"
+  },
+  "[python]": {
+    "editor.formatOnType": true
+  },
+  "[shellscript]": {
+    "editor.defaultFormatter": "foxundermoon.shell-format",
+    "editor.formatOnSave": true
+  },
+  "[markdown]": {
+    "editor.defaultFormatter": "esbenp.prettier-vscode",
+    "editor.formatOnSave": true
+  },
+
+  "black-formatter.args": ["--line-length", "120"],
+  "aws.telemetry": false,
+
+  "json.schemas": [
+    {
+      "fileMatch": ["*-template.json", "**/templates/*.yaml"],
+      "url": "https://s3.amazonaws.com/cfn-resource-specifications-us-east-1-prod/schemas/2.15.0/all-spec.json"
+    }
+  ],
+  "yaml.schemas": {
+    "https://s3.amazonaws.com/cfn-resource-specifications-us-east-1-prod/schemas/2.15.0/all-spec.json": [
+      "*-template.json",
+      "**/templates/*.yaml"
+    ]
+  },
+  "yaml.customTags": [
+    "!And scalar",
+    "!Base64",
+    "!Cidr",
+    "!Equals scalar",
+    "!Equals sequence",
+    "!FindInMap scalar",
+    "!GetAtt sequence",
+    "!GetAtt",
+    "!GetAZs",
+    "!If scalar",
+    "!If sequence",
+    "!ImportValue sequence",
+    "!ImportValue",
+    "!Join sequence",
+    "!Not",
+    "!Or scalar",
+    "!Ref",
+    "!Select sequence",
+    "!Split sequence",
+    "!Sub sequence",
+    "!Sub"
+  ],
+
+  "python.autoComplete.extraPaths": [
+    "./src/layer/cloud_guardrails/lib/python3.12/site-packages"
+  ],
+  "python.analysis.extraPaths": [
+    "./src/layer/cloud_guardrails/lib/python3.12/site-packages"
+  ],
+  "cSpell.words": ["esdc"]
+}

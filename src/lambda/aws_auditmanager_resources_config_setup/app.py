@@ -8,6 +8,8 @@ import boto3
 import botocore
 import urllib3
 
+from audit_manager_custom_framework import frameworks_data
+
 SUCCESS = "SUCCESS"
 FAILED = "FAILED"
 
@@ -365,7 +367,7 @@ def get_active_accounts():
             next_token = response.get("NextToken")
             while next_token:
                 response = client.list_accounts(NextToken=next_token)
-                accounts.append(response.get("Accounts"))
+                accounts.extend(response.get("Accounts"))
                 next_token = response.get("NextToken")
             for account in accounts:
                 if account.get("Status", "") == "ACTIVE":
@@ -498,20 +500,8 @@ def create_auditmanager_resources(bucket_name="", assessment_owner_role_arns=Non
     """
     if assessment_owner_role_arns is None:
         assessment_owner_role_arns = []
-    try:
-        # convert the JSON to dict - replace new lines first
-        frameworks_data_string = zlib.decompress(
-            base64.b64decode(
-                "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"
-            )
-        ).decode("utf-8")
-        frameworks_data = json.loads(frameworks_data_string.replace("\n", ""))
-    except (ValueError, TypeError, UnicodeDecodeError, zlib.error):
-        # failed
-        logger.error("Exception trying to convert JSON contents of the framework data.")
-        return -1
     if not frameworks_data:
-        logger.error("Unable to parse contents of the framework data - Empty Dict.")
+        logger.error("No framework data provided - Empty List.")
         return -1
     # establish connection to AWS
     try:
@@ -693,7 +683,7 @@ def lambda_handler(event, context):
     event -- the event variable given in the lambda handler
     context -- the context variable given in the lambda handler
     """
-    logger.info("got event %s", event)
+    logger.info("Received Event: %s", json.dumps(event, indent=2))
     response_data = {}
 
     evidence_bucket_name = event["ResourceProperties"].get("EvidenceBucketName", "")

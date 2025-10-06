@@ -1,18 +1,28 @@
 """ GC07 - Check Encryption in Transit
     https://canada-ca.github.io/cloud-guardrails/EN/07_Protect-Data-in-Transit.html
 """
+
 import json
 import logging
 import time
 
-import boto3
-import botocore
+from utils import is_scheduled_notification, check_required_parameters, check_guardrail_requirement_by_cloud_usage_profile, get_cloud_profile_from_tags, GuardrailType, GuardrailRequirementType
+from boto_util.organizations import get_account_tags
+from boto_util.client import get_client, is_throttling_exception
+from boto_util.config import build_evaluation, submit_evaluations
+from boto_util.s3 import list_all_s3_buckets, check_s3_object_exists
+from boto_util.api_gateway import list_all_api_gateway_resources
+from boto_util.cloud_front import list_all_cloud_front_distributions
 
-ASSUME_ROLE_MODE = True
-DEFAULT_RESOURCE_TYPE = "AWS::::Account"
+import botocore.exceptions
 
 
-def assess_s3_buckets_ssl_enforcement(event=None):
+# Logging setup
+logger = logging.getLogger()
+logger.setLevel(logging.INFO)
+
+
+def assess_s3_buckets_ssl_enforcement(s3_client, event: dict):
     """
     Finds Amazon S3 resources that do not have a bucket policy restricting SSL access
     """
@@ -20,9 +30,9 @@ def assess_s3_buckets_ssl_enforcement(event=None):
     condition_criteria = {"Bool": {"aws:SecureTransport": "false"}}
     resource_type = "AWS::S3::Bucket"
     try:
-        response = AWS_S3_CLIENT.list_buckets()
-        if response:
-            for bucket in response.get("Buckets"):
+        buckets = list_all_s3_buckets(s3_client, PAGE_SIZE, INTERVAL_BETWEEN_API_CALLS)
+        if buckets:
+            for bucket in buckets:
                 bucket_name = bucket.get("Name")
                 bucket_arn = f"arn:aws:s3:::{bucket_name}"
                 compliance_status = ""
@@ -33,9 +43,9 @@ def assess_s3_buckets_ssl_enforcement(event=None):
                 b_success = False
                 while (not b_success) and (i_retries < MAXIMUM_API_RETRIES):
                     try:
-                        response2 = AWS_S3_CLIENT.get_bucket_policy(Bucket=bucket.get("Name"))
-                        if response2:
-                            bucket_policy = json.loads(response2.get("Policy"))
+                        response = s3_client.get_bucket_policy(Bucket=bucket.get("Name"))
+                        if response:
+                            bucket_policy = json.loads(response.get("Policy"))
                         else:
                             logger.info("Unable to get_bucket_policy '%s'", bucket.get("Name"))
                         b_success = True
@@ -50,7 +60,12 @@ def assess_s3_buckets_ssl_enforcement(event=None):
                             logger.error("S3 - Throttling while calling get_bucket_policy")
                             time.sleep(THROTTLE_BACKOFF)
                         else:
-                            logger.error("S3 - Error while calling get_bucket_policy for bucket %s ---> %s", bucket.get("Name", ""), ex)
+                            logger.error(
+                                "S3 - Error while calling get_bucket_policy for bucket %s ---> %s",
+                                bucket.get("Name", ""),
+                                ex,
+                            )
+                
                 if bucket_policy:
                     for statement in bucket_policy.get("Statement"):
                         statement_condition = statement.get("Condition")
@@ -88,18 +103,18 @@ def assess_s3_buckets_ssl_enforcement(event=None):
             logger.error("AccessDenied when trying to list_buckets - get_s3_resources: %s", ex)
         else:
             logger.error("S3 - Error while calling list_buckets %s", ex)
-    logger.info("S3 - reporting %s evaluations.", len(local_evaluations))
+    # logger.info("S3 - reporting %s evaluations.", len(local_evaluations))
     return local_evaluations
 
 
-def assess_redshift_clusters_ssl_enforcement(event=None):
+def assess_redshift_clusters_ssl_enforcement(redshift_client, event: dict):
     """
     Finds Amazon Redshift clusters that do not have a cluster policy restricting SSL access
     """
     clusters = []
     local_evaluations = []
     try:
-        response = AWS_REDSHIFT_CLIENT.describe_clusters(MaxRecords=PAGE_SIZE)
+        response = redshift_client.describe_clusters(MaxRecords=PAGE_SIZE)
         b_more_data = True
         i_retries = 0
         while b_more_data and i_retries < MAXIMUM_API_RETRIES:
@@ -108,56 +123,50 @@ def assess_redshift_clusters_ssl_enforcement(event=None):
                 for cluster in response.get("Clusters", []):
                     parameter_group_names = []
                     for parameter_group in cluster.get("ClusterParameterGroups", []):
-                        parameter_group_names.append(
-                            parameter_group.get("ParameterGroupName")
-                        )
+                        parameter_group_names.append(parameter_group.get("ParameterGroupName"))
                     clusters.append(
                         {
                             "ClusterIdentifier": cluster.get("ClusterIdentifier"),
                             "ClusterParameterGroups": parameter_group_names,
                         }
                     )
-                logger.info("%s Redshift clusters found.", len(clusters))
+                # logger.info("%s Redshift clusters found.", len(clusters))
                 if next_marker:
                     time.sleep(INTERVAL_BETWEEN_API_CALLS)
                     try:
-                        response = AWS_REDSHIFT_CLIENT.describe_clusters(
-                            MaxRecords=PAGE_SIZE,
-                            Marker=next_marker
-                        )
+                        response = redshift_client.describe_clusters(MaxRecords=PAGE_SIZE, Marker=next_marker)
                     except botocore.exceptions.ClientError as ex:
                         i_retries += 1
                         if is_throttling_exception(ex):
-                            logger.error("Redshift - Throttling while calling describe_clusters")
+                            # logger.error("Redshift - Throttling while calling describe_clusters")
                             time.sleep(THROTTLE_BACKOFF)
                         else:
-                            logger.error("Redshift - Error while trying to describe_clusters.%s", ex)
+                            # logger.error("Redshift - Error while trying to describe_clusters.%s", ex)
                             raise ex
                 else:
                     b_more_data = False
             else:
-                logger.error("Redshift - Empty response while trying to describe_clusters")
+                # logger.error("Redshift - Empty response while trying to describe_clusters")
                 b_more_data = False
     except botocore.exceptions.ClientError as ex:
-        logger.error("Redshift - Error while trying to describe_clusters. %s", ex)
+        # logger.error("Redshift - Error while trying to describe_clusters. %s", ex)
         raise ex
     for cluster in clusters:
         b_require_ssl = False
         for parameter_group_name in cluster.get("ClusterParameterGroups"):
             try:
                 next_marker = ""
-                response = AWS_REDSHIFT_CLIENT.describe_cluster_parameters(
-                    ParameterGroupName=parameter_group_name,
-                    MaxRecords=PAGE_SIZE
+                response = redshift_client.describe_cluster_parameters(
+                    ParameterGroupName=parameter_group_name, MaxRecords=PAGE_SIZE
                 )
                 b_more_data = True
                 i_retries = 0
-                while (b_more_data and (i_retries < MAXIMUM_API_RETRIES) and (not b_require_ssl)):
+                while b_more_data and (i_retries < MAXIMUM_API_RETRIES) and (not b_require_ssl):
                     if response:
                         next_marker = response.get("Marker", "")
                         for parameter in response.get("Parameters", []):
                             if parameter.get("ParameterName") == "require_ssl":
-                                if (parameter.get("ParameterValue", "").lower() == "true"):
+                                if parameter.get("ParameterValue", "").lower() == "true":
                                     b_require_ssl = True
                                     break
                             else:
@@ -165,12 +174,10 @@ def assess_redshift_clusters_ssl_enforcement(event=None):
                         if next_marker and (not b_require_ssl):
                             time.sleep(INTERVAL_BETWEEN_API_CALLS)
                             try:
-                                response = (
-                                    AWS_REDSHIFT_CLIENT.describe_cluster_parameters(
-                                        ParameterGroupName=parameter_group_name,
-                                        MaxRecords=PAGE_SIZE,
-                                        Marker=next_marker,
-                                    )
+                                response = redshift_client.describe_cluster_parameters(
+                                    ParameterGroupName=parameter_group_name,
+                                    MaxRecords=PAGE_SIZE,
+                                    Marker=next_marker,
                                 )
                             except botocore.exceptions.ClientError as ex:
                                 i_retries += 1
@@ -186,7 +193,7 @@ def assess_redshift_clusters_ssl_enforcement(event=None):
                         logger.error("Redshift - Empty response while trying to describe_cluster_parameters")
                         b_more_data = False
                 if b_require_ssl:
-                    logger.info("Redshift cluster %s has require_ssl enforced.", cluster.get("ClusterIdentifier", ""))
+                    # logger.info("Redshift cluster %s has require_ssl enforced.", cluster.get("ClusterIdentifier", ""))
                     break
             except botocore.exceptions.ClientError as ex:
                 logger.error("Redshift - Error while trying to describe_cluster_parameters. %s", ex)
@@ -195,7 +202,7 @@ def assess_redshift_clusters_ssl_enforcement(event=None):
             compliance_status = "COMPLIANT"
             compliance_annotation = "SSL required"
         else:
-            logger.info("Redshift cluster %s DOES NOT require_ssl.", cluster.get("ClusterIdentifier", ""))
+            # logger.info("Redshift cluster %s DOES NOT require_ssl.", cluster.get("ClusterIdentifier", ""))
             compliance_status = "NON_COMPLIANT"
             compliance_annotation = "require_ssl not set to true"
         local_evaluations.append(
@@ -207,23 +214,23 @@ def assess_redshift_clusters_ssl_enforcement(event=None):
                 annotation=compliance_annotation,
             )
         )
-    logger.info("Redshift - reporting %s evaluations.", len(local_evaluations))
+    # logger.info("Redshift - reporting %s evaluations.", len(local_evaluations))
     return local_evaluations
 
 
-def assess_elbv2_ssl_enforcement(event=None):
+def assess_elb_v2_ssl_enforcement(elb_v2_client, event: dict):
     """
     Evaluate whether SSL is enforced on ELBv2.
     """
     local_evaluations = []
     load_balancers = []
     try:
-        response = AWS_ELBV2_CLIENT.describe_load_balancers(PageSize=PAGE_SIZE)
+        response = elb_v2_client.describe_load_balancers(PageSize=PAGE_SIZE)
         b_more_data = True
         i_retries = 0
         while b_more_data and i_retries < MAXIMUM_API_RETRIES:
             if response:
-                next_marker = response.get("Marker", "")
+                next_marker = response.get("NextMarker", "")
                 for load_balancer in response.get("LoadBalancers", []):
                     load_balancers.append(
                         {
@@ -234,16 +241,14 @@ def assess_elbv2_ssl_enforcement(event=None):
                 if next_marker:
                     time.sleep(INTERVAL_BETWEEN_API_CALLS)
                     try:
-                        response = AWS_ELBV2_CLIENT.describe_load_balancers(
-                            PageSize=PAGE_SIZE, Marker=next_marker
-                        )
+                        response = elb_v2_client.describe_load_balancers(PageSize=PAGE_SIZE, Marker=next_marker)
                     except botocore.exceptions.ClientError as ex:
                         i_retries += 1
                         if is_throttling_exception(ex):
-                            logger.error("ELBv2 - Throttling while calling describe_load_balancers")
+                            # logger.error("ELBv2 - Throttling while calling describe_load_balancers")
                             time.sleep(THROTTLE_BACKOFF)
                         else:
-                            logger.error("ELBv2 - Error while trying to describe_load_balancers. %s", ex)
+                            # logger.error("ELBv2 - Error while trying to describe_load_balancers. %s", ex)
                             raise ex
                 else:
                     b_more_data = False
@@ -251,13 +256,13 @@ def assess_elbv2_ssl_enforcement(event=None):
                 logger.error("ELBv2 - Empty response while trying to describe_load_balancers")
                 b_more_data = False
     except botocore.exceptions.ClientError as ex:
-        logger.error("ELBv2 - Error while trying to describe_load_balancers. %s", ex)
+        # logger.error("ELBv2 - Error while trying to describe_load_balancers. %s", ex)
         raise ex
-    logger.info("%s ELBv2 Load balancers found.", len(load_balancers))
+    # logger.info("%s ELBv2 Load balancers found.", len(load_balancers))
     for load_balancer in load_balancers:
         next_marker = ""
         try:
-            response = AWS_ELBV2_CLIENT.describe_listeners(
+            response = elb_v2_client.describe_listeners(
                 LoadBalancerArn=load_balancer.get("LoadBalancerArn", ""),
                 PageSize=PAGE_SIZE,
             )
@@ -265,17 +270,27 @@ def assess_elbv2_ssl_enforcement(event=None):
             i_retries = 0
             while b_more_data and (i_retries < MAXIMUM_API_RETRIES):
                 if response:
-                    next_marker = response.get("Marker", "")
+                    next_marker = response.get("NextMarker", "")
                     for listener in response.get("Listeners", []):
                         listener_compliance = ""
                         listener_annotation = ""
                         listener_protocol = listener.get("Protocol", "")
                         if listener_protocol.lower() not in ["https", "tls"]:
-                            listener_compliance = "NON_COMPLIANT"
-                            listener_annotation = 'Non HTTPS/TLS listener protocol - {}'.format(listener_protocol)
+                            redirect_flag = False
+                            for action in listener.get("DefaultActions", []):
+                                if (action.get("Type") == "redirect" and action.get("RedirectConfig", {}).get("Protocol") == "HTTPS"):
+                                    redirect_flag = True
+                                    break
+
+                            if redirect_flag:
+                                listener_compliance = "COMPLIANT"
+                                listener_annotation = f"HTTP listener with HTTPS redirection - {listener.get("ListenerArn", "")}"
+                            else:
+                                listener_compliance = "NON_COMPLIANT"
+                                listener_annotation = "Non HTTPS/TLS listener protocol - {}".format(listener_protocol)
                         else:
                             listener_compliance = "COMPLIANT"
-                            listener_annotation = "All listeners leverage HTTPS/TLS"
+                            listener_annotation = f"Listener uses HTTPS/TLS - {listener.get("ListenerArn", "")}"
                         local_evaluations.append(
                             build_evaluation(
                                 listener.get("ListenerArn", ""),
@@ -288,7 +303,7 @@ def assess_elbv2_ssl_enforcement(event=None):
                     if next_marker:
                         time.sleep(INTERVAL_BETWEEN_API_CALLS)
                         try:
-                            response = AWS_ELBV2_CLIENT.describe_listeners(
+                            response = elb_v2_client.describe_listeners(
                                 LoadBalancerArn=load_balancer.get("LoadBalancerArn", ""),
                                 PageSize=PAGE_SIZE,
                                 Marker=next_marker,
@@ -308,24 +323,132 @@ def assess_elbv2_ssl_enforcement(event=None):
         except botocore.exceptions.ClientError as ex:
             i_retries += 1
             if is_throttling_exception(ex):
-                logger.error("ELBv2 - Throttling while calling describe_listeners")
+                # logger.error("ELBv2 - Throttling while calling describe_listeners")
                 time.sleep(THROTTLE_BACKOFF)
             else:
-                logger.error("ELBv2 - Error while trying to describe_listeners. %s", ex)
+                # logger.error("ELBv2 - Error while trying to describe_listeners. %s", ex)
                 raise ex
-    logger.info("ELBv2 - reporting %s evaluations.", len(local_evaluations))
+    # logger.info("ELBv2 - reporting %s evaluations.", len(local_evaluations))
     return local_evaluations
 
+def assess_elb_v1_ssl_enforcement(elb_client, event: dict):
+    """
+    Evaluate whether SSL is enforced on Classic Load Balancers (ELB v1).
+    """
+    local_evaluations = []
+    load_balancers = []
 
-def assess_rest_api_stages_ssl_enforcement(event=None):
+    try:
+        response = elb_client.describe_load_balancers()
+        b_more_data = True
+        i_retries = 0
+        while b_more_data and i_retries < MAXIMUM_API_RETRIES:
+            if response:
+                next_marker = response.get("NextMarker", "")
+                for load_balancer in response.get("LoadBalancerDescriptions", []):
+                    load_balancers.append(
+                        {
+                            "LoadBalancerName": load_balancer.get("LoadBalancerName"),
+                            "DNSName": load_balancer.get("DNSName"),
+                            "ListenerDescriptions": load_balancer.get("ListenerDescriptions", []),
+                        }
+                    )
+                if next_marker:
+                    time.sleep(INTERVAL_BETWEEN_API_CALLS)
+                    try:
+                        response = elb_client.describe_load_balancers(Marker=next_marker)
+                    except botocore.exceptions.ClientError as ex:
+                        i_retries += 1
+                        if is_throttling_exception(ex):
+                            time.sleep(THROTTLE_BACKOFF)
+                        else:
+                            raise ex
+                else:
+                    b_more_data = False
+            else:
+                logger.error("ELBv1 - Empty response while trying to describe_load_balancers")
+                b_more_data = False
+    except botocore.exceptions.ClientError as ex:
+        raise ex
+
+    #logger.info(f"Found {len(load_balancers)} Classic Load Balancers: {[lb['LoadBalancerName'] for lb in load_balancers]}")
+
+    for load_balancer in load_balancers:
+        try:
+            for listener in load_balancer.get("ListenerDescriptions", []):
+                listener_compliance = ""
+                listener_annotation = ""
+                listener_port = listener.get("Listener", {}).get("LoadBalancerPort", "")
+                listener_protocol = listener.get("Listener", {}).get("Protocol", "")
+                
+                if listener_protocol.lower() not in ["https", "ssl"]:
+                    #Classic Load Balancers don't support HTTP to HTTPS redirection at the load balancer level
+                    listener_compliance = "NON_COMPLIANT"
+                    listener_annotation = f"Port {listener_port} uses non TLS 1.2 compliant listener protocol {listener_protocol}"
+                else:
+                    policy_names = listener.get("PolicyNames", [])
+                        
+                    if not policy_names:  # No policy found for the listener
+                        listener_compliance = "NON_COMPLIANT"
+                        listener_annotation = f"Port {listener_port} has no TLS 1.2 compliant policy attached for {listener_protocol}"
+                    else:
+
+                        for policy_name in policy_names:
+
+                            try:
+                                policy_response = elb_client.describe_load_balancer_policies(LoadBalancerName=load_balancer.get('LoadBalancerName'), PolicyNames=[policy_name])
+                                listener_security_policy = next(
+                                    (attr["AttributeValue"] for attr in policy_response.get("PolicyDescriptions", [{}])[0].get("PolicyAttributeDescriptions", []) 
+                                    if attr.get("AttributeName") == "Reference-Security-Policy"), 
+                                    None
+                                )
+                                
+                                if listener_security_policy:  # Only log if a value is found
+                                    if listener_security_policy == "ELBSecurityPolicy-TLS-1-2-2017-01":
+                                        listener_compliance = "COMPLIANT"
+                                        listener_annotation = (
+                                            f"Port {listener_port} uses TLS 1.2 compliant {listener_protocol} security policy {listener_security_policy}"
+                                        )
+                                    else:
+                                        listener_compliance = "NON_COMPLIANT"
+                                        listener_annotation = (
+                                            f"Port {listener_port} uses non-TLS 1.2 compliant {listener_protocol} security policy {listener_security_policy}"
+                                        )
+                                else:
+                                    # If Reference-Security-Policy is not found, mark as NON_COMPLIANT
+                                    listener_compliance = "NON_COMPLIANT"
+                                    listener_annotation = (
+                                        f"Port {listener_port} is missing the Reference-Security-Policy: ELBSecurityPolicy-TLS-1-2-2017-01"
+                                )
+                            except botocore.exceptions.ClientError as ex:
+                                logger.error(f"Error retrieving policy details for {policy_name}: {str(ex)}")
+                
+                local_evaluations.append(
+                    build_evaluation(
+                        load_balancer.get("DNSName", ""),
+                        listener_compliance,
+                        event,
+                        "AWS::ElasticLoadBalancing::LoadBalancer",
+                        annotation=listener_annotation,
+                    )
+                )
+        except botocore.exceptions.ClientError as ex:
+            i_retries += 1
+            if is_throttling_exception(ex):
+                time.sleep(THROTTLE_BACKOFF)
+            else:
+                raise ex
+
+    return local_evaluations
+
+def assess_rest_api_stages_ssl_enforcement(api_gw_client, event: dict):
     """
     This function evaluates the SSL enforcement on the REST API Stages.
     """
     local_evaluations = []
-    rest_apis = []
     resource_type = "AWS::ApiGateway::Stage"
     try:
-        response = AWS_APIGW_CLIENT.get_rest_apis(limit=PAGE_SIZE)
+        response = api_gw_client.get_rest_apis(limit=PAGE_SIZE)
         b_more_data = True
         i_retries = 0
         while b_more_data and i_retries < MAXIMUM_API_RETRIES:
@@ -335,18 +458,17 @@ def assess_rest_api_stages_ssl_enforcement(event=None):
                     api_id = api.get("id")
                     api_name = api.get("name")
                     if not api_id:
-                        logger.error("Skipping Malformed API item %s", api)
+                        # logger.error("Skipping Malformed API item %s", api)
                         continue
                     try:
-                        api_resource_list = apigw_get_resources_list(
-                            AWS_APIGW_CLIENT,
-                            api_id
+                        api_resource_list = list_all_api_gateway_resources(
+                            api_gw_client, api_id, PAGE_SIZE, INTERVAL_BETWEEN_API_CALLS
                         )
                     except botocore.exceptions.ClientError as error:
                         if error.response["Error"]["Code"] == "NotFoundException":
                             pass
                     if not api_resource_list:
-                        logger.info("Skipping API - %s - as it has no resources.", api_name)
+                        # logger.info("Skipping API - %s - as it has no resources.", api_name)
                         continue
                     AWS = False
                     HTTP = False
@@ -356,13 +478,13 @@ def assess_rest_api_stages_ssl_enforcement(event=None):
                             method_types = item["resourceMethods"].keys()
                             for method_type in method_types:
                                 try:
-                                    integration_type = AWS_APIGW_CLIENT.get_integration(
+                                    integration_type = api_gw_client.get_integration(
                                         restApiId=api_id,
                                         resourceId=resource_id,
                                         httpMethod=method_type,
                                     )["type"]
                                 except botocore.exceptions.ClientError as error:
-                                    if (error.response["Error"]["Code"] == "NotFoundException"):
+                                    if error.response["Error"]["Code"] == "NotFoundException":
                                         integration_type = "None"
                                     else:
                                         raise error
@@ -372,10 +494,7 @@ def assess_rest_api_stages_ssl_enforcement(event=None):
                                     AWS = True
                                 time.sleep(THROTTLE_BACKOFF / 2)
                     try:
-                        response2 = AWS_APIGW_CLIENT.get_deployments(
-                            restApiId=api_id,
-                            limit=PAGE_SIZE
-                        )
+                        response2 = api_gw_client.get_deployments(restApiId=api_id, limit=PAGE_SIZE)
                         i_retries2 = 0
                         b_more_data2 = True
                         while b_more_data2 and i_retries2 < MAXIMUM_API_RETRIES:
@@ -383,22 +502,25 @@ def assess_rest_api_stages_ssl_enforcement(event=None):
                                 position2 = response2.get("position")
                                 deployments = response2.get("items", [])
                                 if len(deployments) <= 0:
-                                    logger.info("APIGW - Skipping API '%s' as it has no deployments", api_name)
+                                    # logger.info("APIGW - Skipping API '%s' as it has no deployments", api_name)
                                     break
                                 for deployment in deployments:
                                     deployment_id = deployment.get("id", "")
                                     if not deployment_id:
-                                        logger.error("Skipping Malformed Deployment in API %s: %s", api, deployment)
+                                        # logger.error("Skipping Malformed Deployment in API %s: %s", api, deployment)
                                         continue
                                     try:
-                                        response3 = AWS_APIGW_CLIENT.get_stages(
-                                            restApiId=api_id,
-                                            deploymentId=deployment_id
+                                        response3 = api_gw_client.get_stages(
+                                            restApiId=api_id, deploymentId=deployment_id
                                         )
                                         if response3:
                                             stages = response3.get("item")
                                             if len(stages) <= 0:
-                                                logger.error("APIGW - No stages found for API %s and deployment ID %s", api_name, deployment_id)
+                                                logger.info(
+                                                    "APIGW - No stages found for API %s and deployment ID %s",
+                                                    api_name,
+                                                    deployment_id,
+                                                )
                                                 continue
                                             for stage in stages:
                                                 client_certificate_id = stage.get("clientCertificateId", "")
@@ -416,8 +538,16 @@ def assess_rest_api_stages_ssl_enforcement(event=None):
                                                         compliance_annotation = "REST API stage has an associated client certificate but no integration type."
                                                 else:
                                                     if HTTP or (HTTP and AWS):
-                                                        compliance_status = "NON_COMPLIANT"
-                                                        compliance_annotation = "REST API stage does not have an associated client certificate and an HTTP integration type."
+                                                        custom_domains = fetch_custom_domain_names(api_gw_client)
+                                                        logger.info("###Custom domains : %s ", str(custom_domains))
+                                                        if api_id in custom_domains:
+                                                            logger.info("###REST API Found in Custom domains : %s ", api_id)
+                                                            compliance_status = "COMPLIANT"
+                                                            compliance_annotation = "REST API has custom domain with mTLS enabled"
+                                                        else:
+                                                            compliance_status = "NON_COMPLIANT"
+                                                            compliance_annotation = "REST API stage does not have an associated client certificate and an HTTP integration type."
+                                                   
                                                     elif AWS:
                                                         compliance_status = "NOT_APPLICABLE"
                                                         compliance_annotation = "REST API stage does not have an associated client certificate and lambda integration type."
@@ -434,14 +564,23 @@ def assess_rest_api_stages_ssl_enforcement(event=None):
                                                     )
                                                 )
                                         else:
-                                            logger.error("APIGW - Empty response on get_stages for API %s and deployment ID %s", api_name, deployment_id)
+                                            logger.error(
+                                                "APIGW - Empty response on get_stages for API %s and deployment ID %s",
+                                                api_name,
+                                                deployment_id,
+                                            )
                                     except botocore.exceptions.ClientError as ex:
-                                        logger.error("APIGW - Error while trying to get_stages for API %s and deployment ID %s.\n%s", api_name, deployment_id, ex)
+                                        logger.error(
+                                            "APIGW - Error while trying to get_stages for API %s and deployment ID %s.\n%s",
+                                            api_name,
+                                            deployment_id,
+                                            ex,
+                                        )
                                         raise ex
                                 if position2:
                                     time.sleep(INTERVAL_BETWEEN_API_CALLS)
                                     try:
-                                        response2 = AWS_APIGW_CLIENT.get_deployments(
+                                        response2 = api_gw_client.get_deployments(
                                             restApiId=api_id,
                                             position=position2,
                                             limit=PAGE_SIZE,
@@ -449,77 +588,126 @@ def assess_rest_api_stages_ssl_enforcement(event=None):
                                     except botocore.exceptions.ClientError as ex:
                                         i_retries2 += 1
                                         if is_throttling_exception(ex):
-                                            logger.error("APIGW - Throttling while calling get_deployments")
+                                            # logger.error("APIGW - Throttling while calling get_deployments")
                                             time.sleep(THROTTLE_BACKOFF)
                                         else:
-                                            logger.error("APIGW - Error while trying to get_deployments. %s", ex)
+                                            # logger.error("APIGW - Error while trying to get_deployments. %s", ex)
                                             raise ex
                                 else:
                                     b_more_data2 = False
                             else:
-                                logger.error("APIGW - Empty response on call to get_deployments with API ID '%s'", api_name)
+                                logger.error(
+                                    "APIGW - Empty response on call to get_deployments with API ID '%s'", api_name
+                                )
                                 b_more_data2 = False
                     except botocore.exceptions.ClientError as ex:
                         i_retries += 1
                         if is_throttling_exception(ex):
-                            logger.error("APIGW - Throttling while calling get_deployments")
+                            # logger.error("APIGW - Throttling while calling get_deployments")
                             time.sleep(THROTTLE_BACKOFF)
                         else:
-                            logger.error("ELBv2 - Error while trying to get_deployments. %s", ex)
+                            # logger.error("ELBv2 - Error while trying to get_deployments. %s", ex)
                             raise ex
                 if position:
                     time.sleep(INTERVAL_BETWEEN_API_CALLS)
                     try:
-                        response = AWS_APIGW_CLIENT.get_rest_apis(
-                            position=position,
-                            limit=PAGE_SIZE
-                        )
+                        response = api_gw_client.get_rest_apis(position=position, limit=PAGE_SIZE)
                     except botocore.exceptions.ClientError as ex:
                         if is_throttling_exception(ex):
-                            logger.error("APIGW - Throttling while calling get_rest_apis")
+                            # logger.error("APIGW - Throttling while calling get_rest_apis")
                             time.sleep(THROTTLE_BACKOFF)
                             i_retries += 1
                         else:
-                            logger.error("APIGW - Error while trying to get_rest_apis.%s", ex)
+                            # logger.error("APIGW - Error while trying to get_rest_apis.%s", ex)
                             raise ex
                 else:
                     b_more_data = False
             else:
-                logger.error("REST API - Empty response from get_rest_apis call")
+                # logger.error("REST API - Empty response from get_rest_apis call")
                 b_more_data = False
     except botocore.exceptions.ClientError as ex:
-        logger.error("REST API - Error while trying to get_rest_apis - %s", ex)
+        # logger.error("REST API - Error while trying to get_rest_apis - %s", ex)
         raise ex
-    logger.info("APIGW - reporting %s evaluations.", len(local_evaluations))
+    # logger.info("APIGW - reporting %s evaluations.", len(local_evaluations))
     return local_evaluations
 
 
-def assess_es_node_to_node_ssl_enforcement(event=None):
+def fetch_custom_domain_names(api_gw_client):
+
+     # Get custom domain names for checking later
+    custom_domain_names = {}
+    try:
+        domain_response = api_gw_client.get_domain_names(limit=PAGE_SIZE)
+        b_more_domain_data = True
+        i_domain_retries = 0
+        while b_more_domain_data and i_domain_retries < MAXIMUM_API_RETRIES:
+            if domain_response:
+                position = domain_response.get("position", "")
+                for domain in domain_response.get("items", []):
+                    
+                    
+
+                   
+                    domain_name = domain.get("domainName")
+                    mTLsflag = domain.get("mutualTlsAuthentication")
+                    if domain_name and mTLsflag:
+                        # Get the API mappings for this domain
+                        try:
+                            mapping_response = api_gw_client.get_base_path_mappings(domainName=domain_name, limit=PAGE_SIZE)
+                            if mapping_response and "items" in mapping_response:
+                                for mapping in mapping_response.get("items", []):
+                                    api_id = mapping.get("restApiId")
+                                    if api_id:
+                                        if api_id not in custom_domain_names:
+                                            custom_domain_names[api_id] = []
+                                        custom_domain_names[api_id].append(domain_name)
+                        except botocore.exceptions.ClientError as ex:
+                            logger.error(f"Error getting base path mappings for domain {domain_name}: {ex}")
+                
+                if position:
+                    time.sleep(INTERVAL_BETWEEN_API_CALLS)
+                    try:
+                        domain_response = api_gw_client.get_domain_names(position=position, limit=PAGE_SIZE)
+                    except botocore.exceptions.ClientError as ex:
+                        i_domain_retries += 1
+                        if is_throttling_exception(ex):
+                            time.sleep(THROTTLE_BACKOFF)
+                        else:
+                            raise ex
+                else:
+                    b_more_domain_data = False
+            else:
+                b_more_domain_data = False
+    except botocore.exceptions.ClientError as ex:
+        logger.error(f"Error getting domain names: {ex}")
+
+    return custom_domain_names
+
+
+def assess_open_search_node_to_node_ssl_enforcement(open_search_client, event: dict) -> list[dict]:
     """
     This function evaluates the Node to Node SSL Enforcement compliance
-    for the AWS Elasticsearch Service.
+    for the AWS OpenSearch Service.
     Args:
         event (dict): Lambda event object
     Returns:
         list: List of evaluation objects.
     """
-    resource_type = "AWS::Elasticsearch::Domain"
+    resource_type = "AWS::OpenSearch::Domain"
     local_evaluations = []
     try:
-        response = AWS_ES_CLIENT.list_domain_names()
+        response = open_search_client.list_domain_names()
         if response:
             for domain in response.get("DomainNames", []):
                 time.sleep(INTERVAL_BETWEEN_API_CALLS)
                 domain_name = domain.get("DomainName")
                 if not domain_name:
-                    logger.error("Malformed domain result - %s", domain)
+                    # logger.error("Malformed domain result - %s", domain)
                     continue
-                response2 = AWS_ES_CLIENT.describe_elasticsearch_domains(
-                    DomainNames=[domain_name]
-                )
+                response2 = open_search_client.describe_domains(DomainNames=[domain_name])
                 if response2:
                     for domain_status in response2.get("DomainStatusList", []):
-                        if (domain_status.get("NodeToNodeEncryptionOptions", {}).get("Enabled", "") == "True"):
+                        if domain_status.get("NodeToNodeEncryptionOptions", {}).get("Enabled", False) == True:
                             compliance_status = "COMPLIANT"
                             compliance_annotation = "Node to Node Encryption enabled"
                         else:
@@ -538,155 +726,89 @@ def assess_es_node_to_node_ssl_enforcement(event=None):
                             )
                         )
                 else:
-                    logger.error("ES - Empty response on describe_elasticsearch_domains call.")
+                    logger.error("OS - Empty response on describe_domains call.")
         else:
-            logger.error("ES - Empty response on list_domain_names call.")
+            logger.error("OS - Empty response on list_domain_names call.")
     except botocore.exceptions.ClientError as ex:
-        logger.error("ES - Error while trying to list_domain_names or describe_elasticsearch_domains.\n%s", ex)
+        logger.error("OS - Error while trying to list_domain_names or describe_domains.\n%s", ex)
         raise ex
-    logger.info("ElasticSearch - reporting %s evaluations.", len(local_evaluations))
+    # logger.info("OpenSearch - reporting %s evaluations.", len(local_evaluations))
     return local_evaluations
 
 
-def apigw_get_resources_list(api_client, rest_api_id):
-    """Get a list of all the resources in an API Gateway Rest API.
-    Keyword arguments:
-    api_client -- the API Gateway client object
-    rest_api_id -- the ID of the API Gateway Rest API
-    """
-    resource_list = []
-    api_paginator = api_client.get_paginator("get_resources")
-    api_resource_list = api_paginator.paginate(
-        restApiId=rest_api_id,
-        PaginationConfig={"MaxItems": PAGE_SIZE}
-    )
-    for page in api_resource_list:
-        resource_list.extend(page["items"])
-        time.sleep(INTERVAL_BETWEEN_API_CALLS)
-    return resource_list
+def assess_cloud_front_ssl_enforcement(cloud_front_client, event: dict) -> list[dict]:
+    resource_type = "AWS::CloudFront::Distribution"
+    local_evaluations = []
+    distributions = list_all_cloud_front_distributions(cloud_front_client, PAGE_SIZE, INTERVAL_BETWEEN_API_CALLS)
+    for distribution in distributions:
+        id = distribution["Id"]
+        resource_id = distribution.get("ARN", id)
+        viewer_certificate = distribution.get("ViewerCertificate", None)
 
+        if not viewer_certificate:
+            annotation = "Distribution does not have SSL/TLS enabled."
+            local_evaluations.append(build_evaluation(resource_id, "NON_COMPLIANT", event, resource_type, annotation))
+            # logger.info(f"{annotation} ({resource_id})")
+            continue
 
-def build_evaluation(
-    resource_id, compliance_type, event, resource_type, annotation=None
-):
-    """Form an evaluation as a dictionary. Usually suited to report on scheduled rules.
-    Keyword arguments:
-    resource_id -- the unique id of the resource to report
-    compliance_type -- either COMPLIANT, NON_COMPLIANT or NOT_APPLICABLE
-    event -- the event variable given in the lambda handler
-    resource_type -- the CloudFormation resource type (or AWS::::Account) to report on the rule
-    annotation -- an annotation to be added to the evaluation (default None)
-    """
-    eval_cc = {}
-    if annotation:
-        eval_cc["Annotation"] = annotation
-    eval_cc["ComplianceResourceType"] = resource_type
-    eval_cc["ComplianceResourceId"] = resource_id
-    eval_cc["ComplianceType"] = compliance_type
-    eval_cc["OrderingTimestamp"] = str(
-        json.loads(event["invokingEvent"])["notificationCreationTime"]
-    )
-    return eval_cc
-
-
-def is_throttling_exception(event):
-    """Returns True if the exception code is one of the throttling exception codes we have"""
-    b_is_throttling = False
-    throttling_exception_codes = [
-        "ConcurrentModificationException",
-        "InsufficientDeliveryPolicyException",
-        "NoAvailableDeliveryChannelException",
-        "ConcurrentModifications",
-        "LimitExceededException",
-        "OperationNotPermittedException",
-        "TooManyRequestsException",
-        "Throttling",
-        "ThrottlingException",
-        "InternalErrorException",
-        "InternalException",
-        "ECONNRESET",
-        "EPIPE",
-        "ETIMEDOUT",
-        "ConcurrentModificationException",
-        "InsufficientDeliveryPolicyException",
-        "NoAvailableDeliveryChannelException",
-        "ConcurrentModifications",
-        "LimitExceededException",
-        "OperationNotPermittedException",
-        "TooManyRequestsException",
-        "Throttling",
-        "ThrottlingException",
-        "InternalErrorException",
-        "InternalException",
-        "ECONNRESET",
-        "EPIPE",
-        "ETIMEDOUT",
-    ]
-    for throttling_code in throttling_exception_codes:
-        if throttling_code in event.response["Error"]["Code"]:
-            b_is_throttling = True
-            break
-    return b_is_throttling
-
-
-def get_client(service, event, region="ca-central-1"):
-    """Return the service boto client. It should be used instead of directly calling the client.
-    Keyword arguments:
-    service -- the service name used for calling the boto.client()
-    event -- the event variable given in the lambda handler
-    """
-    if not ASSUME_ROLE_MODE or (AWS_ACCOUNT_ID == AUDIT_ACCOUNT_ID):
-        return boto3.client(service, region_name=region)
-    execution_role_arn = f"arn:aws:iam::{AWS_ACCOUNT_ID}:role/{EXECUTION_ROLE_NAME}"
-    credentials = get_assume_role_credentials(execution_role_arn, region)
-    return boto3.client(
-        service,
-        region_name=region,
-        aws_access_key_id=credentials["AccessKeyId"],
-        aws_secret_access_key=credentials["SecretAccessKey"],
-        aws_session_token=credentials["SessionToken"],
-    )
-
-
-def get_assume_role_credentials(role_arn, region="ca-central-1"):
-    """Return the service boto client. It should be used instead of directly calling the client.
-    Keyword arguments:
-    service -- the service name used for calling the boto.client()
-    event -- the event variable given in the lambda handler
-    """
-    sts_client = boto3.client("sts", region_name=region)
-    try:
-        assume_role_response = sts_client.assume_role(
-            RoleArn=role_arn,
-            RoleSessionName="configLambdaExecution"
-        )
-        return assume_role_response["Credentials"]
-    except botocore.exceptions.ClientError as ex:
-        if "AccessDenied" in ex.response["Error"]["Code"]:
-            ex.response["Error"]["Message"] = "AWS Config does not have permission to assume the IAM role."
+        min_protocol_version = viewer_certificate.get("MinimumProtocolVersion", None)
+        if min_protocol_version.startswith("TLSv1.2"):
+            annotation = f"Distribution has a minimum protocol version of TLS1.2. ({min_protocol_version})"
+            local_evaluations.append(build_evaluation(resource_id, "COMPLIANT", event, resource_type, annotation))
         else:
-            ex.response["Error"]["Message"] = "InternalError"
-            ex.response["Error"]["Code"] = "InternalError"
-        raise ex
+            annotation = f"Distribution does NOT have a minimum protocol version of TLS1.2. ({min_protocol_version})"
+            local_evaluations.append(build_evaluation(resource_id, "NON_COMPLIANT", event, resource_type, annotation))
+        # logger.info(f"{annotation} ({resource_id})")
+
+    # logger.info("CloudFront - reporting %s evaluations.", len(local_evaluations))
+    return local_evaluations
 
 
-def is_scheduled_notification(message_type):
-    """Check whether the message is a ScheduledNotification or not.
-    Keyword arguments:
-    message_type -- the message type
+def get_all_compliance_details_by_config_rule(
+    config_client, config_rule_name: str, compliance_types: list[str] = None, interval_between_calls: float = 0.05
+) -> list[dict]:
     """
-    return message_type == "ScheduledNotification"
+    https://boto3.amazonaws.com/v1/documentation/api/latest/reference/services/config/paginator/GetComplianceDetailsByConfigRule.html
+    """
+    args = {"ConfigRuleName": config_rule_name}
+    if compliance_types:
+        args["ComplianceTypes"] = compliance_types
+
+    resources: list[dict] = []
+    paginator = config_client.get_paginator("get_compliance_details_by_config_rule")
+    page_iterator = paginator.paginate(**args)
+    for page in page_iterator:
+        resources.extend(page.get("EvaluationResults", []))
+        time.sleep(interval_between_calls)
+    return resources
 
 
 def lambda_handler(event, context):
-    """Lambda handler to check CloudTrail trails are logging.
+    """
+    This function is the main entry point for Lambda.
+
     Keyword arguments:
+
     event -- the event variable given in the lambda handler
+
     context -- the context variable given in the lambda handler
     """
-    global logger
-    logger = logging.getLogger()
-    logger.setLevel(logging.INFO)
+    logger.info("Received Event: %s", json.dumps(event, indent=2))
+
+    invoking_event = json.loads(event["invokingEvent"])
+    if not is_scheduled_notification(invoking_event["messageType"]):
+        logger.error("Skipping assessments as this is not a scheduled invocation")
+        return
+
+    rule_parameters = check_required_parameters(json.loads(event.get("ruleParameters", "{}")), ["ExecutionRoleName", "S3NonComplianceOptoutFilePath"])
+    execution_role_name = rule_parameters.get("ExecutionRoleName")
+    audit_account_id = rule_parameters.get("AuditAccountID", "")
+    aws_account_id = event["accountId"]
+    optout_file_path = rule_parameters.get("S3NonComplianceOptoutFilePath", "")
+    logger.info(f"AWS Account ID: {aws_account_id}, Audit Account ID: {audit_account_id}")
+    is_not_audit_account = aws_account_id != audit_account_id
+
+    evaluations = []
 
     global MAXIMUM_API_RETRIES
     global PAGE_SIZE
@@ -698,150 +820,77 @@ def lambda_handler(event, context):
     INTERVAL_BETWEEN_API_CALLS = 0.25
     THROTTLE_BACKOFF = 2
 
-    global AWS_S3_CLIENT
-    global AWS_REDSHIFT_CLIENT
-    global AWS_ELBV2_CLIENT
-    global AWS_APIGW_CLIENT
-    global AWS_ES_CLIENT
-    global AWS_CONFIG_CLIENT
-    global AWS_ACCOUNT_ID
-    global AUDIT_ACCOUNT_ID
-    global EXECUTION_ROLE_NAME
+    aws_config_client = get_client("config", aws_account_id, execution_role_name, is_not_audit_account)
+    aws_cloud_front_client = get_client("cloudfront", aws_account_id, execution_role_name, is_not_audit_account)
+    # Updated boolean value to True as in audit account, s3_client was not able to access buckets created outside of ca-central-1 region
+    aws_s3_client = get_client("s3", aws_account_id, execution_role_name, True)
+    aws_redshift_client = get_client("redshift", aws_account_id, execution_role_name, is_not_audit_account)
+    aws_elb_v1_client = get_client("elb", aws_account_id, execution_role_name, is_not_audit_account)
+    aws_elb_v2_client = get_client("elbv2", aws_account_id, execution_role_name, is_not_audit_account)
+    aws_api_gw_client = get_client("apigateway", aws_account_id, execution_role_name, is_not_audit_account)
+    aws_open_search_client = get_client("opensearch", aws_account_id, execution_role_name, is_not_audit_account)
+    
+    
 
-    evaluations = []
-    rule_parameters = {}
-    invoking_event = json.loads(event["invokingEvent"])
-    logger.info("Recieved event: %s", json.dumps(event, indent=2))
+    compliance_details = get_all_compliance_details_by_config_rule(aws_config_client, event["configRuleName"], ["NON_COMPLIANT"])
+    logger.info("compliance_detail = %s", json.dumps([(
+            x["EvaluationResultIdentifier"]["EvaluationResultQualifier"]["ResourceId"],
+            x["EvaluationResultIdentifier"]["EvaluationResultQualifier"]["ResourceType"],
+        ) for x in compliance_details], indent=2))
 
-    AWS_ACCOUNT_ID = event["accountId"]
-    logger.info("Assessing account %s", AWS_ACCOUNT_ID)
-    if "ruleParameters" in event:
-        rule_parameters = json.loads(event["ruleParameters"])
+    # Check cloud profile
+    tags = get_account_tags(get_client("organizations", assume_role=False), aws_account_id)
+    cloud_profile = get_cloud_profile_from_tags(tags)
+    gr_requirement_type = check_guardrail_requirement_by_cloud_usage_profile(GuardrailType.Guardrail7, cloud_profile)
+    
+    # If the guardrail is recommended
+    if gr_requirement_type == GuardrailRequirementType.Recommended:
+        return submit_evaluations(aws_config_client, event, [build_evaluation(
+            aws_account_id,
+            "COMPLIANT",
+            event,
+            gr_requirement_type=gr_requirement_type
+        )])
+    # If the guardrail is not required
+    elif gr_requirement_type == GuardrailRequirementType.Not_Required:
+        return submit_evaluations(aws_config_client, event, [build_evaluation(
+            aws_account_id,
+            "NOT_APPLICABLE",
+            event,
+            gr_requirement_type=gr_requirement_type
+        )])
+        
+    evaluations.extend(assess_s3_buckets_ssl_enforcement(aws_s3_client, event))
+    evaluations.extend(assess_redshift_clusters_ssl_enforcement(aws_redshift_client, event))
+    evaluations.extend(assess_elb_v2_ssl_enforcement(aws_elb_v2_client, event))
+    evaluations.extend(assess_elb_v1_ssl_enforcement(aws_elb_v1_client, event))
+    evaluations.extend(assess_rest_api_stages_ssl_enforcement(aws_api_gw_client, event))
+    evaluations.extend(assess_open_search_node_to_node_ssl_enforcement(aws_open_search_client, event))
+    evaluations.extend(assess_cloud_front_ssl_enforcement(aws_cloud_front_client, event))
 
-    valid_rule_parameters = rule_parameters
+    compliance_type = "COMPLIANT"
+    annotation = "No non-compliant resources found"
+    # added check for opt out file. if file exists, change the non-compliance to compliant status only for both ELB v1 and v2
+    for evaluation in evaluations:
+        if evaluation.get("ComplianceType", "") == "NON_COMPLIANT" and (evaluation.get("ComplianceResourceType", "") == "AWS::ElasticLoadBalancingV2::Listener" or evaluation.get("ComplianceResourceType", "") == "AWS::ElasticLoadBalancing::LoadBalancer") :
+            # add the check for if file exists in an evidence bucket, 
+            # addeded new client to avoid AccessDenied exception
+            s3_client = get_client("s3")
+            optout_file_exists_flag = check_s3_object_exists(s3_client, optout_file_path)  
+            # if file exists, change status to compliant
+            if optout_file_exists_flag:
+                evaluation["ComplianceType"] = "COMPLIANT"
+                evaluation["Annotation"] = "Compliant owing to opt out file found"     
+            
 
-    if "ExecutionRoleName" in valid_rule_parameters:
-        EXECUTION_ROLE_NAME = valid_rule_parameters["ExecutionRoleName"]
-    else:
-        EXECUTION_ROLE_NAME = "AWSA-GCLambdaExecutionRole2"
-
-    if "AuditAccountID" in valid_rule_parameters:
-        AUDIT_ACCOUNT_ID = valid_rule_parameters["AuditAccountID"]
-    else:
-        AUDIT_ACCOUNT_ID = ""
-
-    if not is_scheduled_notification(invoking_event["messageType"]):
-        logger.error("Skipping assessments as this is not a scheduled invokation")
-        return
-
-    AWS_S3_CLIENT = get_client("s3", event)
-    AWS_REDSHIFT_CLIENT = get_client("redshift", event)
-    AWS_ELBV2_CLIENT = get_client("elbv2", event)
-    AWS_APIGW_CLIENT = get_client("apigateway", event)
-    AWS_ES_CLIENT = get_client("es", event)
-    AWS_CONFIG_CLIENT = get_client("config", event)
-
-    evaluations.extend(assess_s3_buckets_ssl_enforcement(event))
-    evaluations.extend(assess_redshift_clusters_ssl_enforcement(event))
-    evaluations.extend(assess_elbv2_ssl_enforcement(event))
-    evaluations.extend(assess_rest_api_stages_ssl_enforcement(event))
-    evaluations.extend(assess_es_node_to_node_ssl_enforcement(event))
-
-    account_compliance_status = "COMPLIANT"
-    account_compliance_annotation = "No non-compliant resources found"
+    
 
     for evaluation in evaluations:
         if evaluation.get("ComplianceType", "") == "NON_COMPLIANT":
-            account_compliance_status = "NON_COMPLIANT"
-            account_compliance_annotation = "Non-compliant resources in scope found"
+            compliance_type = "NON_COMPLIANT"
+            annotation = "Non-compliant resources in scope found"    
             break
-    evaluations.append(
-        build_evaluation(
-            AWS_ACCOUNT_ID,
-            account_compliance_status,
-            event,
-            "AWS::::Account",
-            annotation=account_compliance_annotation,
-        )
-    )
-    number_of_evaluations = len(evaluations)
-    if number_of_evaluations > 0:
-        max_evaluations_per_call = 100
-        rounds = number_of_evaluations // max_evaluations_per_call
-        logger.info("Reporting %s evaluations in %s rounds.", number_of_evaluations, rounds + 1)
-        if number_of_evaluations > max_evaluations_per_call:
-            for rnd in range(rounds):
-                start = rnd * max_evaluations_per_call
-                end = (rnd + 1) * max_evaluations_per_call
-                AWS_CONFIG_CLIENT.put_evaluations(
-                    Evaluations=evaluations[start:end],
-                    ResultToken=event["resultToken"]
-                )
-                time.sleep(0.3)
-            start = end
-            end = number_of_evaluations
-            AWS_CONFIG_CLIENT.put_evaluations(
-                Evaluations=evaluations[start:end],
-                ResultToken=event["resultToken"]
-            )
-        else:
-            AWS_CONFIG_CLIENT.put_evaluations(
-                Evaluations=evaluations,
-                ResultToken=event["resultToken"]
-            )
 
-        AWS_S3_CLIENT = get_client("s3", event)
-        AWS_REDSHIFT_CLIENT = get_client("redshift", event)
-        AWS_ELBV2_CLIENT = get_client("elbv2", event)
-        AWS_APIGW_CLIENT = get_client("apigateway", event)
-        AWS_ES_CLIENT = get_client("es", event)
-        AWS_CONFIG_CLIENT = get_client("config", event)
-
-        evaluations.extend(assess_s3_buckets_ssl_enforcement(event))
-        evaluations.extend(assess_redshift_clusters_ssl_enforcement(event))
-        evaluations.extend(assess_elbv2_ssl_enforcement(event))
-        evaluations.extend(assess_rest_api_stages_ssl_enforcement(event))
-        evaluations.extend(assess_es_node_to_node_ssl_enforcement(event))
-
-        account_compliance_status = "COMPLIANT"
-        account_compliance_annotation = "No non-compliant resources found"
-
-        for evaluation in evaluations:
-            if evaluation.get("ComplianceType", "") == "NON_COMPLIANT":
-                account_compliance_status = "NON_COMPLIANT"
-                account_compliance_annotation = "Non-compliant resources in scope found"
-                break
-        evaluations.append(
-            build_evaluation(
-                AWS_ACCOUNT_ID,
-                account_compliance_status,
-                event,
-                "AWS::::Account",
-                annotation=account_compliance_annotation,
-            )
-        )
-        number_of_evaluations = len(evaluations)
-        if number_of_evaluations > 0:
-            max_evaluations_per_call = 100
-            rounds = number_of_evaluations // max_evaluations_per_call
-            logger.info("Reporting %s evaluations in %s rounds.", number_of_evaluations, rounds + 1)
-            if number_of_evaluations > max_evaluations_per_call:
-                for rnd in range(rounds):
-                    start = rnd * max_evaluations_per_call
-                    end = (rnd + 1) * max_evaluations_per_call
-                    AWS_CONFIG_CLIENT.put_evaluations(
-                        Evaluations=evaluations[start:end],
-                        ResultToken=event["resultToken"]
-                    )
-                    time.sleep(0.3)
-                start = end
-                end = number_of_evaluations
-                AWS_CONFIG_CLIENT.put_evaluations(
-                    Evaluations=evaluations[start:end],
-                    ResultToken=event["resultToken"]
-                )
-            else:
-                AWS_CONFIG_CLIENT.put_evaluations(
-                    Evaluations=evaluations,
-                    ResultToken=event["resultToken"]
-                )
+    logger.info(f"{compliance_type}: {annotation}")
+    evaluations.append(build_evaluation(aws_account_id, compliance_type, event, annotation=annotation))
+    submit_evaluations(aws_config_client, event, evaluations, INTERVAL_BETWEEN_API_CALLS)

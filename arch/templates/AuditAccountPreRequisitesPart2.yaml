@@ -15,9 +15,11 @@ Parameters:
     Description: prefix for roles created by this template
   PythonRuntime:
     Type: String
-    Default: 'python3.12'
-    Description:
-      The python runtime to use for the compliance dashboard
+    Default: "python3.12"
+    Description: The python runtime to use for the compliance dashboard
+  DefaultCloudProfile:
+    Type: String
+    Description: The cloud profile to use when one is not provided by an account.
 
 Conditions:
   IsAuditAccount: !Equals
@@ -25,18 +27,54 @@ Conditions:
     - !Ref AuditAccountID
 
 Resources:
-  ## GC02
-  GC02CheckIAMUsersMFALambda:
+  CloudGuardrailsCommonLayer:
+    Type: AWS::Lambda::LayerVersion
+    Properties:
+      LayerName: CloudGuardrailsCommonLayerPart2
+      CompatibleRuntimes:
+        - python3.12
+      Content: "../../src/layer/cloud_guardrails/build/CloudGuardrailsCommonLayer/"
+
+  ## GC01
+  GC01CheckIAMUsersMFALambda:
     Condition: IsAuditAccount
     Type: AWS::Lambda::Function
     Properties:
-      FunctionName: !Sub "${OrganizationName}gc02_check_iam_users_mfa"
-      Code: "../../src/lambda/gc02_check_iam_users_mfa/build/GC02CheckIAMUsersMFALambda/"
+      FunctionName: !Sub "${OrganizationName}gc01_check_iam_users_mfa"
+      Code: "../../src/lambda/gc01_check_iam_users_mfa/build/GC01CheckIAMUsersMFALambda/"
       Handler: app.lambda_handler
       Role: !Sub "arn:aws:iam::${AuditAccountID}:role/${RolePrefix}default_assessment_role"
       Runtime: !Ref PythonRuntime
       Timeout: 180
+      Layers:
+        - !Ref CloudGuardrailsCommonLayer
+      LoggingConfig:
+        LogGroup: !Sub "${OrganizationName}gc_guardrails"
+        LogFormat: "JSON"
+      Environment:
+        Variables:
+          DEFAULT_CLOUD_PROFILE: !Ref DefaultCloudProfile
 
+  GC01CheckDedicatedAdminAccountLambda:
+    Condition: IsAuditAccount
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub "${OrganizationName}gc01_check_dedicated_admin_account"
+      Code: "../../src/lambda/gc01_check_dedicated_admin_account/build/GC01CheckDedicatedAdminAccountLambda/"
+      Handler: app.lambda_handler
+      Role: !Sub "arn:aws:iam::${AuditAccountID}:role/${RolePrefix}default_assessment_role"
+      Runtime: !Ref PythonRuntime
+      Timeout: 180
+      Layers:
+        - !Ref CloudGuardrailsCommonLayer
+      LoggingConfig:
+        LogGroup: !Sub "${OrganizationName}gc_guardrails"
+        LogFormat: "JSON"
+      Environment:
+        Variables:
+          DEFAULT_CLOUD_PROFILE: !Ref DefaultCloudProfile
+
+  ## GC02
   GC02CheckIAMPasswordPolicyLambda:
     Condition: IsAuditAccount
     Type: AWS::Lambda::Function
@@ -47,3 +85,68 @@ Resources:
       Role: !Sub "arn:aws:iam::${AuditAccountID}:role/${RolePrefix}default_assessment_role"
       Runtime: !Ref PythonRuntime
       Timeout: 180
+      Layers:
+        - !Ref CloudGuardrailsCommonLayer
+      LoggingConfig:
+        LogGroup: !Sub "${OrganizationName}gc_guardrails"
+        LogFormat: "JSON"
+      Environment:
+        Variables:
+          DEFAULT_CLOUD_PROFILE: !Ref DefaultCloudProfile
+
+  GC02CheckGroupAccessConfigurationLambda:
+    Condition: IsAuditAccount
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub "${OrganizationName}gc02_check_group_access_configuration"
+      Code: "../../src/lambda/gc02_check_group_access_configuration/build/GC02CheckGroupAccessConfigurationLambda/"
+      Handler: app.lambda_handler
+      Role: !Sub "arn:aws:iam::${AuditAccountID}:role/${RolePrefix}default_assessment_role"
+      Runtime: !Ref PythonRuntime
+      Timeout: 180
+      Layers:
+        - !Ref CloudGuardrailsCommonLayer
+      LoggingConfig:
+        LogGroup: !Sub "${OrganizationName}gc_guardrails"
+        LogFormat: "JSON"
+      Environment:
+        Variables:
+          DEFAULT_CLOUD_PROFILE: !Ref DefaultCloudProfile
+
+  GC02CheckPrivilegedRolesReviewLambda:
+    Condition: IsAuditAccount
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub "${OrganizationName}gc02_check_privileged_roles_review"
+      Code: "../../src/lambda/gc02_check_privileged_roles_review/build/GC02CheckPrivilegedRolesReviewLambda/"
+      Handler: app.lambda_handler
+      Role: !Sub "arn:aws:iam::${AuditAccountID}:role/${RolePrefix}default_assessment_role"
+      Runtime: !Ref PythonRuntime
+      Timeout: 180
+      Layers:
+        - !Ref CloudGuardrailsCommonLayer
+      LoggingConfig:
+        LogGroup: !Sub "${OrganizationName}gc_guardrails"
+        LogFormat: "JSON"
+      Environment:
+        Variables:
+          DEFAULT_CLOUD_PROFILE: !Ref DefaultCloudProfile
+
+  GC02CheckAccessManagementAttestationLambda:
+    Condition: IsAuditAccount
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub "${OrganizationName}gc02_check_access_management_attestation"
+      Code: "../../src/lambda/gc02_check_access_management_attestation/build/GC02CheckAccessManagementAttestationLambda/"
+      Handler: app.lambda_handler
+      Role: !Sub "arn:aws:iam::${AuditAccountID}:role/${RolePrefix}default_assessment_role"
+      Runtime: !Ref PythonRuntime
+      Timeout: 180
+      Layers:
+        - !Ref CloudGuardrailsCommonLayer
+      LoggingConfig:
+        LogGroup: !Sub "${OrganizationName}gc_guardrails"
+        LogFormat: "JSON"
+      Environment:
+        Variables:
+          DEFAULT_CLOUD_PROFILE: !Ref DefaultCloudProfile

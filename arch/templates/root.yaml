@@ -12,50 +12,60 @@ Parameters:
     Type: String
     Default: "*CSPM_EMAIL*"
     Description: Subject to change, might not be used here
+  DefaultCloudProfile:
+    Type: String
+    Default: "3"
+    AllowedValues: [ "1", "2", "3", "4", "5", "6"]
   OrganizationId:
     Type: String
-    Default: "*ORG_ID*" 
+    Default: "*ORG_ID*"
     Description: Primary identifier for metadata of registered org
+  TenantId:
+    Type: String
+    Default: "*TENANT_ID*"
   InvokeUpdate:
     Type: String
-    Default: '17d78b5e-9745-41e4-a926-9fd9f660bf23'
+    Default: "17d78b5e-9745-41e4-a926-9fd9f660bf23"
     Description: UUID to trigger updates
   ExecutionName:
     Type: String
-    Default: 'gc-fedclient-copy-execution-role'
+    Default: "gc-fedclient-copy-execution-role"
+  ExecutionName2:
+    Type: String
+    Default: "gc-fedclient-evidence-copy-execution-role"
   RootOUID:
     Type: String
-    Default: 'r-bv5z'
+    Default: "r-bv5z"
   SecurityOUID:
     Type: String
-    Default: '**SECURITY_OUID**'
+    Default: "**SECURITY_OUID**"
   AuditAccountID:
     Type: String
-    Default: '**AUDIT_ACCOUNT_ID**'
+    Default: "**AUDIT_ACCOUNT_ID**"
   BGA1:
     Type: String
-    Default: 'bgUser1'
+    Default: "bgUser1"
   BGA2:
     Type: String
-    Default: 'bgUser2'
+    Default: "bgUser2"
   OrganizationName:
     Type: String
-    Default: 'SSC-Test'
+    Default: "SSC-Test"
   RolePrefix:
     Type: String
-    Default: 'gc-'
+    Default: "gc-"
     Description: >-
       The prefix to apply to generated role names, it is optional to set this
   AccelRolePrefix:
     Type: String
-    Default: 'ASEA-'
+    Default: "ASEA-"
     Description: >-
-      The Accelerator role prefix for priveledged access, in ASEA or LZA deployed by Proservices this could be AWSA- 
+      The Accelerator role prefix for privileged access, in ASEA or LZA deployed by Proservices this could be AWSA-
   AcceleratorRole:
     Type: String
     Description: >-
       The role used to assume access to organizational accounts, in ASEA = ASEA-PipelineRole, LZA = OrganizationAccountAccessRole could also be PBMMAccel etc. This is not optional
-    Default: 'ASEA-PipelineRole'
+    Default: "ASEA-PipelineRole"
   PipelineBucket:
     Type: String
     Description: >-
@@ -70,176 +80,21 @@ Parameters:
     AllowedValues: [true, false]
   DeployVersion:
     Type: String
-    Default: 1.0.0
+    Default: 2.0.0
 
-Resources:  
-  InvokeCustomLambdaApplyPolicyFunction:
-    DependsOn: 
-      - GuardRailsStack
-      - ApplyPolicyFunction
-    Type: Custom::InvokeCustomLambda
-    Properties:
-      Version: !Ref InvokeUpdate
-      ServiceToken: !GetAtt ApplyPolicyFunction.Arn
-
-  InvokeCustomLambdaRotateKeyFunction:
-    DependsOn: 
-      - InvokeCustomLambdaApplyPolicyFunction
-    Type: Custom::InvokeCustomLambda
-    Properties:
-      Version: !Ref InvokeUpdate
-      ServiceToken: !GetAtt RotateKeyFunction.Arn
-
-  ##################
-  # Lambda Functions
-  ##################
-
-  ApplyPolicyFunction:
-    Type: 'AWS::Lambda::Function'
-    Properties:
-      Code:
-        ZipFile: |
-          import json
-          import boto3
-          import os
-          import urllib.request
-          import logging
-          import cfnresponse
-
-          logger = logging.getLogger()
-          logger.setLevel(logging.INFO)
-          
-          org_id = os.environ.get('ORG_ID')
-          execution_arn = os.environ.get('EXECUTION_ARN')
-          api_key = os.environ.get('API_KEY')
-          api_url = os.environ.get('API_URL')
-          account_id = os.environ.get('ACCOUNT_ID')
-
-          ROUTE = 'policy'
-          
-          def apply_policy():
-            params = "?ExecutionArn="+execution_arn+'&AccountId='+org_id
-            headers = {'x-api-key': str(api_key),'Accept':'*/*'}
-
-            req = urllib.request.Request(api_url+ROUTE+params, headers=headers,method='POST')
-            with urllib.request.urlopen(req) as response:
-              if response.getcode() != 200:
-                raise Exception("Execution role arn either doesnt exist or is blocked from being added.")
-              return response.read().decode('utf-8')
-
-          def lambda_handler(event, context):
-            logger.info('got event {}'.format(event))
-            if event.get('RequestType') == 'Create' or event.get('RequestType') == 'Update':
-              try:
-                response = apply_policy()
-                logger.info('Sucessfully applied policy: {}'.format(response))
-                cfnresponse.send(event, context, cfnresponse.SUCCESS, {})
-              except Exception as e:
-                logger.error(e,exc_info=True)
-                cfnresponse.send(event, context, cfnresponse.FAILED, {})
-            elif event.get('RequestType') == 'Delete':
-              cfnresponse.send(event, context, cfnresponse.SUCCESS, {})
-            else:
-              cfnresponse.send(event, context, cfnresponse.FAILED, {})
-      Handler: index.lambda_handler
-      Role: !GetAtt LambdaExecutionRole.Arn
-      Runtime: python3.9
-      Environment:
-        Variables:
-          API_KEY: !Ref ApiKey
-          API_URL: !Ref ApiUrl
-          ORG_ID: !Ref OrganizationId
-          EXECUTION_ARN: !Sub 'arn:aws:iam::${AuditAccountID}:role/${ExecutionName}${AWS::Region}'
-          ACCOUNT_ID: !Sub '${AuditAccountID}'
-
-  RotateKeyFunction:
-    Type: 'AWS::Lambda::Function'
-    Properties:
-      Code:
-        ZipFile: |
-          import json
-          import boto3
-          import os
-          import urllib.request
-          import logging
-          import cfnresponse
-
-          logger = logging.getLogger()
-          logger.setLevel(logging.INFO)
-          
-          org_id = os.environ.get('ORG_ID')
-          account_id = os.environ.get('ACCOUNT_ID')
-          api_key = os.environ.get('API_KEY')
-          api_url = os.environ.get('API_URL')
-
-          ROUTE = 'rotate'
-          
-          def rotate_key(org_id):
-            params = "?id="+org_id
-            headers = {'x-api-key': str(api_key),'Accept':'*/*'}
-
-            req = urllib.request.Request(api_url+ROUTE+params, headers=headers)
-            with urllib.request.urlopen(req) as response:
-              if response.getcode() != 200:
-                raise Exception("Failed to destroy api-key, notify an SSC administrator.")
-              
-          def lambda_handler(event, context):
-            logger.info('got event {}'.format(event))
-            if event.get('RequestType') == 'Create' or event.get('RequestType') == 'Update':
-              try:
-                rotate_key(org_id)
-                logger.info('Rotated API key for account: {}'.format(account_id))
-                cfnresponse.send(event, context, cfnresponse.SUCCESS, {})
-              except Exception as e:
-                logger.error(e,exc_info=True)
-                cfnresponse.send(event, context, cfnresponse.FAILED, {})
-            elif event.get('RequestType') == 'Delete':
-              cfnresponse.send(event, context, cfnresponse.SUCCESS, {})
-            else:
-              cfnresponse.send(event, context, cfnresponse.FAILED, {})
-      Handler: index.lambda_handler
-      Role: !GetAtt LambdaExecutionRole.Arn
-      Runtime: python3.9
-      Environment:
-        Variables:
-          ORG_ID: !Ref OrganizationId
-          ACCOUNT_ID: !Sub '${AWS::AccountId}'
-          API_KEY: !Ref ApiKey
-          API_URL: !Ref ApiUrl
-
-  LambdaExecutionRole:
-    Type: 'AWS::IAM::Role'
-    Properties:
-      AssumeRolePolicyDocument:
-        Version: '2012-10-17'
-        Statement:
-          - Effect: Allow
-            Principal:
-              Service: lambda.amazonaws.com
-            Action:
-              - sts:AssumeRole
-      Path: '/'
-      Policies:
-          - PolicyName: root
-            PolicyDocument:
-              Version: "2012-10-17"
-              Statement:
-                - Effect: Allow
-                  Action:
-                    - logs:CreateLogGroup
-                    - logs:CreateLogStream
-                    - logs:PutLogEvents
-                  Resource: arn:aws:logs:*:*:*
-                
+Resources:
   GuardRailsStack:
     Type: AWS::CloudFormation::Stack
     Properties:
       TemplateURL: !Sub https://${PipelineBucket}.s3.${AWS::Region}.amazonaws.com/${DeployVersion}/main.yaml
       Parameters:
         ExecutionName: !Ref ExecutionName
+        ExecutionName2: !Ref ExecutionName2
         OrganizationId: !Ref OrganizationId
         OrganizationName: !Ref OrganizationName
+        TenantId: !Ref TenantId
         RolePrefix: !Ref RolePrefix
+        DefaultCloudProfile: !Ref DefaultCloudProfile
         AccelRolePrefix: !Ref AccelRolePrefix
         AcceleratorRole: !Ref AcceleratorRole
         SecurityOUID: !Ref SecurityOUID
@@ -249,11 +104,12 @@ Resources:
         DestBucketName: !Ref DestBucketName
         DeployRoles: !Ref DeployRoles
         DeployVersion: !Ref DeployVersion
+        InvokeUpdate: !Ref InvokeUpdate
         BGA1: !Ref BGA1
         BGA2: !Ref BGA2
+
       Tags:
         - Key: "UpdateTrigger"
           Value: !Ref InvokeUpdate
         - Key: "DeployVersion"
           Value: !Ref DeployVersion
-

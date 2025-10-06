@@ -70,24 +70,46 @@ def apply_lambda_permissions():
     i_result = 0
     permissions_validated = 0
     lambda_functions = {
-        f"{organization_name}gc01_check_attestation_letter": ["GC01CheckAttestationLetterLambda"],
+        f"{organization_name}gc01_check_alerts_flag_misuse": ["GC01CheckAlertsFlagMisuseLambda"],
+        f"{organization_name}gc01_check_dedicated_admin_account": ["GC01CheckDedicatedAdminAccountLambda"],
+        f"{organization_name}gc01_check_federated_users_mfa": ["GC01CheckFederatedUsersMFALambda"],
+        f"{organization_name}gc01_check_iam_users_mfa": ["GC01CheckIAMUsersMFALambda"],
+        f"{organization_name}gc01_check_mfa_digital_policy": ["GC01CheckMFADigitalPolicy"],
+        f"{organization_name}gc01_check_monitoring_and_logging": ["GC01CheckMonitoringAndLoggingLambda"],
         f"{organization_name}gc01_check_root_mfa": ["GC01CheckRootAccountMFAEnabledLambda"],
-        f"{organization_name}gc02_check_account_mgmt_plan": ["GC02CheckAccountManagementPlanLambda"],
-        f"{organization_name}gc02_check_iam_users_mfa": ["GC02CheckIAMUsersMFALambda"],
+        f"{organization_name}gc02_check_access_management_attestation": ["GC02CheckAccessManagementAttestationLambda"],
+        f"{organization_name}gc02_check_group_access_configuration": ["GC02CheckGroupAccessConfigurationLambda"],
         f"{organization_name}gc02_check_iam_password_policy": ["GC02CheckIAMPasswordPolicyLambda"],
-        f"{organization_name}gc03_check_iam_cloudwatch_alarms": ["GC03CheckIAMCloudWatchAlarmsLambda"],
+        f"{organization_name}gc02_check_password_protection_mechanisms": ["GC02CheckPasswordProtectionMechanismsLambda"],
+        f"{organization_name}gc02_check_privileged_roles_review": ["GC02CheckPrivilegedRolesReviewLambda"],
+        f"{organization_name}gc03_check_endpoint_access_config": ["GC03CheckEndpointAccessConfigLambda"],
+        f"{organization_name}gc03_check_trusted_devices_admin_access": ["GC03CheckTrustedDevicesAdminAccessLambda"],
+        f"{organization_name}gc04_check_alerts_flag_misuse": ["GC04CheckAlertsFlagMisuseLambda"],
         f"{organization_name}gc04_check_enterprise_monitoring": ["GC04CheckEnterpriseMonitoringLambda"],
         f"{organization_name}gc05_check_data_location": ["GC05CheckDataLocationLambda"],
         f"{organization_name}gc06_check_encryption_at_rest_part1": ["GC06CheckEncryptionAtRestPart1Lambda"],
         f"{organization_name}gc06_check_encryption_at_rest_part2": ["GC06CheckEncryptionAtRestPart2Lambda"],
-        f"{organization_name}gc07_check_secure_network_transmission_policy": ["GC07CheckSecureNetworkTransmissionPolicyLambda"],
+        f"{organization_name}gc07_check_certificate_authorities": ["GC07CheckCertificateAuthoritiesLambda"],
+        f"{organization_name}gc07_check_cryptographic_algorithms": ["GC07CheckCryptographicAlgorithmsLambda"],
         f"{organization_name}gc07_check_encryption_in_transit": ["GC07CheckEncryptionInTransitLambda"],
+        f"{organization_name}gc07_check_secure_network_transmission_policy": ["GC07CheckSecureNetworkTransmissionPolicyLambda"],
+        f"{organization_name}gc08_check_cloud_deployment_guide": ["GC08CheckCloudDeploymentGuideLambda"],
+        f"{organization_name}gc08_check_cloud_segmentation_design": ["GC08CheckCloudSegmentationDesignLambda"],
         f"{organization_name}gc08_check_target_network_architecture": ["GC08CheckTargetNetworkArchitectureLambda"],
         f"{organization_name}gc09_check_netsec_architecture": ["GC09CheckNetworkSecurityArchitectureDocumentLambda"],
-        f"{organization_name}gc10_confirmation_of_mou": ["GC10CheckSignedMOULambda"],
+        f"{organization_name}gc09_check_non_public_storage_accounts": ["GC09CheckNonPublicStorageAccountsLambda"],
+        f"{organization_name}gc10_check_cyber_center_sensors": ["GC10CheckCyberCenterSensorsLambda"],
+        f"{organization_name}gc11_check_monitoring_all_users": ["GC11CheckMonitoringAllUsersLambda"],
+        f"{organization_name}gc11_check_monitoring_use_cases": ["GC11CheckMonitoringUseCasesLambda"],
+        f"{organization_name}gc11_check_policy_event_logging": ["GC11CheckPolicyEventLoggingLambda"],
         f"{organization_name}gc11_check_security_contact": ["GC11CheckSecurityContactLambda"],
+        f"{organization_name}gc11_check_timezone": ["GC11CheckTimezoneLambda"],
         f"{organization_name}gc11_check_trail_logging": ["GC11CheckTrailLoggingLambda"],
-        f"{organization_name}gc12_check_marketplace": ["GC12CheckMarketplacesLambda"],
+        f"{organization_name}gc12_check_private_marketplace": ["GC12CheckPrivateMarketplacesLambda"],
+        f"{organization_name}gc13_check_emergency_account_alerts": ["GC13CheckEmergencyAccountAlertsLambda"],
+        f"{organization_name}gc13_check_emergency_account_management": ["GC13CheckEmergencyAccountManagementLambda"],
+        f"{organization_name}gc13_check_emergency_account_mgmt_approvals": ["GC13CheckEmergencyAccountMgmtApprovalsLambda"],
+        f"{organization_name}gc13_check_emergency_account_testing": ["GC13CheckEmergencyAccountTestingLambda"],
     }
     accounts = get_accounts()
     client = boto3.client("lambda")
@@ -107,17 +129,29 @@ def apply_lambda_permissions():
                         # backing off the API to avoid throttling
                         time.sleep(0.05)
                     for statement in json.loads(response.get("Policy")).get("Statement"):
+                        try:
+                            service = statement.get("Principal").get("Service")
+                        except AttributeError:
+                            service = "*"
+                        
                         if (
-                            statement.get("Principal").get("Service") == "config.amazonaws.com"
+                            service == "config.amazonaws.com"
                             and statement.get("Action") == "lambda:InvokeFunction"
                             and statement.get("Effect") == "Allow"
                         ):
                             # this is an authorized account
-                            source_account = (statement.get("Condition").get("StringEquals").get("AWS:SourceAccount"))
-                            authorized_accounts.append(source_account)
+                            try:
+                                source_account = (statement.get("Condition").get("StringEquals").get("AWS:SourceAccount"))
+                                authorized_accounts.append(source_account)
+                            except AttributeError:
+                                source_account = ""
+                            
                             if statement.get("Sid", ""):
                                 sids_in_use.append(statement.get("Sid", ""))
+                            
                     b_completed = True
+                    
+
                 except botocore.exceptions.ClientError as error:
                     # are we being throttled?
                     if error.response["Error"]["Code"] == "TooManyRequestsException":
@@ -132,6 +166,7 @@ def apply_lambda_permissions():
                     # let's assume the Lambda function permission does not exist
                     logger.error("Unknown Exception trying to get policy for Lambda function '%s'.", lambda_name)
                     b_retry = False
+            
             i = 0
             b_throttle = False
             for account in accounts:
@@ -143,19 +178,21 @@ def apply_lambda_permissions():
                     permissions_validated += 1
                     continue
                 # we need to add the permission
-                compliant_resource_name = "{}Permission{}".format(lambda_name.replace("_", "").replace("-", ""), i)
+                compliant_resource_name = f"p{i + 1}"
                 # ensure we are using a unique Sid
                 while compliant_resource_name in sids_in_use:
                     i += 1
-                    compliant_resource_name = "{}Permission{}".format(lambda_name.replace("_", "").replace("-", ""), i)
+                    compliant_resource_name = f"p{i + 1}"
                 b_retry = True
                 b_permission_added = False
+            
                 while b_retry and (not b_permission_added):
                     # if we've been throttled, sleep 50ms every 5 calls
                     if b_throttle and (i_requests % 5 == 0):
                         time.sleep(0.05)
                     try:
                         i_requests += 1
+                        
                         response = client.add_permission(
                             Action="lambda:InvokeFunction",
                             FunctionName=lambda_name,
@@ -163,6 +200,7 @@ def apply_lambda_permissions():
                             SourceAccount=account_id,
                             StatementId=compliant_resource_name,
                         )
+                    
                         if not response.get("Statement"):
                             # invalid response
                             logger.error("Invalid response adding permission for account '%s' to the '%s'", account_id, lambda_name)
@@ -229,7 +267,7 @@ def lambda_handler(event, context):
     event -- the event variable given in the lambda handler
     context -- the context variable given in the lambda handler
     """
-    logger.info("got event %s", event)
+    logger.info("Received Event: %s", json.dumps(event, indent=2))
     response_data = {}
     if event["RequestType"] == "Create":
         # try to add the lambda permissions

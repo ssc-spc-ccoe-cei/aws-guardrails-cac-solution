@@ -7,34 +7,43 @@ Metadata:
       - Label:
           default: Required Parameters
         Parameters:
-          - OrganizationName
-          - OrganizationId
-          - ExecutionName
-          - RootOUID
-          - AuditAccountID
-          - SecurityOUID
-          - RolePrefix
-          - AccelRolePrefix
           - AcceleratorRole
-          - PipelineBucket
+          - AccelRolePrefix
+          - AuditAccountID
           - BGA1
           - BGA2
+          - ExecutionName
+          - ExecutionName2
+          - OrganizationId
+          - OrganizationName
+          - PipelineBucket
+          - RolePrefix
+          - RootOUID
+          - SecurityOUID
+          - TenantId
+          - DefaultCloudProfile
       - Label:
           default: Optional Parameters
         Parameters:
-          - EvidenceBucketName
-          - AWSConfigConformsBucketName
           - AdditionalAssessmentAdminRoleARN
-          - DestBucketName
+          - AWSConfigConformsBucketName
           - DeployRoles
           - DeployVersion
+          - DestBucketName
+          - EvidenceBucketName
     ParameterLabels:
       OrganizationName:
         default: The name of the organization
       OrganizationId:
         default: The ID of the organization
+      TenantId:
+        default: The ID of the tenant
+      DefaultCloudProfile:
+        default: The cloud profile to use when one is not provided by an account
       ExecutionName:
-        default: Execution name of the IAM role that is passed to GC permission's
+        default: Execution name of the IAM role that is passed to GC permission's for report files
+      ExecutionName2:
+        default: Execution name of the IAM role that is passed to GC permission's for evidence files
       RootOUID:
         default: ID of the AWS Organizations Root OU
       AuditAccountID:
@@ -48,7 +57,7 @@ Metadata:
       RolePrefix:
         default: The prefix to apply to generated role names
       AccelRolePrefix:
-        default: The Accelerator role prefix for priveledged access, in ASEA or LZA deployed by ProServices this could be AWSA- etc
+        default: The Accelerator role prefix for privileged access, in ASEA or LZA deployed by ProServices this could be AWSA- etc
       AcceleratorRole:
         default: The role used to assume access to organizational accounts, in ASEA = ASEA-PipelineRole, LZA = OrganizationAccountAccessRole could also be PBMMAccel etc.
       PipelineBucket:
@@ -81,10 +90,22 @@ Parameters:
     Type: String
     Description: >-
       Organization Id provided by root.yaml.
+  TenantId:
+    Type: String
+    Description: >-
+      Tenant Id provided by root.yaml.
+  DefaultCloudProfile:
+    Type: String
+    Description: >-
+      The cloud profile to use when one is not provided by an account.
   ExecutionName:
     Type: String
     Description: >-
-      Execution name of the IAM role that is passed to GC permission's.
+      Execution name of the IAM role that is passed to GC permission's for report files.
+  ExecutionName2:
+    Type: String
+    Description: >-
+      Execution name of the IAM role that is passed to GC permission's for evidence files.
   RootOUID:
     Type: String
     Default: ""
@@ -115,7 +136,7 @@ Parameters:
     Type: String
     Default: "AWSA-"
     Description: >-
-      The Accelerator role prefix for priveledged access, in ASEA or LZA deployed by ProServices this could be AWSA- etc
+      The Accelerator role prefix for privileged access, in ASEA or LZA deployed by ProServices this could be AWSA- etc
   AcceleratorRole:
     Type: String
     Description: >-
@@ -148,33 +169,31 @@ Parameters:
     Default: "CloudBrokering"
   GC04EnterpriseMonitoringIAMTrustedPrincipal:
     Type: String
-    Default: "arn:aws:iam::939755092653:root"        
+    Default: "arn:aws:iam::939755092653:root"
   DeployRoles:
     Type: String
     Default: false
     AllowedValues: [true, false]
   InvokeUpdate:
     Type: String
-    Default: '17d78b5e-9745-41e4-a926-9fd9f660bf23'
   DeployVersion:
     Type: String
-    Default: 1.0.0
   PythonRuntime:
     Type: String
-    Default: 'python3.12'
-    Description:
-      The python runtime to use for the compliance dashboard
+    Default: "python3.12"
+    Description: The python runtime to use for the compliance dashboard
 
 Conditions:
-  GenerateEvidenceBucketName: !Equals [ !Ref EvidenceBucketName, "" ]
-  GenerateAWSConfigConformsBucketName: !Equals [ !Ref AWSConfigConformsBucketName, "" ]
-  DeployRoles: !Equals [ !Ref DeployRoles, "true" ]
+  GenerateEvidenceBucketName: !Equals [!Ref EvidenceBucketName, ""]
+  GenerateAWSConfigConformsBucketName:
+    !Equals [!Ref AWSConfigConformsBucketName, ""]
+  DeployRoles: !Equals [!Ref DeployRoles, "true"]
 
 Resources:
   ##################################################
   # Part 1 - Management Account Pre-requisites
   ##################################################
-  # Priveledged Role Creation
+  # Privileged Role Creation
   LambdaCreateRole:
     Type: "AWS::IAM::Role"
     Condition: DeployRoles
@@ -191,6 +210,23 @@ Resources:
               - sts:AssumeRole
       Path: "/"
       Policies:
+        - PolicyName: self_invoke
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - lambda:InvokeFunctionUrl
+                  - lambda:InvokeFunction
+                  - lambda:GetFunctionEventInvokeConfig
+                  - lambda:GetFunction
+                  - lambda:InvokeAsync
+                  - lambda:GetAlias
+                Resource: !Sub "arn:${AWS::Partition}:lambda:*:${AWS::AccountId}:function:${OrganizationName}aws_create_role"
+              - Effect: Allow
+                Action:
+                  - lambda:ListFunctions
+                Resource: "*"
         - PolicyName: assume_role
           PolicyDocument:
             Version: "2012-10-17"
@@ -203,7 +239,8 @@ Resources:
                 Resource: !Sub arn:${AWS::Partition}:iam::*:role/${AcceleratorRole}
               - Effect: Allow
                 Action:
-                  - "organizations:ListAccounts"
+                  - "organizations:Describe*"
+                  - "organizations:List*"
                 Resource:
                   - "*"
 
@@ -211,7 +248,7 @@ Resources:
     Type: Custom::InvokeCustomLambda
     Condition: DeployRoles
     Properties:
-      Version: 16
+      InvokeUpdate: !Ref InvokeUpdate
       ServiceToken: !GetAtt CreateRoleLambda.Arn
       TrustPrincipal: !Sub arn:${AWS::Partition}:iam::${AuditAccountID}:root
       SwitchRole: !Ref AcceleratorRole
@@ -223,64 +260,80 @@ Resources:
               "Version": "2012-10-17",
                 "Statement": [{
                   "Action": [
-                    "config:PutEvaluations",
-                    "cloudtrail:DescribeTrails",
-                    "cloudtrail:GetTrailStatus",
-                    "cloudtrail:ListTrails",
+                    "acm:Describe*",
+                    "acm:Get*",
+                    "acm:List*",
                     "apigateway:GET",
-                    "backup:ListRecoveryPointsByBackupVault",
-                    "backup:ListBackupVaults",
+                    "aws-marketplace:ListEntities",
+                    "backup:List*",
                     "cassandra:Select",
+                    "cloudfront:Describe*",
+                    "cloudfront:Get*",
+                    "cloudfront:List*",
+                    "cloudtrail:DescribeTrails",
+                    "cloudtrail:Get*",
+                    "cloudtrail:ListTrails",
+                    "cloudtrail:LookupEvents",
                     "codebuild:BatchGetProjects",
                     "codebuild:ListProjects",
+                    "config:Describe*",
+                    "config:Get*",
+                    "config:PutEvaluations",
                     "dax:DescribeClusters",
+                    "docdb-elastic:List*",
                     "dynamodb:DescribeTable",
                     "dynamodb:ListTables",
-                    "docdb-elastic:ListClusters",
-                    "docdb-elastic:ListClusterSnapshots",
-                    "ec2:DescribeRegions",
-                    "ec2:DescribeVolumes",
+                    "ec2:Describe*",
                     "ec2:GetEbsEncryptionByDefault",
-                    "elasticfilesystem:DescribeFileSystems",
                     "eks:DescribeCluster",
                     "eks:ListClusters",
-                    "elasticache:DescribeCacheClusters",
-                    "elasticache:DescribeSnapshots",
+                    "elasticache:Describe*",
+                    "elasticfilesystem:DescribeFileSystems",
+                    "events:List*",
+                    "guardduty:ListDetectors",
+                    "iam:GenerateCredentialReport",
+                    "iam:Get*",
+                    "iam:List*",
+                    "identitystore:ListUsers",
+                    "identitystore:ListGroups",
                     "kinesis:DescribeStream",
                     "kinesis:ListStreams",
-                    "memorydb:DescribeClusters",
-                    "memorydb:DescribeSnapshots",
+                    "memorydb:Describe*",
+                    "organizations:ListTagsForResource",
+                    "organizations:Describe*",
+                    "organizations:List*",
+                    "iam:Simulate*",
+                    "iam:GetContextKeysForPrincipalPolicy",
                     "qldb:DescribeLedger",
                     "qldb:ListLedgers",
-                    "rds:DescribeDBClusters",
-                    "rds:DescribeDBClusterSnapshots",
-                    "rds:DescribeDBInstances",
-                    "rds:DescribeDBSnapshots",
+                    "rds:Describe*",
                     "resource-explorer-2:ListIndexes",
                     "resource-explorer-2:Search",
-                    "s3:GetEncryptionConfiguration",
-                    "s3:GetBucketLocation",
-                    "s3:GetBucketPolicy",
-                    "s3:ListAllMyBuckets",
-                    "s3:ListBucket",
+                    "sso:List*",
+                    "sso:Describe*",
+                    "sso:GetInlinePolicyForPermissionSet",
+                    "s3:Get*",
+                    "s3:GetBucketPublicAccessBlock",
+                    "s3:List*",
+                    "sns:GetSubscriptionAttributes",
                     "sns:GetTopicAttributes",
-                    "sns:ListTopics",
-                    "timestream:DescribeEndpoints",
-                    "timestream:ListDatabases",
-                    "timestream:ListTables",
+                    "sns:List*",
                     "tag:GetResources",
-                    "iam:GenerateCredentialReport",
-                    "iam:GetAccountPasswordPolicy",
-                    "iam:GetCredentialReport",
-                    "iam:GetLoginProfile",
-                    "iam:GetRole",
-                    "iam:ListAttachedRolePolicies",
-                    "iam:ListMFADevices",
-                    "iam:ListUsers",
-                    "iam:ListRoles",
-                    "aws-marketplace:ListEntities",
-                    "organizations:DescribeOrganization",
-                    "organizations:ListAccounts"
+                    "timestream:DescribeEndpoints",
+                    "timestream:List*",
+                    "iam:Simulate*",
+                    "timestream:DescribeEndpoints",
+                    "timestream:List*",
+                    "iam:GetContextKeysForPrincipalPolicy",
+                    "iam:SimulatePrincipalPolicy",
+                    "aws-marketplace:Li*",
+                    "aws-marketplace:D*",
+                    "s3:GetBucket*",
+                    "aws-marketplace:GetResourcePolicy",
+                    "aws-marketplace:ListTagsForResource",
+                    "identitystore:List*",
+                    "es:Describe*",
+                    "es:ListDomainNames"
                   ],
                   "Resource": [
                     "*"
@@ -290,20 +343,9 @@ Resources:
                 },
                 {
                   "Action": [
-                    "s3:GetObjectRetention",
-                    "s3:GetObjectVersionTagging",
-                    "s3:GetObjectAttributes",
+                    "s3:Get*",
                     "s3:ListBucket",
-                    "s3:GetObjectLegalHold",
-                    "s3:GetObjectVersionAttributes",
-                    "s3:GetObjectVersionTorrent",
-                    "s3:GetObjectAcl",
-                    "s3:GetObject",
-                    "s3:GetObjectTorrent",
-                    "s3:GetObjectVersionAcl",
-                    "s3:GetObjectTagging",
-                    "s3:GetObjectVersionForReplication",
-                    "s3:GetObjectVersion"
+                    "s3:GetBucketPublicAccessBlock"
                   ],
                   "Resource": [
                     "arn:${AWS::Partition}:s3:::${ClientEvidenceBucket}/*",
@@ -316,7 +358,8 @@ Resources:
                 },
                 {
                   "Action": [
-                    "s3:ListAllMyBuckets"
+                    "s3:ListAllMyBuckets",
+                    "s3:GetBucketPublicAccessBlock"
                   ],
                   "Resource": "*",
                   "Effect": "Allow",
@@ -353,7 +396,7 @@ Resources:
     Type: Custom::InvokeCustomLambda
     Condition: DeployRoles
     Properties:
-      Version: 16
+      InvokeUpdate: !Ref InvokeUpdate
       ServiceToken: !GetAtt CreateRoleLambda.Arn
       TrustPrincipal: !Sub arn:${AWS::Partition}:iam::${AuditAccountID}:root
       SwitchRole: !Ref AcceleratorRole
@@ -364,66 +407,66 @@ Resources:
             "Version": "2012-10-17",
             "Statement": [{
               "Action": [
-                "config:PutEvaluations",
-                "cloudtrail:DescribeTrails",
-                "cloudtrail:GetTrailStatus",
-                "cloudtrail:ListTrails",
+                "acm:Describe*",
+                "iam:Simulate*",
+                "acm:Get*",
+                "acm:List*",
                 "apigateway:GET",
-                "backup:ListRecoveryPointsByBackupVault",
-                "backup:ListBackupVaults",
+                "backup:List*",
                 "cassandra:Select",
+                "cloudfront:Describe*",
+                "cloudfront:Get*",
+                "cloudfront:List*",
+                "cloudtrail:DescribeTrails",
+                "cloudtrail:Get*",
+                "cloudtrail:ListTrails",
+                "cloudtrail:LookupEvents",
                 "codebuild:BatchGetProjects",
                 "codebuild:ListProjects",
+                "config:Describe*",
+                "config:Get*",
+                "config:PutEvaluations",
                 "dax:DescribeClusters",
-                "dynamodb:DescribeTable",
-                "dynamodb:ListTables",
                 "docdb-elastic:ListClusters",
                 "docdb-elastic:ListClusterSnapshots",
-                "ec2:DescribeRegions",
-                "ec2:DescribeVolumes",
+                "dynamodb:DescribeTable",
+                "dynamodb:ListTables",
+                "ec2:Describe*",
                 "ec2:GetEbsEncryptionByDefault",
-                "elasticfilesystem:DescribeFileSystems",
                 "eks:DescribeCluster",
                 "eks:ListClusters",
-                "elasticache:DescribeCacheClusters",
-                "elasticache:DescribeSnapshots",
+                "elasticache:Describe*",
+                "elasticfilesystem:DescribeFileSystems",
+                "elasticloadbalancing:Describe*",
+                "es:Describe*",
+                "es:ListDomainNames",
                 "kinesis:DescribeStream",
                 "kinesis:ListStreams",
-                "memorydb:DescribeClusters",
-                "memorydb:DescribeSnapshots",
+                "memorydb:Describe*",
+                "organizations:List*",
                 "qldb:DescribeLedger",
                 "qldb:ListLedgers",
-                "rds:DescribeDBClusters",
-                "rds:DescribeDBClusterSnapshots",
-                "rds:DescribeDBInstances",
-                "rds:DescribeDBSnapshots",
+                "rds:Describe*",
+                "redshift:Describe*",
                 "resource-explorer-2:ListIndexes",
                 "resource-explorer-2:Search",
-                "s3:GetEncryptionConfiguration",
-                "s3:GetBucketLocation",
-                "s3:GetBucketPolicy",
-                "s3:ListAllMyBuckets",
-                "s3:ListBucket",
+                "s3:Get*",
+                "s3:GetBucketPublicAccessBlock",
+                "s3:List*",
                 "sns:GetTopicAttributes",
                 "sns:ListTopics",
-                "timestream:DescribeEndpoints",
-                "timestream:ListDatabases",
-                "timestream:ListTables",
                 "tag:GetResources",
-                "s3:ListAllMyBuckets",
-                "s3:ListBucket",
-                "s3:GetBucketPolicy",
-                "redshift:DescribeClusters",
-                "redshift:DescribeClusterParameters",
-                "apigateway:GET",
-                "elasticloadbalancing:DescribeListeners",
-                "elasticloadbalancing:DescribeLoadBalancers",
-                "es:ListDomainNames",
-                "es:DescribeElasticsearchDomain",
-                "es:DescribeElasticsearchDomains",
-                "es:DescribeDomain",
-                "es:DescribeDomains",
-                "tag:GetResources"
+                "timestream:DescribeEndpoints",
+                "timestream:List*",
+                "iam:GetContextKeysForPrincipalPolicy",
+                "iam:SimulatePrincipalPolicy",
+                "aws-marketplace:Li*",
+                "aws-marketplace:D*",
+                "s3:GetBucket*",
+                "aws-marketplace:GetResourcePolicy",
+                "aws-marketplace:ListTagsForResource",
+                "identitystore:List*"
+
               ],
               "Resource": [
                 "*"
@@ -463,6 +506,9 @@ Resources:
               - "logs:CreateLogGroup"
               - "logs:CreateLogStream"
               - "logs:PutLogEvents"
+              - "es:Describe*"
+              - "identitystore:List*"
+
             Resource:
               - !Sub "arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/lambda/${OrganizationName}gc*"
             Effect: Allow
@@ -470,7 +516,10 @@ Resources:
             Action:
               - "organizations:EnableAWSServiceAccess"
               - "organizations:RegisterDelegatedAdministrator"
-              - "organizations:ListDelegatedAdministrators"
+              - "organizations:Describe*"
+              - "organizations:List*"
+              - "iam:Simulate*"
+              - "iam:GetContextKeysForPrincipalPolicy"
             Resource: "*"
             Effect: Allow
       PolicyName: gc_setup_config_lambda_execution_role_policy
@@ -544,8 +593,10 @@ Resources:
             Action:
               - "organizations:EnableAWSServiceAccess"
               - "organizations:RegisterDelegatedAdministrator"
-              - "organizations:ListDelegatedAdministrators"
-              - "organizations:ListAWSServiceAccessForOrganization"
+              - "organizations:Describe*"
+              - "organizations:List*"
+              - "iam:Simulate*"
+              - "iam:GetContextKeysForPrincipalPolicy"
             Resource: "*"
             Effect: Allow
       PolicyName: !Sub "${OrganizationName}setup_auditmanager_lambda_execution_role_policy"
@@ -604,6 +655,39 @@ Resources:
       Runtime: !Ref PythonRuntime
       Timeout: 90
 
+  # OpenSearch Access
+  GCLambdaExecutionRoleOpenSearchPolicy:
+    Type: AWS::IAM::Policy
+    Properties:
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: AllowOpenSearchAccess
+            Action:
+              - "es:Desc*"
+            Resource:
+              - "*"
+            Effect: Allow
+      PolicyName: !Sub "${OrganizationName}GCLambdaExecutionRoleOpenSearchPolicy"
+      Roles:
+        - !Ref GCLambdaExecutionRole2
+  
+  # MarketPlace Access
+  GCLambdaExecutionRoleMarketPlacePolicy:
+    Type: AWS::IAM::Policy
+    Properties:
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: AllowMarketPlaceAccess
+            Action:
+              - "aws-marketplace:Li*"
+            Resource:
+              - "*"
+            Effect: Allow
+      PolicyName: !Sub "${OrganizationName}GCLambdaExecutionRoleMarketPlacePolicy"
+      Roles:
+        - !Ref GCLambdaExecutionRole2
   GenerateEvidenceBucketName:
     Type: Custom::GenerateEvidenceBucketName
     Condition: GenerateEvidenceBucketName
@@ -618,19 +702,29 @@ Resources:
     Properties:
       Description: Name of the Evidence Bucket
       # unique ssm param key
-      Name: '/gc_guardrails/s3/evidence_bucket'
+      Name: "/gc_guardrails/s3/evidence_bucket"
       Type: String
-      Value: !If [ GenerateEvidenceBucketName, !GetAtt GenerateEvidenceBucketName.EvidenceBucketName, !Ref EvidenceBucketName ]
+      Value:
+        !If [
+          GenerateEvidenceBucketName,
+          !GetAtt GenerateEvidenceBucketName.EvidenceBucketName,
+          !Ref EvidenceBucketName,
+        ]
 
   AWSConfigBucketSSMParam:
     Type: AWS::SSM::Parameter
     Properties:
       Description: Name of the AWS Config Bucket
       # unique ssm param key
-      Name: '/gc_guardrails/s3/aws_config_bucket'
+      Name: "/gc_guardrails/s3/aws_config_bucket"
       Type: String
-      Value: !If [ GenerateAWSConfigConformsBucketName, !GetAtt GenerateEvidenceBucketName.AWSConfigBucketName, !Ref AWSConfigConformsBucketName ]
-  
+      Value:
+        !If [
+          GenerateAWSConfigConformsBucketName,
+          !GetAtt GenerateEvidenceBucketName.AWSConfigBucketName,
+          !Ref AWSConfigConformsBucketName,
+        ]
+
   ##################################################
   # Part 2 - Audit Account Pre-requisites
   ##################################################
@@ -639,7 +733,7 @@ Resources:
     Properties:
       AutoDeployment:
         Enabled: true
-        RetainStacksOnAccountRemoval: true
+        RetainStacksOnAccountRemoval: false
       Capabilities:
         - CAPABILITY_IAM
         - CAPABILITY_NAMED_IAM
@@ -654,16 +748,38 @@ Resources:
       Parameters:
         - ParameterKey: OrganizationName
           ParameterValue: !Ref OrganizationName
+        - ParameterKey: OrganizationId
+          ParameterValue: !Ref OrganizationId
+        - ParameterKey: DestBucketName
+          ParameterValue: !Ref DestBucketName
+        - ParameterKey: ExecutionName
+          ParameterValue: !Ref ExecutionName2
         - ParameterKey: AuditAccountID
           ParameterValue: !Ref AuditAccountID
         - ParameterKey: EvidenceBucketName
-          ParameterValue: !If [ GenerateEvidenceBucketName, !GetAtt GenerateEvidenceBucketName.EvidenceBucketName, !Ref EvidenceBucketName ]
+          ParameterValue:
+            !If [
+              GenerateEvidenceBucketName,
+              !GetAtt GenerateEvidenceBucketName.EvidenceBucketName,
+              !Ref EvidenceBucketName,
+            ]
         - ParameterKey: AWSConfigConformsBucketName
-          ParameterValue: !If [ GenerateAWSConfigConformsBucketName, !GetAtt GenerateEvidenceBucketName.AWSConfigBucketName, !Ref AWSConfigConformsBucketName ]
+          ParameterValue:
+            !If [
+              GenerateAWSConfigConformsBucketName,
+              !GetAtt GenerateEvidenceBucketName.AWSConfigBucketName,
+              !Ref AWSConfigConformsBucketName,
+            ]
         - ParameterKey: RolePrefix
           ParameterValue: !Ref RolePrefix
         - ParameterKey: AccelRolePrefix
           ParameterValue: !Ref AccelRolePrefix
+        - ParameterKey: DefaultCloudProfile
+          ParameterValue: !Ref DefaultCloudProfile
+        - ParameterKey: DeployVersion
+          ParameterValue: !Ref DeployVersion
+        - ParameterKey: InvokeUpdate
+          ParameterValue: !Ref InvokeUpdate
       PermissionModel: SERVICE_MANAGED
       StackInstancesGroup:
         - DeploymentTargets:
@@ -684,7 +800,7 @@ Resources:
     Properties:
       AutoDeployment:
         Enabled: true
-        RetainStacksOnAccountRemoval: true
+        RetainStacksOnAccountRemoval: false
       Capabilities:
         - CAPABILITY_IAM
         - CAPABILITY_NAMED_IAM
@@ -703,6 +819,8 @@ Resources:
           ParameterValue: !Ref AuditAccountID
         - ParameterKey: RolePrefix
           ParameterValue: !Ref RolePrefix
+        - ParameterKey: DefaultCloudProfile
+          ParameterValue: !Ref DefaultCloudProfile
       PermissionModel: SERVICE_MANAGED
       StackInstancesGroup:
         - DeploymentTargets:
@@ -723,7 +841,7 @@ Resources:
     Properties:
       AutoDeployment:
         Enabled: true
-        RetainStacksOnAccountRemoval: true
+        RetainStacksOnAccountRemoval: false
       Capabilities:
         - CAPABILITY_IAM
         - CAPABILITY_NAMED_IAM
@@ -742,6 +860,8 @@ Resources:
           ParameterValue: !Ref AuditAccountID
         - ParameterKey: RolePrefix
           ParameterValue: !Ref RolePrefix
+        - ParameterKey: DefaultCloudProfile
+          ParameterValue: !Ref DefaultCloudProfile
       PermissionModel: SERVICE_MANAGED
       StackInstancesGroup:
         - DeploymentTargets:
@@ -762,7 +882,7 @@ Resources:
     Properties:
       AutoDeployment:
         Enabled: true
-        RetainStacksOnAccountRemoval: true
+        RetainStacksOnAccountRemoval: false
       Capabilities:
         - CAPABILITY_IAM
         - CAPABILITY_NAMED_IAM
@@ -781,6 +901,8 @@ Resources:
           ParameterValue: !Ref AuditAccountID
         - ParameterKey: RolePrefix
           ParameterValue: !Ref RolePrefix
+        - ParameterKey: DefaultCloudProfile
+          ParameterValue: !Ref DefaultCloudProfile
       PermissionModel: SERVICE_MANAGED
       StackInstancesGroup:
         - DeploymentTargets:
@@ -802,7 +924,7 @@ Resources:
     Properties:
       AutoDeployment:
         Enabled: true
-        RetainStacksOnAccountRemoval: true
+        RetainStacksOnAccountRemoval: false
       Capabilities:
         - CAPABILITY_IAM
         - CAPABILITY_NAMED_IAM
@@ -821,6 +943,8 @@ Resources:
           ParameterValue: !Ref AuditAccountID
         - ParameterKey: RolePrefix
           ParameterValue: !Ref RolePrefix
+        - ParameterKey: DefaultCloudProfile
+          ParameterValue: !Ref DefaultCloudProfile
       PermissionModel: SERVICE_MANAGED
       StackInstancesGroup:
         - DeploymentTargets:
@@ -841,7 +965,7 @@ Resources:
     Properties:
       AutoDeployment:
         Enabled: true
-        RetainStacksOnAccountRemoval: true
+        RetainStacksOnAccountRemoval: false
       Capabilities:
         - CAPABILITY_IAM
         - CAPABILITY_NAMED_IAM
@@ -860,6 +984,8 @@ Resources:
           ParameterValue: !Ref AuditAccountID
         - ParameterKey: RolePrefix
           ParameterValue: !Ref RolePrefix
+        - ParameterKey: DefaultCloudProfile
+          ParameterValue: !Ref DefaultCloudProfile
       PermissionModel: SERVICE_MANAGED
       StackInstancesGroup:
         - DeploymentTargets:
@@ -880,7 +1006,7 @@ Resources:
     Properties:
       AutoDeployment:
         Enabled: true
-        RetainStacksOnAccountRemoval: true
+        RetainStacksOnAccountRemoval: false
       Capabilities:
         - CAPABILITY_IAM
         - CAPABILITY_NAMED_IAM
@@ -899,6 +1025,8 @@ Resources:
           ParameterValue: !Ref AuditAccountID
         - ParameterKey: RolePrefix
           ParameterValue: !Ref RolePrefix
+        - ParameterKey: DefaultCloudProfile
+          ParameterValue: !Ref DefaultCloudProfile
       PermissionModel: SERVICE_MANAGED
       StackInstancesGroup:
         - DeploymentTargets:
@@ -919,7 +1047,7 @@ Resources:
     Properties:
       AutoDeployment:
         Enabled: true
-        RetainStacksOnAccountRemoval: true
+        RetainStacksOnAccountRemoval: false
       Capabilities:
         - CAPABILITY_IAM
         - CAPABILITY_NAMED_IAM
@@ -938,6 +1066,8 @@ Resources:
           ParameterValue: !Ref AuditAccountID
         - ParameterKey: RolePrefix
           ParameterValue: !Ref RolePrefix
+        - ParameterKey: DefaultCloudProfile
+          ParameterValue: !Ref DefaultCloudProfile
       PermissionModel: SERVICE_MANAGED
       StackInstancesGroup:
         - DeploymentTargets:
@@ -965,7 +1095,7 @@ Resources:
     Properties:
       AutoDeployment:
         Enabled: true
-        RetainStacksOnAccountRemoval: true
+        RetainStacksOnAccountRemoval: false
       Capabilities:
         - CAPABILITY_IAM
         - CAPABILITY_NAMED_IAM
@@ -1004,22 +1134,21 @@ Resources:
       - AuditAccountPreRequisitesPartN
     Type: AWS::IAM::Role
     Properties:
-      AssumeRolePolicyDocument:
-        !Sub | 
-          {
-              "Version": "2012-10-17",
-              "Statement": [
-                  {
-                      "Effect": "Allow",
-                      "Principal": {
-                          "AWS": [
-                              "arn:${AWS::Partition}:sts::${AuditAccountID}:root"
-                          ]
-                      },
-                      "Action": "sts:AssumeRole"
-                  }
-              ]
-          }
+      AssumeRolePolicyDocument: !Sub |
+        {
+            "Version": "2012-10-17",
+            "Statement": [
+                {
+                    "Effect": "Allow",
+                    "Principal": {
+                        "AWS": [
+                            "arn:${AWS::Partition}:sts::${AuditAccountID}:root"
+                        ]
+                    },
+                    "Action": "sts:AssumeRole"
+                }
+            ]
+        }
       Description: "GC Guardrails - Assessment Role"
       ManagedPolicyArns:
         - !Sub arn:${AWS::Partition}:iam::aws:policy/service-role/AWSConfigRulesExecutionRole
@@ -1035,22 +1164,21 @@ Resources:
       - AuditAccountPreRequisitesPartN
     Type: AWS::IAM::Role
     Properties:
-      AssumeRolePolicyDocument:
-        !Sub | 
-          {
-              "Version": "2012-10-17",
-              "Statement": [
-                  {
-                      "Effect": "Allow",
-                      "Principal": {
-                          "AWS": [
-                              "arn:${AWS::Partition}:sts::${AuditAccountID}:root"
-                          ]
-                      },
-                      "Action": "sts:AssumeRole"
-                  }
-              ]
-          }
+      AssumeRolePolicyDocument: !Sub |
+        {
+            "Version": "2012-10-17",
+            "Statement": [
+                {
+                    "Effect": "Allow",
+                    "Principal": {
+                        "AWS": [
+                            "arn:${AWS::Partition}:sts::${AuditAccountID}:root"
+                        ]
+                    },
+                    "Action": "sts:AssumeRole"
+                }
+            ]
+        }
       Description: "GC Guardrails - Assessment Role 2"
       ManagedPolicyArns:
         - !Sub arn:${AWS::Partition}:iam::aws:policy/service-role/AWSConfigRulesExecutionRole
@@ -1079,7 +1207,9 @@ Resources:
             Action:
               - "redshift:DescribeClusters"
               - "redshift:DescribeClusterParameters"
-            Resource: !Sub "arn:${AWS::Partition}:redshift:*:*:cluster:*"
+            Resource: 
+              - !Sub "arn:${AWS::Partition}:redshift:*:*:cluster:*"
+              - !Sub "arn:${AWS::Partition}:redshift:*:*:parametergroup:*"
             Effect: Allow
           - Sid: AllowAPI
             Action:
@@ -1088,20 +1218,27 @@ Resources:
             Effect: Allow
           - Sid: AllowELB
             Action:
-              - "elasticloadbalancing:DescribeListeners"
-              - "elasticloadbalancing:DescribeLoadBalancers"
+              - "elasticloadbalancing:Describe*"
             Resource:
               - "*"
             Effect: Allow
           - Sid: AllowES
             Action:
               - "es:ListDomainNames"
-              - "es:DescribeElasticsearchDomains"
+              - "es:DescribeDomain"
+              - "es:DescribeElasticsearchDomain"
             Resource: "*"
             Effect: Allow
           - Sid: AllowReadTags
             Action:
               - "tag:GetResources"
+            Resource: "*"
+            Effect: Allow
+          - Sid: AllowCloudFront
+            Action:
+              - "cloudfront:Describe*"
+              - "cloudfront:Get*"
+              - "cloudfront:List*"
             Resource: "*"
             Effect: Allow
       PolicyName: !Sub "${OrganizationName}GCLambdaExecutionRoleInTransitEncryptionPolicy"
@@ -1117,20 +1254,21 @@ Resources:
         Statement:
           - Sid: AllowS3Access
             Action:
-              - "s3:GetObjectRetention"
-              - "s3:GetObjectVersionTagging"
-              - "s3:GetObjectAttributes"
-              - "s3:ListBucket"
-              - "s3:GetObjectLegalHold"
-              - "s3:GetObjectVersionAttributes"
-              - "s3:GetObjectVersionTorrent"
-              - "s3:GetObjectAcl"
               - "s3:GetObject"
-              - "s3:GetObjectTorrent"
-              - "s3:GetObjectVersionAcl"
+              - "s3:GetObjectAcl"
+              - "s3:GetObjectAttributes"
+              - "s3:GetObjectLegalHold"
+              - "s3:GetObjectRetention"
               - "s3:GetObjectTagging"
-              - "s3:GetObjectVersionForReplication"
+              - "s3:GetObjectTorrent"
               - "s3:GetObjectVersion"
+              - "s3:GetObjectVersionAcl"
+              - "s3:GetObjectVersionAttributes"
+              - "s3:GetObjectVersionForReplication"
+              - "s3:GetObjectVersionTagging"
+              - "s3:GetObjectVersionTorrent"
+              - "s3:GetBucketPublicAccessBlock"
+              - "s3:ListBucket"
             Resource:
               - !Sub
                 - "arn:${AWS::Partition}:s3:::${ClientEvidenceBucket}"
@@ -1152,6 +1290,7 @@ Resources:
           - Sid: AllowListBuckets
             Action:
               - s3:ListAllMyBuckets
+              - s3:GetBucketPublicAccessBlock
             Resource: "*"
             Effect: Allow
       PolicyName: !Sub "${OrganizationName}evidence_bucket_access_policy"
@@ -1169,6 +1308,8 @@ Resources:
           - Sid: AllowCreateLogGroup
             Action:
               - "logs:CreateLogGroup"
+              - "logs:DescribeLogGroups"
+              - "logs:DescribeMetricFilters"
             Resource:
               - !Sub "arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:*"
             Effect: Allow
@@ -1195,14 +1336,19 @@ Resources:
         Statement:
           - Sid: AllowIAMQueries
             Action:
-              - "iam:GenerateCredentialReport"
-              - "iam:GetAccountPasswordPolicy"
-              - "iam:GetCredentialReport"
-              - "iam:GetLoginProfile"
-              - "iam:GetRole"
-              - "iam:ListAttachedRolePolicies"
-              - "iam:ListMFADevices"
-              - "iam:ListUsers"
+              - "iam:Generate*"
+              - "iam:Get*"
+              - "iam:List*"
+              - "iam:Simulate*"
+              - "iam:ListUserPolicies"
+              - "iam:GetUserPolicy"
+              - "iam:ListAttachedUserPolicies"
+              - "iam:ListPolicies"
+              - "iam:ListGroupsForUser"
+              - "iam:ListAttachedGroupPolicies"
+              - "iam:ListGroupPolicies"
+              - "iam:GetPolicyVersion"
+              - "identitystore:ListGroupMemberships"
             Resource: "*"
             Effect: Allow
           - Sid: AllowCloudWatchAlarmQueries
@@ -1225,24 +1371,32 @@ Resources:
           - Sid: AllowDatastoreChecks
             Action:
               - "apigateway:GET"
-              - "backup:ListRecoveryPointsByBackupVault"
               - "backup:ListBackupVaults"
+              - "backup:ListRecoveryPointsByBackupVault"
               - "cassandra:Select"
+              - "cloudfront:Describe*"
+              - "cloudfront:Get*"
+              - "cloudfront:List*"
               - "codebuild:BatchGetProjects"
               - "codebuild:ListProjects"
+              - "config:Describe*"
+              - "config:Get*"
               - "dax:DescribeClusters"
-              - "dynamodb:DescribeTable"
-              - "dynamodb:ListTables"
               - "docdb-elastic:ListClusters"
               - "docdb-elastic:ListClusterSnapshots"
+              - "dynamodb:DescribeTable"
+              - "dynamodb:ListTables"
               - "ec2:DescribeRegions"
               - "ec2:DescribeVolumes"
               - "ec2:GetEbsEncryptionByDefault"
-              - "elasticfilesystem:DescribeFileSystems"
               - "eks:DescribeCluster"
               - "eks:ListClusters"
               - "elasticache:DescribeCacheClusters"
               - "elasticache:DescribeSnapshots"
+              - "elasticfilesystem:DescribeFileSystems"
+              - "events:ListRules"
+              - "events:ListTargetsByRule"
+              - "guardduty:ListDetectors"
               - "kinesis:DescribeStream"
               - "kinesis:ListStreams"
               - "memorydb:DescribeClusters"
@@ -1255,17 +1409,32 @@ Resources:
               - "rds:DescribeDBSnapshots"
               - "resource-explorer-2:ListIndexes"
               - "resource-explorer-2:Search"
-              - "s3:GetEncryptionConfiguration"
               - "s3:GetBucketLocation"
               - "s3:GetBucketPolicy"
+              - "s3:GetEncryptionConfiguration"
               - "s3:ListAllMyBuckets"
               - "s3:ListBucket"
+              - "s3:GetBucketPublicAccessBlock"
+              - "s3:GetBucketTagging"
+              - "sso:ListInstances"
+              - "identitystore:ListUsers"
+              - "identitystore:ListGroups"
+              - "sso:ListManagedPoliciesInPermissionSet"
+              - "sso:ListAccountAssignmentsForPrincipal"
+              - "sso:Describe*"
+              - "sso:GetInlinePolicyForPermissionSet"
+              - "sso:ListCustomerManagedPolicyReferencesInPermissionSet"
+              - "sso:ListPermissionSetsProvisionedToAccount"
+              - "sso:ListAccountAssignments"
+              - "sso:ListPermissionSets"
+              - "sns:GetSubscriptionAttributes"
               - "sns:GetTopicAttributes"
+              - "sns:ListSubscriptionsByTopic"
               - "sns:ListTopics"
+              - "tag:GetResources"
               - "timestream:DescribeEndpoints"
               - "timestream:ListDatabases"
               - "timestream:ListTables"
-              - "tag:GetResources"
             Resource: "*"
             Effect: Allow
       PolicyName: !Sub "${OrganizationName}GCLambdaExecutionRoleDatastorePolicy"
@@ -1303,8 +1472,11 @@ Resources:
           - Sid: AllowCloudTrailChecks
             Action:
               - "cloudtrail:DescribeTrails"
+              - "cloudtrail:GetEventSelectors"
+              - "cloudtrail:GetTrail"
               - "cloudtrail:GetTrailStatus"
               - "cloudtrail:ListTrails"
+              - "cloudtrail:LookupEvents"
             Resource:
               - "*"
             Effect: Allow
@@ -1341,13 +1513,57 @@ Resources:
         Statement:
           - Sid: AllowOrganizationsChecks
             Action:
-              - "organizations:DescribeOrganization"
+              - "organizations:Describe*"
+              - "organizations:List*"
             Resource:
               - "*"
             Effect: Allow
       PolicyName: !Sub "${OrganizationName}GCLambdaExecutionRoleOrganizationsPolicy"
       Roles:
         - !Ref GCLambdaExecutionRole
+        - !Ref GCLambdaExecutionRole2
+
+  # IAM Access
+  GCLambdaExecutionRoleCloudFrontPolicy:
+    Condition: DeployRoles
+    Type: AWS::IAM::Policy
+    Properties:
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: AllowCloudFrontQueries
+            Action:
+              - "cloudfront:Describe*"
+              - "cloudfront:Get*"
+              - "cloudfront:List*"
+            Resource:
+              - "*"
+            Effect: Allow
+      PolicyName: !Sub "${OrganizationName}GCLambdaExecutionRoleCloudFrontPolicy"
+      Roles:
+        - !Ref GCLambdaExecutionRole
+        - !Ref GCLambdaExecutionRole2
+
+  # ACM Accessdescribe_domain
+  GCLambdaExecutionRoleAcmPolicy:
+    Condition: DeployRoles
+    Type: AWS::IAM::Policy
+    Properties:
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: AllowAcmQueries
+            Action:
+              - "acm:Describe*"
+              - "acm:Get*"
+              - "acm:List*"
+            Resource:
+              - "*"
+            Effect: Allow
+      PolicyName: !Sub "${OrganizationName}GCLambdaExecutionRoleAcmPolicy"
+      Roles:
+        - !Ref GCLambdaExecutionRole
+        - !Ref GCLambdaExecutionRole2
 
   #######################################################
   # Part 4 - Conformance Pack
@@ -1367,6 +1583,8 @@ Resources:
     Type: AWS::Config::OrganizationConformancePack
     Properties:
       ConformancePackInputParameters:
+        - ParameterName: UpdateTriggerVersion
+          ParameterValue: !Ref InvokeUpdate
         - ParameterName: GCLambdaExecutionRoleName
           ParameterValue: !Sub "${AccelRolePrefix}GCLambdaExecutionRole"
         - ParameterName: GCLambdaExecutionRoleName2
@@ -1390,27 +1608,192 @@ Resources:
         - ParameterName: S3AttestationLetterPath
           ParameterValue: !Sub
             - "s3://${ClientEvidenceBucket}/gc-01/attestation_letter.pdf"
-            - ClientEvidenceBucket: !If [ GenerateEvidenceBucketName, !GetAtt GenerateEvidenceBucketName.EvidenceBucketName, !Ref EvidenceBucketName ]
+            - ClientEvidenceBucket:
+                !If [
+                  GenerateEvidenceBucketName,
+                  !GetAtt GenerateEvidenceBucketName.EvidenceBucketName,
+                  !Ref EvidenceBucketName,
+                ]
+        - ParameterName: RuleNamingConventionFilePath
+          ParameterValue: !Sub
+            - "s3://${ClientEvidenceBucket}/gc-01/rule_naming_convention.txt"
+            - ClientEvidenceBucket:
+                !If [
+                  GenerateEvidenceBucketName,
+                  !GetAtt GenerateEvidenceBucketName.EvidenceBucketName,
+                  !Ref EvidenceBucketName,
+                ]
+        - ParameterName: PrivilegedUsersFilePath
+          ParameterValue: !Sub
+            - "s3://${ClientEvidenceBucket}/gc-01/privileged_users.txt"
+            - ClientEvidenceBucket:
+                !If [
+                  GenerateEvidenceBucketName,
+                  !GetAtt GenerateEvidenceBucketName.EvidenceBucketName,
+                  !Ref EvidenceBucketName,
+                ]
+        - ParameterName: NonPrivilegedUsersFilePath
+          ParameterValue: !Sub
+            - "s3://${ClientEvidenceBucket}/gc-01/non_privileged_users.txt"
+            - ClientEvidenceBucket:
+                !If [
+                  GenerateEvidenceBucketName,
+                  !GetAtt GenerateEvidenceBucketName.EvidenceBucketName,
+                  !Ref EvidenceBucketName,
+                ]
         - ParameterName: S3AccountManagementPlanPath
           ParameterValue: !Sub
             - "s3://${ClientEvidenceBucket}/gc-02/account_management_plan.pdf"
-            - ClientEvidenceBucket: !If [ GenerateEvidenceBucketName, !GetAtt GenerateEvidenceBucketName.EvidenceBucketName, !Ref EvidenceBucketName ]
+            - ClientEvidenceBucket:
+                !If [
+                  GenerateEvidenceBucketName,
+                  !GetAtt GenerateEvidenceBucketName.EvidenceBucketName,
+                  !Ref EvidenceBucketName,
+                ]
+        - ParameterName: S3RoleAssignmentReviewDocumentPath
+          ParameterValue: !Sub
+            - "s3://${ClientEvidenceBucket}/gc-02/access_reviews_privileged_roles.pdf"
+            - ClientEvidenceBucket:
+                !If [
+                  GenerateEvidenceBucketName,
+                  !GetAtt GenerateEvidenceBucketName.EvidenceBucketName,
+                  !Ref EvidenceBucketName,
+                ]
+        - ParameterName: S3AccessManagementAttestationDocumentPath
+          ParameterValue: !Sub
+            - "s3://${ClientEvidenceBucket}/gc-02/access_management_attestation.pdf"
+            - ClientEvidenceBucket:
+                !If [
+                  GenerateEvidenceBucketName,
+                  !GetAtt GenerateEvidenceBucketName.EvidenceBucketName,
+                  !Ref EvidenceBucketName,
+                ]
+        - ParameterName: S3AdminAccountListPath
+          ParameterValue: !Sub
+            - "s3://${ClientEvidenceBucket}/gc-02/admin_accounts.txt"
+            - ClientEvidenceBucket:
+                !If [
+                  GenerateEvidenceBucketName,
+                  !GetAtt GenerateEvidenceBucketName.EvidenceBucketName,
+                  !Ref EvidenceBucketName,
+                ]
+        - ParameterName: S3VpnIpRangesPath
+          ParameterValue: !Sub
+            - "s3://${ClientEvidenceBucket}/gc-03/vpn_ip_ranges.txt"
+            - ClientEvidenceBucket:
+                !If [
+                  GenerateEvidenceBucketName,
+                  !GetAtt GenerateEvidenceBucketName.EvidenceBucketName,
+                  !Ref EvidenceBucketName,
+                ]
+        - ParameterName: S3CasCurrentlyInUsePath
+          ParameterValue: !Sub
+            - "s3://${ClientEvidenceBucket}/gc-07/cas_currently_in_use.txt"
+            - ClientEvidenceBucket:
+                !If [
+                  GenerateEvidenceBucketName,
+                  !GetAtt GenerateEvidenceBucketName.EvidenceBucketName,
+                  !Ref EvidenceBucketName,
+                ]
+        - ParameterName: S3NonComplianceOptoutFilePath
+          ParameterValue: !Sub
+            - "s3://${ClientEvidenceBucket}/gc-07/GR07_lb_attestation.pdf"
+            - ClientEvidenceBucket:
+                !If [
+                  GenerateEvidenceBucketName,
+                  !GetAtt GenerateEvidenceBucketName.EvidenceBucketName,
+                  !Ref EvidenceBucketName,
+                ]
         - ParameterName: S3SecureNetworkTransmissionPolicyPath
           ParameterValue: !Sub
             - "s3://${ClientEvidenceBucket}/gc-07/secure_network_transmission.pdf"
-            - ClientEvidenceBucket: !If [ GenerateEvidenceBucketName, !GetAtt GenerateEvidenceBucketName.EvidenceBucketName, !Ref EvidenceBucketName ]
+            - ClientEvidenceBucket:
+                !If [
+                  GenerateEvidenceBucketName,
+                  !GetAtt GenerateEvidenceBucketName.EvidenceBucketName,
+                  !Ref EvidenceBucketName,
+                ]
         - ParameterName: S3TargetNetworkArchitecturePath
           ParameterValue: !Sub
             - "s3://${ClientEvidenceBucket}/gc-08/target_network_architecture.pdf"
-            - ClientEvidenceBucket: !If [ GenerateEvidenceBucketName, !GetAtt GenerateEvidenceBucketName.EvidenceBucketName, !Ref EvidenceBucketName ]
+            - ClientEvidenceBucket:
+                !If [
+                  GenerateEvidenceBucketName,
+                  !GetAtt GenerateEvidenceBucketName.EvidenceBucketName,
+                  !Ref EvidenceBucketName,
+                ]
+        - ParameterName: S3TargetCloudDeploymentGuideDocumentPath
+          ParameterValue: !Sub
+            - "s3://${ClientEvidenceBucket}/gc-08/cloud_deployment_guide.pdf"
+            - ClientEvidenceBucket:
+                !If [
+                  GenerateEvidenceBucketName,
+                  !GetAtt GenerateEvidenceBucketName.EvidenceBucketName,
+                  !Ref EvidenceBucketName,
+                ]
+        - ParameterName: S3TargetCloudSegmentationDesignDocumentPath
+          ParameterValue: !Sub
+            - "s3://${ClientEvidenceBucket}/gc-08/cloud_segmentation_design.pdf"
+            - ClientEvidenceBucket:
+                !If [
+                  GenerateEvidenceBucketName,
+                  !GetAtt GenerateEvidenceBucketName.EvidenceBucketName,
+                  !Ref EvidenceBucketName,
+                ]
         - ParameterName: S3NetworkArchitectureDocumentPath
           ParameterValue: !Sub
             - "s3://${ClientEvidenceBucket}/gc-09/network_security_architecture.pdf"
-            - ClientEvidenceBucket: !If [ GenerateEvidenceBucketName, !GetAtt GenerateEvidenceBucketName.EvidenceBucketName, !Ref EvidenceBucketName ]
-        - ParameterName: S3SignedMOUDocumentPath
+            - ClientEvidenceBucket:
+                !If [
+                  GenerateEvidenceBucketName,
+                  !GetAtt GenerateEvidenceBucketName.EvidenceBucketName,
+                  !Ref EvidenceBucketName,
+                ]
+        - ParameterName: S3LogBucketsPath
           ParameterValue: !Sub
-            - "s3://${ClientEvidenceBucket}/gc-10/signed_mou.pdf"
-            - ClientEvidenceBucket: !If [ GenerateEvidenceBucketName, !GetAtt GenerateEvidenceBucketName.EvidenceBucketName, !Ref EvidenceBucketName ]
+            - "s3://${ClientEvidenceBucket}/gc-10/log_buckets.txt"
+            - ClientEvidenceBucket:
+                !If [
+                  GenerateEvidenceBucketName,
+                  !GetAtt GenerateEvidenceBucketName.EvidenceBucketName,
+                  !Ref EvidenceBucketName,
+                ]
+        - ParameterName: S3MonitoringUseCasesPath
+          ParameterValue: !Sub
+            - "s3://${ClientEvidenceBucket}/gc-11/monitoring_usecases.pdf"
+            - ClientEvidenceBucket:
+                !If [
+                  GenerateEvidenceBucketName,
+                  !GetAtt GenerateEvidenceBucketName.EvidenceBucketName,
+                  !Ref EvidenceBucketName,
+                ]
+        - ParameterName: S3AccountManagementProcedurePath
+          ParameterValue: !Sub
+            - "s3://${ClientEvidenceBucket}/gc-13/emergency_account_management_procedures.pdf"
+            - ClientEvidenceBucket:
+                !If [
+                  GenerateEvidenceBucketName,
+                  !GetAtt GenerateEvidenceBucketName.EvidenceBucketName,
+                  !Ref EvidenceBucketName,
+                ]
+        - ParameterName: S3AccountMgmtApprovalsPath
+          ParameterValue: !Sub
+            - "s3://${ClientEvidenceBucket}/gc-13/emergency_account_management_approvals.pdf"
+            - ClientEvidenceBucket:
+                !If [
+                  GenerateEvidenceBucketName,
+                  !GetAtt GenerateEvidenceBucketName.EvidenceBucketName,
+                  !Ref EvidenceBucketName,
+                ]
+        - ParameterName: S3EmergencyAccountAlertsRuleNamesPath
+          ParameterValue: !Sub
+            - "s3://${ClientEvidenceBucket}/gc-13/rule_names.txt"
+            - ClientEvidenceBucket:
+                !If [
+                  GenerateEvidenceBucketName,
+                  !GetAtt GenerateEvidenceBucketName.EvidenceBucketName,
+                  !Ref EvidenceBucketName,
+                ]
       OrganizationConformancePackName: !Sub "${OrganizationName}-GC-CP-Guardrails"
       TemplateS3Uri: !Sub s3://${PipelineBucket}/${DeployVersion}/ConformancePack.yaml
 
@@ -1435,7 +1818,7 @@ Resources:
     Properties:
       AutoDeployment:
         Enabled: true
-        RetainStacksOnAccountRemoval: true
+        RetainStacksOnAccountRemoval: false
       Capabilities:
         - CAPABILITY_IAM
         - CAPABILITY_NAMED_IAM
@@ -1453,11 +1836,18 @@ Resources:
         - ParameterKey: AuditAccountID
           ParameterValue: !Ref AuditAccountID
         - ParameterKey: EvidenceBucketName
-          ParameterValue: !If [ GenerateEvidenceBucketName, !GetAtt GenerateEvidenceBucketName.EvidenceBucketName, !Ref EvidenceBucketName ]
+          ParameterValue:
+            !If [
+              GenerateEvidenceBucketName,
+              !GetAtt GenerateEvidenceBucketName.EvidenceBucketName,
+              !Ref EvidenceBucketName,
+            ]
         - ParameterKey: AdditionalAssessmentAdminRoleARN
           ParameterValue: !Ref AdditionalAssessmentAdminRoleARN
         - ParameterKey: RolePrefix
           ParameterValue: !Ref RolePrefix
+        - ParameterKey: DeployVersion
+          ParameterValue: !Ref DeployVersion
       PermissionModel: SERVICE_MANAGED
       StackInstancesGroup:
         - DeploymentTargets:
@@ -1481,7 +1871,7 @@ Resources:
     Properties:
       AutoDeployment:
         Enabled: true
-        RetainStacksOnAccountRemoval: true
+        RetainStacksOnAccountRemoval: false
       Capabilities:
         - CAPABILITY_IAM
         - CAPABILITY_NAMED_IAM
@@ -1496,14 +1886,20 @@ Resources:
       Parameters:
         - ParameterKey: AuditAccountID
           ParameterValue: !Ref AuditAccountID
+        - ParameterKey: DefaultCloudProfile
+          ParameterValue: !Ref DefaultCloudProfile
+        - ParameterKey: DeployVersion
+          ParameterValue: !Ref DeployVersion
         - ParameterKey: DestBucketName
           ParameterValue: !Ref DestBucketName
-        - ParameterKey: OrganizationId
-          ParameterValue: !Ref OrganizationId
         - ParameterKey: ExecutionName
           ParameterValue: !Ref ExecutionName
+        - ParameterKey: OrganizationId
+          ParameterValue: !Ref OrganizationId
         - ParameterKey: OrganizationName
           ParameterValue: !Ref OrganizationName
+        - ParameterKey: TenantId
+          ParameterValue: !Ref TenantId
       PermissionModel: SERVICE_MANAGED
       StackInstancesGroup:
         - DeploymentTargets:
@@ -1525,9 +1921,9 @@ Resources:
     Type: AWS::CloudFormation::StackSet
     Properties:
       TemplateURL: !Sub https://${PipelineBucket}.s3.${AWS::Region}.amazonaws.com/${DeployVersion}/OrgRoleGenerator.yaml
-#      AutoDeployment:
-#        Enabled: true
-#        RetainStacksOnAccountRemoval: true
+      #      AutoDeployment:
+      #        Enabled: true
+      #        RetainStacksOnAccountRemoval: false
       Capabilities:
         - CAPABILITY_IAM
         - CAPABILITY_NAMED_IAM
@@ -1546,9 +1942,19 @@ Resources:
         - ParameterKey: AuditAccountID
           ParameterValue: !Ref AuditAccountID
         - ParameterKey: ClientEvidenceBucket
-          ParameterValue: !If [ GenerateEvidenceBucketName, !GetAtt GenerateEvidenceBucketName.EvidenceBucketName, !Ref EvidenceBucketName ]
+          ParameterValue:
+            !If [
+              GenerateEvidenceBucketName,
+              !GetAtt GenerateEvidenceBucketName.EvidenceBucketName,
+              !Ref EvidenceBucketName,
+            ]
         - ParameterKey: AWSConfigConformsBucketName
-          ParameterValue: !If [ GenerateAWSConfigConformsBucketName, !GetAtt GenerateEvidenceBucketName.AWSConfigBucketName, !Ref AWSConfigConformsBucketName ]
+          ParameterValue:
+            !If [
+              GenerateAWSConfigConformsBucketName,
+              !GetAtt GenerateEvidenceBucketName.AWSConfigBucketName,
+              !Ref AWSConfigConformsBucketName,
+            ]
         - ParameterKey: AccelRolePrefix
           ParameterValue: !Ref AccelRolePrefix
         - ParameterKey: RolePrefix
@@ -1567,4 +1973,9 @@ Resources:
 Outputs:
   ClientEvidenceBucket:
     Description: Amazon S3 bucket where evidence documents should be uploaded to
-    Value: !If [ GenerateEvidenceBucketName, !GetAtt GenerateEvidenceBucketName.EvidenceBucketName, !Ref EvidenceBucketName ]
+    Value:
+      !If [
+        GenerateEvidenceBucketName,
+        !GetAtt GenerateEvidenceBucketName.EvidenceBucketName,
+        !Ref EvidenceBucketName,
+      ]
