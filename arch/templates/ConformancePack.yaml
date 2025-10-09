@@ -20,8 +20,10 @@ Parameters:
     Type: String
   BGA3:
     Type: String
+    Default: ""
   BGA4:
     Type: String
+    Default: ""
   OrganizationName:
     Type: String
   DeployVersion:
@@ -427,47 +429,7 @@ Resources:
         SourceDetails:
           - EventSource: "aws.config"
             MessageType: "ScheduledNotification"
-  GC02CheckAccessManagementAttestationConfigRule:
-    Type: "AWS::Config::ConfigRule"
-    Properties:
-      ConfigRuleName: gc02_check_access_management_attestation
-      Description: Checks S3 bucket for the access management attestation document.      
-      InputParameters: 
-        s3AccessManagementAttestationPath:
-          Fn::If:
-            - s3AccessManagementAttestationDocumentPath
-            - Ref: S3AccessManagementAttestationDocumentPath
-            - Ref: AWS::NoValue
-        s3RoleAssignmentReviewPath:
-          Fn::If:
-            - s3RoleAssignmentReviewDocumentPath
-            - Ref: S3RoleAssignmentReviewDocumentPath
-            - Ref: AWS::NoValue 
-        ExecutionRoleName:
-          Fn::If:
-            - GCLambdaExecutionRoleName
-            - Ref: GCLambdaExecutionRoleName
-            - Ref: AWS::NoValue
-        AuditAccountID:
-          Fn::If:
-            - auditAccountID
-            - Ref: AuditAccountID
-            - Ref: AWS::NoValue
-      Scope:
-        ComplianceResourceTypes:
-          - AWS::Account
-      MaximumExecutionFrequency: TwentyFour_Hours
-      Source:
-        Owner: CUSTOM_LAMBDA
-        SourceIdentifier:
-          Fn::Join:
-            - ""
-            - - "arn:aws:lambda:ca-central-1:"
-              - Ref: AuditAccountID
-              - !Sub ":function:${OrganizationName}gc02_check_access_management_attestation"
-        SourceDetails:
-          - EventSource: "aws.config"
-            MessageType: "ScheduledNotification"
+ 
   GC02CheckGroupAccessConfigurationConfigRule:
     Type: "AWS::Config::ConfigRule"
     Properties:

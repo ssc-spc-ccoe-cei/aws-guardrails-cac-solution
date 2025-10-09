@@ -185,27 +185,7 @@ frameworks_data = [
             {
                 "name": "02-Manage Access",
                 "controls": [
-                    {
-                        "type": "Custom",
-                        "name": "gc02_check_access_management_attestation",
-                        "description": "Confirm that the access authorization mechanisms have been implemented. Source: https://github.com/canada-ca/cloud-guardrails/blob/master/EN/02_Manage-Access.md",
-                        "testingInformation": "",
-                        "actionPlanTitle": "Confirm that the access authorization mechanisms have been implemented",
-                        "actionPlanInstructions": "Upload the file to an S3 bucket and provide the path to the AWS Config control.",
-                        "controlSources": "AWS Config",
-                        "controlMappingSources": [
-                            {
-                                "sourceName": "IAMPrivilegedRolesReview-check",
-                                "sourceSetUpOption": "System_Controls_Mapping",
-                                "sourceType": "AWS_Config",
-                                "sourceKeyword": {
-                                    "keywordInputType": "SELECT_FROM_LIST",
-                                    "keywordValue": "Custom_gc02_check_access_management_attestation-conformance-pack",
-                                },
-                            }
-                        ],
-                        "tags": {},
-                    },
+                    
                     {
                         "type": "Custom",
                         "name": "gc02_check_group_access_configuration",
