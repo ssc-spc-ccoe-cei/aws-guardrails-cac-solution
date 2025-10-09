@@ -296,7 +296,10 @@ def get_recent_evidence_folders_paginated(auditmanager_client, assessment_id):
             )
 
         for folder in resp.get("evidenceFolders", []):
-            yield folder
+            # Only return recent folders
+            folder_date = folder.get("date")
+            if folder_date and folder_date > config['EVIDENCE_FOLDER_CUTOFF']:
+                yield folder
 
         next_token = resp.get("nextToken")
         if not next_token:
@@ -352,7 +355,7 @@ def process_evidence_items(evidence_items, control_set_id, control_id, org_clien
 
     for item in evidence_items:
         evidence_time = item.get("time")
-        if evidence_time and evidence_time > cutoff:
+        if evidence_time and evidence_time > config['EVIDENCE_ITEM_CUTOFF']:
             aws_account_id = item.get("evidenceAwsAccountId", "UNKNOWN")
             tags = get_account_tags_cached(org_client, aws_account_id)
             cloud_profile = get_cloud_profile_from_tags(tags)
