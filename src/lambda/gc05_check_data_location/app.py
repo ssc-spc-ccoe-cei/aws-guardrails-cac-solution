@@ -128,7 +128,7 @@ def get_qldb_resources(aws_account_id, execution_role_name, RegionName=None, eve
         pass
     except botocore.exceptions.ClientError as ex:
         if "AccessDenied" in ex.response["Error"]["Code"]:
-            logger.error("AccessDenied when trying to list_ledgers or describe_ledger - get_qldb_resources")
+            logger.info("QLDB is discontinued and not available in the region {}".format(RegionName))
             pass
         else:
             raise ex
