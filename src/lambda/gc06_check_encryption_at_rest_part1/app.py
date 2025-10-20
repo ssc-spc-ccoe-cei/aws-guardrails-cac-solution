@@ -476,7 +476,7 @@ def assess_dax_encryption_at_rest(dax_client, event):
         logger.error("DAX - Error while calling dax_get_clusters_list %s", ex)
         # NONCOMPLIANT_SERVICES.add('DAX')
     except ValueError:
-        logger.error("DAX - Error while calling dax_get_clusters_list")
+        logger.info("DAX is not available in the region")
         # NONCOMPLIANT_SERVICES.add('DAX')
     logger.info("DAX - %s clusters found.", len(clusters))
     for cluster in clusters:
