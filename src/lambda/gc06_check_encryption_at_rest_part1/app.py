@@ -5,6 +5,7 @@
 import json
 import logging
 import time
+import boto3
 
 from utils import is_scheduled_notification, check_required_parameters, check_guardrail_requirement_by_cloud_usage_profile, get_cloud_profile_from_tags, GuardrailType, GuardrailRequirementType
 from boto_util.organizations import get_account_tags
@@ -470,13 +471,15 @@ def assess_dax_encryption_at_rest(dax_client, event):
     local_evaluations = []
     clusters = []
     resource_type = "AWS::DAX::Cluster"
+    boto3_session = boto3.session.Session()
+    region_name = boto3_session.region_name
     try:
         clusters = describe_all_dax_clusters(dax_client, PAGE_SIZE, INTERVAL_BETWEEN_API_CALLS)
     except botocore.exceptions.ClientError as ex:
-        logger.error("DAX - Error while calling dax_get_clusters_list %s", ex)
+        logger.info("DAX is not available in the region %s and so this message %s", region_name, ex)
         # NONCOMPLIANT_SERVICES.add('DAX')
     except ValueError:
-        logger.info("DAX is not available in the region")
+        logger.info("DAX is not available in the region %s",region_name )
         # NONCOMPLIANT_SERVICES.add('DAX')
     logger.info("DAX - %s clusters found.", len(clusters))
     for cluster in clusters:

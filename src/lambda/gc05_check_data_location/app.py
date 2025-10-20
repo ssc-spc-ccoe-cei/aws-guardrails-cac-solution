@@ -95,46 +95,6 @@ def parse_resource_explorer_result(
         logger.info("Service '{}' not in the list of NonAuthorizedServices. Returning empty results.")
     return results
 
-
-def get_qldb_resources(aws_account_id, execution_role_name, RegionName=None, event=None):
-    """
-    Finds Ledger Database (QLDB) resources in the specified region
-    """
-    results = []
-    aws_qldb_client = get_client("qldb", aws_account_id, execution_role_name, region=RegionName)
-    NextToken = ""
-    ResourceType = "AWS::QLDB::Ledger"
-    try:
-        response = aws_qldb_client.list_ledgers()
-        while True:
-            if response:
-                for ledger in response.get("Ledgers"):
-                    response2 = aws_qldb_client.describe_ledger(Name=ledger.get("Name"))
-                    if response2:
-                        results.append(
-                            {"Arn": response2.get("Arn"), "Id": response2.get("Name"), "ResourceType": ResourceType}
-                        )
-                    else:
-                        logger.info("Unable to describe_ledger '{}'".format(ledger.get("Name")))
-                NextToken = response.get("NextToken")
-                if NextToken:
-                    response = aws_qldb_client.list_ledgers(NextToken=NextToken)
-                else:
-                    break
-            else:
-                break
-    except botocore.exceptions.EndpointConnectionError as ex:
-        logger.debug("QLDB endpoint not available in the region {}".format(RegionName))
-        pass
-    except botocore.exceptions.ClientError as ex:
-        if "AccessDenied" in ex.response["Error"]["Code"]:
-            logger.info("QLDB is discontinued and not available in the region {}".format(RegionName))
-            pass
-        else:
-            raise ex
-    return results
-
-
 def s3_has_approved_tags(bucket_tags):
     """Checks if s3 bucket has approved tags attached for location exemption
     Args:
@@ -261,7 +221,9 @@ def get_non_authorized_resources_in_region(
         ResourceList = []
         TempResources = []
         if service == "qldb":
-            ResourceList = get_qldb_resources(aws_account_id, execution_role_name, RegionName, event=event)
+            #ResourceList = get_qldb_resources(aws_account_id, execution_role_name, RegionName, event=event)
+            logger.info("Skipping QLDB as its discontinued and not available in the region {}".format(RegionName))
+
         elif service == "s3":
             continue
         else:
