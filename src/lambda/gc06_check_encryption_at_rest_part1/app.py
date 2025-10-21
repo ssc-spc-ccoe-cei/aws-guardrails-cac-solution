@@ -476,7 +476,7 @@ def assess_dax_encryption_at_rest(dax_client, event):
     try:
         clusters = describe_all_dax_clusters(dax_client, PAGE_SIZE, INTERVAL_BETWEEN_API_CALLS)
     except botocore.exceptions.ClientError as ex:
-        logger.info("DAX is not available in the region %s and so this message %s", region_name, ex)
+        logger.info("DAX is not available in the region %s", region_name)
         # NONCOMPLIANT_SERVICES.add('DAX')
     except ValueError:
         logger.info("DAX is not available in the region %s",region_name )
