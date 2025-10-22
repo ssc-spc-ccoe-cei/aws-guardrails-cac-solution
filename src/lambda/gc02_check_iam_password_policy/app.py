@@ -54,65 +54,24 @@ def assess_iam_password_policy(iam_client, password_assessment_policy):
             current_password_policy = response.get("PasswordPolicy", {})
             if current_password_policy:
                 # we have a policy, let's check
-                if int(password_assessment_policy.get("MinimumPasswordLength", -1)) > 0:
-                    if current_password_policy.get("MinimumPasswordLength", -1) < password_assessment_policy.get(
-                        "MinimumPasswordLength"
-                    ):
-                        compliance_status = "NON_COMPLIANT"
-                        compliance_annotation += "MinimumPasswordLength;"
-                if int(password_assessment_policy.get("PasswordReusePrevention", -1)) > 0:
-                    if current_password_policy.get("PasswordReusePrevention", -1) < password_assessment_policy.get(
-                        "PasswordReusePrevention"
-                    ):
-                        compliance_status = "NON_COMPLIANT"
-                        compliance_annotation += "PasswordReusePrevention;"
-                # The Policy items below are ONLY assessed IF they are required (True)
-                if password_assessment_policy.get("RequireSymbols", False):
-                    if current_password_policy.get("RequireSymbols", False) != password_assessment_policy.get(
-                        "RequireSymbols"
-                    ):
-                        compliance_status = "NON_COMPLIANT"
-                        compliance_annotation += "RequireSymbols;"
-                if password_assessment_policy.get("RequireNumbers", False):
-                    if current_password_policy.get("RequireNumbers", False) != password_assessment_policy.get(
-                        "RequireNumbers"
-                    ):
-                        compliance_status = "NON_COMPLIANT"
-                        compliance_annotation += "RequireNumbers;"
-                if password_assessment_policy.get("RequireUppercaseCharacters", False):
-                    if current_password_policy.get(
-                        "RequireUppercaseCharacters", False
-                    ) != password_assessment_policy.get("RequireUppercaseCharacters"):
-                        compliance_status = "NON_COMPLIANT"
-                        compliance_annotation += "RequireUppercaseCharacters;"
-                if password_assessment_policy.get("RequireLowercaseCharacters", False):
-                    if current_password_policy.get(
-                        "RequireLowercaseCharacters", False
-                    ) != password_assessment_policy.get("RequireLowercaseCharacters"):
-                        compliance_status = "NON_COMPLIANT"
-                        compliance_annotation += "RequireLowercaseCharacters;"
-                if password_assessment_policy.get("AllowUsersToChangePassword", False):
-                    if current_password_policy.get(
-                        "AllowUsersToChangePassword", False
-                    ) != password_assessment_policy.get("AllowUsersToChangePassword"):
-                        compliance_status = "NON_COMPLIANT"
-                        compliance_annotation += "AllowUsersToChangePassword;"
-                # if password_assessment_policy.get("ExpirePasswords", False):
-                #     if current_password_policy.get("ExpirePasswords", False) != password_assessment_policy.get(
-                #         "ExpirePasswords"
-                #     ):
-                #         compliance_status = "NON_COMPLIANT"
-                #         compliance_annotation += "ExpirePasswords;"
-                # if password_assessment_policy.get("HardExpiry", False):
-                #     if current_password_policy.get("HardExpiry", False) != password_assessment_policy.get("HardExpiry"):
-                #         compliance_status = "NON_COMPLIANT"
-                #         compliance_annotation += "HardExpiry;"
-                # if int(password_assessment_policy.get("MaxPasswordAge", -1)) > 0:
-                #     if current_password_policy.get("MaxPasswordAge", -1) < password_assessment_policy.get(
-                #         "MaxPasswordAge"
-                #     ):
-                #         compliance_status = "NON_COMPLIANT"
-                #         compliance_annotation += "MaxPasswordAge;"
+                for parameter, req_value in password_assessment_policy.items():
+                    if isinstance(req_value, int):
+                        # Numeric parameter detected
+                        if current_password_policy.get(parameter, -1) < req_value:
+                            if compliance_status == "COMPLIANT":
+                                compliance_annotation = f"Non-compliant policy parameters:{parameter};"
+                            else:
+                                compliance_annotation += f"{parameter};"
+                            compliance_status = "NON_COMPLIANT"
+                    else:
+                        # Boolean parameter inferred
+                        # Boolean policy parameters are ONLY assessed IF they are required (True) in assessment policy
+                        if req_value and not current_password_policy.get(parameter):
+                            if compliance_status == "COMPLIANT":
+                                compliance_annotation = f"Non-compliant policy parameters:{parameter};"
+                            else:
+                                compliance_annotation += f"{parameter};"
+                            compliance_status = "NON_COMPLIANT"
             else:
                 compliance_status = "NON_COMPLIANT"
                 compliance_annotation = "Empty password policy read. Unable to assess"
@@ -147,8 +106,8 @@ def lambda_handler(event, context):
 
     default_assessment_policy = {
         "MinimumPasswordLength": 12,
-        "RequireSymbols": True,
-        "RequireNumbers": True,
+        # "RequireSymbols": True,
+        # "RequireNumbers": True,
         "RequireUppercaseCharacters": True,
         "RequireLowercaseCharacters": True,
         "AllowUsersToChangePassword": True,
