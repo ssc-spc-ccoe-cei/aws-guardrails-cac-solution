@@ -45,10 +45,10 @@ Parameters:
     Default: "24"
     Type: String
   PasswordPolicyRequireSymbols:
-    Default: "True"
+    Default: "False"
     Type: String
   PasswordPolicyRequireNumbers:
-    Default: "True"
+    Default: "False"
     Type: String
   PasswordPolicyRequireUppercaseCharacters:
     Default: "True"
