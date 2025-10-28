@@ -15,16 +15,27 @@ logger = logging.getLogger()
 logger.setLevel(logging.INFO)
 
 
+def public_access_blocked(config: dict) -> bool:
+    '''Ensure all public access blocking settings are enabled in a config.'''
+    settings = [
+        "BlockPublicAcls", 
+        "IgnorePublicAcls", 
+        "BlockPublicPolicy", 
+        "RestrictPublicBuckets"
+    ]
+    return all([config.get(setting, False) for setting in settings])
+
+
+def account_public_access_blocked(s3_client, aws_account_id):
+    response = s3_client.get_public_access_block(AccountId=aws_account_id)
+    return public_access_blocked(response.get("PublicAccessBlockConfiguration", {}))
+
+
 def check_bucket_acls(s3_client, bucket_name, event):
     resource_type = "AWS::S3::Bucket"
     response = s3_client.get_public_access_block(Bucket=bucket_name)
     configuration = response.get("PublicAccessBlockConfiguration", {})
-    if (
-        configuration.get("BlockPublicAcls", False)
-        and configuration.get("IgnorePublicAcls", False)
-        and configuration.get("BlockPublicPolicy", False)
-        and configuration.get("RestrictPublicBuckets", False)
-    ):
+    if public_access_blocked(configuration):
         return build_evaluation(bucket_name, "COMPLIANT", event, resource_type)
     else:
         return build_evaluation(
@@ -68,6 +79,7 @@ def lambda_handler(event, context):
 
     aws_config_client = get_client("config", aws_account_id, execution_role_name)
     aws_s3_client = get_client("s3", aws_account_id, execution_role_name)
+    aws_s3control_client = get_client("s3control", aws_account_id, execution_role_name)
     
     # Check cloud profile
     tags = get_account_tags(get_client("organizations", assume_role=False), aws_account_id)
@@ -90,11 +102,20 @@ def lambda_handler(event, context):
             event,
             gr_requirement_type=gr_requirement_type
         )])
+    # If Public access is blocked at the account level
+    elif account_public_access_blocked(aws_s3control_client, aws_account_id):
+        return submit_evaluations(aws_config_client, event, [build_evaluation(
+            aws_account_id,
+            "COMPLIANT",
+            event,
+            annotation="Public access blocking is configured at account-level."
+        )])
         
     buckets = list_all_s3_buckets(aws_s3_client)
     for b in buckets:
         b_eval = check_bucket_acls(aws_s3_client, b.get("Name", ""), event)
         evaluations.append(b_eval)
+        
         if b_eval.get("ComplianceType", "NON_COMPLIANT") == "NON_COMPLIANT":
             compliance_type = "NON_COMPLIANT"
             annotation = "One or more S3 buckets have misconfigured public access blocks."

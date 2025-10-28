@@ -18,9 +18,17 @@ Parameters:
     Type: String
   BGA2:
     Type: String
+  BGA3:
+    Type: String
+    Default: ""
+  BGA4:
+    Type: String
+    Default: ""
   OrganizationName:
     Type: String
   DeployVersion:
+    Type: String
+  LogArchiveAccountName:
     Type: String
   # GC01
   S3AttestationLetterPath:
@@ -37,10 +45,10 @@ Parameters:
     Default: "24"
     Type: String
   PasswordPolicyRequireSymbols:
-    Default: "True"
+    Default: "False"
     Type: String
   PasswordPolicyRequireNumbers:
-    Default: "True"
+    Default: "False"
     Type: String
   PasswordPolicyRequireUppercaseCharacters:
     Default: "True"
@@ -58,6 +66,9 @@ Parameters:
     Type: String
   NonPrivilegedUsersFilePath:
     Type: String
+  LogSourceAttestationFilePath:
+    Type: String
+
   # GC02
   S3AccountManagementPlanPath:
     Type: String
@@ -100,9 +111,6 @@ Parameters:
   # GC10
   S3LogBucketsPath:
     Type: String
-  LogArchiveAccountName:
-    Type: String
-    Default: LogArchive
   # GC11
   S3MonitoringUseCasesPath:
     Type: String
@@ -112,6 +120,8 @@ Parameters:
   S3AccountMgmtApprovalsPath:
     Type: String
   S3EmergencyAccountAlertsRuleNamesPath:
+    Type: String
+  LogSourceNonComplianceAttestationFilePath:
     Type: String
 
 Resources:
@@ -234,6 +244,11 @@ Resources:
             - auditAccountID
             - Ref: AuditAccountID
             - Ref: AWS::NoValue
+        LogSourceAttestationFilePath:
+          Fn::If:
+            - logSourceAttestationFilePath
+            - Ref: LogSourceAttestationFilePath
+            - Ref: AWS::NoValue
       Scope:
         ComplianceResourceTypes:
           - AWS::Account
@@ -351,6 +366,16 @@ Resources:
             - bgUser2
             - Ref: BGA2
             - Ref: AWS::NoValue
+        BgUser3:
+          Fn::If:
+            - bgUser3
+            - Ref: BGA3
+            - Ref: AWS::NoValue
+        BgUser4:
+          Fn::If:
+            - bgUser4
+            - Ref: BGA4
+            - Ref: AWS::NoValue
       Scope:
         ComplianceResourceTypes:
           - AWS::Account
@@ -404,47 +429,7 @@ Resources:
         SourceDetails:
           - EventSource: "aws.config"
             MessageType: "ScheduledNotification"
-  GC02CheckAccessManagementAttestationConfigRule:
-    Type: "AWS::Config::ConfigRule"
-    Properties:
-      ConfigRuleName: gc02_check_access_management_attestation
-      Description: Checks S3 bucket for the access management attestation document.      
-      InputParameters: 
-        s3AccessManagementAttestationPath:
-          Fn::If:
-            - s3AccessManagementAttestationDocumentPath
-            - Ref: S3AccessManagementAttestationDocumentPath
-            - Ref: AWS::NoValue
-        s3RoleAssignmentReviewPath:
-          Fn::If:
-            - s3RoleAssignmentReviewDocumentPath
-            - Ref: S3RoleAssignmentReviewDocumentPath
-            - Ref: AWS::NoValue 
-        ExecutionRoleName:
-          Fn::If:
-            - GCLambdaExecutionRoleName
-            - Ref: GCLambdaExecutionRoleName
-            - Ref: AWS::NoValue
-        AuditAccountID:
-          Fn::If:
-            - auditAccountID
-            - Ref: AuditAccountID
-            - Ref: AWS::NoValue
-      Scope:
-        ComplianceResourceTypes:
-          - AWS::Account
-      MaximumExecutionFrequency: TwentyFour_Hours
-      Source:
-        Owner: CUSTOM_LAMBDA
-        SourceIdentifier:
-          Fn::Join:
-            - ""
-            - - "arn:aws:lambda:ca-central-1:"
-              - Ref: AuditAccountID
-              - !Sub ":function:${OrganizationName}gc02_check_access_management_attestation"
-        SourceDetails:
-          - EventSource: "aws.config"
-            MessageType: "ScheduledNotification"
+ 
   GC02CheckGroupAccessConfigurationConfigRule:
     Type: "AWS::Config::ConfigRule"
     Properties:
@@ -650,6 +635,16 @@ Resources:
           Fn::If:
             - bgUser2
             - Ref: BGA2
+            - Ref: AWS::NoValue
+        BgUser3:
+          Fn::If:
+            - bgUser3
+            - Ref: BGA3
+            - Ref: AWS::NoValue
+        BgUser4:
+          Fn::If:
+            - bgUser4
+            - Ref: BGA4
             - Ref: AWS::NoValue
       Scope:
         ComplianceResourceTypes:
@@ -861,42 +856,7 @@ Resources:
           - EventSource: "aws.config"
             MessageType: "ScheduledNotification"
   # GC07
-  GC07CheckSecureNetworkTransmissionPolicyConfigRule:
-    Type: "AWS::Config::ConfigRule"
-    Properties:
-      ConfigRuleName: gc07_check_secure_network_transmission_policy
-      Description: Checks S3 bucket for the secure network transmission policy
-      InputParameters:
-        s3ObjectPath:
-          Fn::If:
-            - s3SecureNetworkTransmissionPolicyPath
-            - Ref: S3SecureNetworkTransmissionPolicyPath
-            - Ref: AWS::NoValue
-        ExecutionRoleName:
-          Fn::If:
-            - GCLambdaExecutionRoleName
-            - Ref: GCLambdaExecutionRoleName
-            - Ref: AWS::NoValue
-        AuditAccountID:
-          Fn::If:
-            - auditAccountID
-            - Ref: AuditAccountID
-            - Ref: AWS::NoValue
-      Scope:
-        ComplianceResourceTypes:
-          - AWS::Account
-      MaximumExecutionFrequency: TwentyFour_Hours
-      Source:
-        Owner: CUSTOM_LAMBDA
-        SourceIdentifier:
-          Fn::Join:
-            - ""
-            - - "arn:aws:lambda:ca-central-1:"
-              - Ref: AuditAccountID
-              - !Sub ":function:${OrganizationName}gc07_check_secure_network_transmission_policy"
-        SourceDetails:
-          - EventSource: "aws.config"
-            MessageType: "ScheduledNotification"
+  
   GC07CheckCertificateAuthoritiesConfigRule:
     Type: "AWS::Config::ConfigRule"
     Properties:
@@ -1115,43 +1075,7 @@ Resources:
           - EventSource: "aws.config"
             MessageType: "ScheduledNotification"
   # GC09
-  GC09CheckNetworkSecurityArchitectureConfigRule:
-    Type: "AWS::Config::ConfigRule"
-    Properties:
-      ConfigRuleName: gc09_check_netsec_architecture
-      Description: Checks S3 bucket for the network security architecture document
-      InputParameters:
-        s3ObjectPath:
-          Fn::If:
-            - s3NetworkArchitectureDocumentPath
-            - Ref: S3NetworkArchitectureDocumentPath
-            - Ref: AWS::NoValue
-        ExecutionRoleName:
-          Fn::If:
-            - GCLambdaExecutionRoleName
-            - Ref: GCLambdaExecutionRoleName
-            - Ref: AWS::NoValue
-        AuditAccountID:
-          Fn::If:
-            - auditAccountID
-            - Ref: AuditAccountID
-            - Ref: AWS::NoValue
-      Scope:
-        ComplianceResourceTypes:
-          - AWS::Account
-      MaximumExecutionFrequency: TwentyFour_Hours
-      Source:
-        Owner: CUSTOM_LAMBDA
-        SourceIdentifier:
-          Fn::Join:
-            - ""
-            - - "arn:aws:lambda:ca-central-1:"
-              - Ref: AuditAccountID
-              - !Sub ":function:${OrganizationName}gc09_check_netsec_architecture"
-        SourceDetails:
-          - EventSource: "aws.config"
-            MessageType: "ScheduledNotification"
-
+  
   GC09CheckNonPublicStorageAccountsConfigRule:
     Type: "AWS::Config::ConfigRule"
     Properties:
@@ -1549,6 +1473,11 @@ Resources:
             - auditAccountID
             - Ref: AuditAccountID
             - Ref: AWS::NoValue
+        LogSourceNonComplianceAttestationFilePath:
+          Fn::If:
+            - logSourceNonComplianceAttestationFilePath
+            - Ref: LogSourceNonComplianceAttestationFilePath
+            - Ref: AWS::NoValue
       Scope:
         ComplianceResourceTypes:
           - AWS::Account
@@ -1591,6 +1520,17 @@ Resources:
             - bgUser2
             - Ref: BGA2
             - Ref: AWS::NoValue
+        BgUser3:
+          Fn::If:
+            - bgUser3
+            - Ref: BGA3
+            - Ref: AWS::NoValue
+        BgUser4:
+          Fn::If:
+            - bgUser4
+            - Ref: BGA4
+            - Ref: AWS::NoValue
+
       Scope:
         ComplianceResourceTypes:
           - AWS::Account
@@ -1634,6 +1574,16 @@ Conditions:
       - Fn::Equals:
           - ""
           - Ref: BGA2
+  bgUser3:
+    Fn::Not:
+      - Fn::Equals:
+          - ""
+          - Ref: BGA3
+  bgUser4:
+    Fn::Not:
+      - Fn::Equals:
+          - ""
+          - Ref: BGA4
   # GC01
   s3AttestationLetterPath:
     Fn::Not:
@@ -1700,6 +1650,11 @@ Conditions:
       - Fn::Equals:
           - ""
           - Ref: NonPrivilegedUsersFilePath
+  logSourceAttestationFilePath:
+    Fn::Not:
+      - Fn::Equals:
+          - ""
+          - Ref: LogSourceAttestationFilePath
   # GC02
   s3AccountManagementPlanPath:
     Fn::Not:
@@ -1809,3 +1764,8 @@ Conditions:
       - Fn::Equals:
           - ""
           - Ref: S3EmergencyAccountAlertsRuleNamesPath
+  logSourceNonComplianceAttestationFilePath:
+    Fn::Not:
+      - Fn::Equals:
+          - ""
+          - Ref: LogSourceNonComplianceAttestationFilePath

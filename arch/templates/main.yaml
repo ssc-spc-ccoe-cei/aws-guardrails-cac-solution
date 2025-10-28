@@ -12,6 +12,8 @@ Metadata:
           - AuditAccountID
           - BGA1
           - BGA2
+          - BGA3
+          - BGA4
           - ExecutionName
           - ExecutionName2
           - OrganizationId
@@ -22,6 +24,8 @@ Metadata:
           - SecurityOUID
           - TenantId
           - DefaultCloudProfile
+          - LogArchiveAccountName
+          
       - Label:
           default: Optional Parameters
         Parameters:
@@ -52,6 +56,12 @@ Metadata:
         default: First Breakglass Account
       BGA2:
         default: Second Breakglass Account
+      BGA3:
+        default: Third Breakglass Account
+      BGA4:
+        default: Fourth Breakglass Account
+      LogArchiveAccountName:
+        default: Log Archive Account Name
       SecurityOUID:
         default: ID of the AWS Organizations Security OU
       RolePrefix:
@@ -122,6 +132,19 @@ Parameters:
     Type: String
     Default: "bgUser2"
     Description: Second breakglass account name
+  BGA3:
+    Type: String
+    Default: "bgUser3"
+    Description: Third breakglass account name
+  BGA4:
+    Type: String
+    Default: "bgUser4"
+    Description: Fourth breakglass account name
+  LogArchiveAccountName:
+    Type: String
+    Default: "LogArchive"
+    Description: Name of Log Archive account
+    
   SecurityOUID:
     Type: String
     Default: ""
@@ -1597,6 +1620,12 @@ Resources:
           ParameterValue: !Ref BGA1
         - ParameterName: BGA2
           ParameterValue: !Ref BGA2
+        - ParameterName: BGA3
+          ParameterValue: !Ref BGA3
+        - ParameterName: BGA4
+          ParameterValue: !Ref BGA4
+        - ParameterName: LogArchiveAccountName
+          ParameterValue: !Ref LogArchiveAccountName
         - ParameterName: OrganizationName
           ParameterValue: !Ref OrganizationName
         - ParameterName: GC03AlarmList
@@ -1635,6 +1664,15 @@ Resources:
         - ParameterName: NonPrivilegedUsersFilePath
           ParameterValue: !Sub
             - "s3://${ClientEvidenceBucket}/gc-01/non_privileged_users.txt"
+            - ClientEvidenceBucket:
+                !If [
+                  GenerateEvidenceBucketName,
+                  !GetAtt GenerateEvidenceBucketName.EvidenceBucketName,
+                  !Ref EvidenceBucketName,
+                ]
+        - ParameterName: LogSourceAttestationFilePath
+          ParameterValue: !Sub
+            - "s3://${ClientEvidenceBucket}/gc-01/logSource_attestation.pdf"
             - ClientEvidenceBucket:
                 !If [
                   GenerateEvidenceBucketName,
@@ -1788,6 +1826,15 @@ Resources:
         - ParameterName: S3EmergencyAccountAlertsRuleNamesPath
           ParameterValue: !Sub
             - "s3://${ClientEvidenceBucket}/gc-13/rule_names.txt"
+            - ClientEvidenceBucket:
+                !If [
+                  GenerateEvidenceBucketName,
+                  !GetAtt GenerateEvidenceBucketName.EvidenceBucketName,
+                  !Ref EvidenceBucketName,
+                ]
+        - ParameterName: LogSourceNonComplianceAttestationFilePath
+          ParameterValue: !Sub
+            - "s3://${ClientEvidenceBucket}/gc-13/logSource_attestation.pdf"
             - ClientEvidenceBucket:
                 !If [
                   GenerateEvidenceBucketName,

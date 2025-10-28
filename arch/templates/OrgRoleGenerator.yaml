@@ -641,6 +641,7 @@ Resources:
                             "codebuild:BatchGetProjects",
                             "codebuild:ListProjects",
                             "config:PutEvaluations",
+                            "config:Get*",
                             "docdb-elastic:List*",
                             "dynamodb:DescribeTable",
                             "dynamodb:ListTables",

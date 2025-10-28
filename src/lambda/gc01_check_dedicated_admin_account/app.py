@@ -734,14 +734,22 @@ def policies_grant_admin_access(iam_client, managed_policies, inline_policies):
     # check in custom managed policies for admin access
     if not admin_access_policy_flag:
         for p in managed_policies:
-            p_response = iam_client.get_policy(PolicyArn=p.get("PolicyArn"))
-            default_version_id = p_response["Policy"]["DefaultVersionId"]
-            version_response = iam_client.get_policy_version(PolicyArn=p.get("PolicyArn"), VersionId=default_version_id)
-            policy_doc_response = version_response["PolicyVersion"]["Document"]
-            if policy_doc_response:
-                if policy_doc_gives_admin_access(policy_doc_response):
-                    custom_policy_flag = True
-                    break;
+            policy_arn =p.get("PolicyArn")
+            if not policy_arn: # skip if policy arn is missing
+                logger.warning(f"Skipping policy check due to missing PolicyArn: {p}")
+                continue
+            try:
+                p_response = iam_client.get_policy(PolicyArn=policy_arn)
+                default_version_id = p_response["Policy"]["DefaultVersionId"]
+                version_response = iam_client.get_policy_version(PolicyArn=policy_arn, VersionId=default_version_id)
+                policy_doc_response = version_response["PolicyVersion"]["Document"]
+                if policy_doc_response:
+                    if policy_doc_gives_admin_access(policy_doc_response):
+                        custom_policy_flag = True
+                        break
+            except botocore.exceptions.ClientError as ex:
+                logger.warning(f"Error getting policy details for {policy_arn}: {ex}")
+                continue
 
     # Check for admin access in managed policies (including customer managed)
     # custom_policy_flag = any(

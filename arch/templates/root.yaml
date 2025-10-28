@@ -48,6 +48,12 @@ Parameters:
   BGA2:
     Type: String
     Default: "bgUser2"
+  BGA3:
+    Type: String
+    Default: "bgUser3"
+  BGA4:
+    Type: String
+    Default: "bgUser4"
   OrganizationName:
     Type: String
     Default: "SSC-Test"
@@ -81,6 +87,9 @@ Parameters:
   DeployVersion:
     Type: String
     Default: 2.0.0
+  LogArchiveAccountName:
+    Type: String
+    Default: "LogArchive"
 
 Resources:
   GuardRailsStack:
@@ -107,6 +116,10 @@ Resources:
         InvokeUpdate: !Ref InvokeUpdate
         BGA1: !Ref BGA1
         BGA2: !Ref BGA2
+        BGA3: !Ref BGA3
+        BGA4: !Ref BGA4
+        LogArchiveAccountName: !Ref LogArchiveAccountName
+
 
       Tags:
         - Key: "UpdateTrigger"

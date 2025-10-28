@@ -18,7 +18,7 @@ logger.setLevel(logging.INFO)
 
 def event_selectors_are_configured_correctly(event_selectors):
     for selector in event_selectors:
-        if selector.get("IncludeManagementEvents", None) != True or selector.get("ReadWriteType", "") != "All":
+        if selector.get("IncludeManagementEvents", None) != True and selector.get("ReadWriteType", "") != "All":
             logger.info("Improperly Configured Event Selector found: %s", selector)
             return False
     return True
@@ -75,11 +75,11 @@ def assess_cloudtrail_configurations(s3_client, cloudtrail_client, event: dict) 
                     bucket_encrypted_flag = check_s3_bucket_encryption(s3_client, s3_bucket_name)
                     if bucket_encrypted_flag:
                         logger.info("### trail bucket %s  has encryption", s3_bucket_name)
-                        compliance_status = "COMPLIANT"
+                        compliance_type = "COMPLIANT"
                         annotation = "Trail bucket has encryption enabled"
                     else:
                         logger.info("### trail bucket %s  has no encryption", s3_bucket_name)
-                        compliance_status = "NON_COMPLIANT"
+                        compliance_type = "NON_COMPLIANT"
                         annotation = "Trail bucket has no encryption enabled"
 
                 

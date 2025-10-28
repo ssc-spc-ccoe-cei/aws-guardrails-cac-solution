@@ -23,3 +23,5 @@ Parameters:
   DeployRoles: "true"
   BGA1: "bgUser1"
   BGA2: "bgUser2"
+  BGA3: "bgUser3"
+  BGA4: "bgUser4"

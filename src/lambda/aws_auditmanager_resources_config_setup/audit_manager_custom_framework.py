@@ -185,27 +185,7 @@ frameworks_data = [
             {
                 "name": "02-Manage Access",
                 "controls": [
-                    {
-                        "type": "Custom",
-                        "name": "gc02_check_access_management_attestation",
-                        "description": "Confirm that the access authorization mechanisms have been implemented. Source: https://github.com/canada-ca/cloud-guardrails/blob/master/EN/02_Manage-Access.md",
-                        "testingInformation": "",
-                        "actionPlanTitle": "Confirm that the access authorization mechanisms have been implemented",
-                        "actionPlanInstructions": "Upload the file to an S3 bucket and provide the path to the AWS Config control.",
-                        "controlSources": "AWS Config",
-                        "controlMappingSources": [
-                            {
-                                "sourceName": "IAMPrivilegedRolesReview-check",
-                                "sourceSetUpOption": "System_Controls_Mapping",
-                                "sourceType": "AWS_Config",
-                                "sourceKeyword": {
-                                    "keywordInputType": "SELECT_FROM_LIST",
-                                    "keywordValue": "Custom_gc02_check_access_management_attestation-conformance-pack",
-                                },
-                            }
-                        ],
-                        "tags": {},
-                    },
+                    
                     {
                         "type": "Custom",
                         "name": "gc02_check_group_access_configuration",
@@ -525,27 +505,7 @@ frameworks_data = [
                         ],
                         "tags": {},
                     },
-                    {
-                        "type": "Custom",
-                        "name": "gc07_check_secure_network_transmission_policy",
-                        "description": "Confirm that a secure network transmission policy has been provided.Source: https://github.com/canada-ca/cloud-guardrails/blob/master/EN/07_Protect-Data-in-Transit.md",
-                        "testingInformation": "",
-                        "actionPlanTitle": "Provide a Secure Network Transmission Policy document",
-                        "actionPlanInstructions": "Ensure a policy for Secure Network Transmission has been developed.",
-                        "controlSources": "AWS Config",
-                        "controlMappingSources": [
-                            {
-                                "sourceName": "S3-check",
-                                "sourceSetUpOption": "System_Controls_Mapping",
-                                "sourceType": "AWS_Config",
-                                "sourceKeyword": {
-                                    "keywordInputType": "SELECT_FROM_LIST",
-                                    "keywordValue": "Custom_gc07_check_secure_network_transmission_policy-conformance-pack",
-                                },
-                            }
-                        ],
-                        "tags": {},
-                    },
+                    
                 ],
             },
             {
@@ -619,27 +579,7 @@ frameworks_data = [
             {
                 "name": "09-Network Security Services",
                 "controls": [
-                    {
-                        "type": "Custom",
-                        "name": "gc09_check_netsec_architecture",
-                        "description": "Confirm that a Network Security Architecture document has been provided.Source: https://github.com/canada-ca/cloud-guardrails/blob/master/EN/09_Network-Security-Services.md",
-                        "testingInformation": "",
-                        "actionPlanTitle": "Provide a Network Security Architecture document that meets GC requirements",
-                        "actionPlanInstructions": "Upload the file to an S3 bucket and provide the path to the AWS Config control.",
-                        "controlSources": "AWS Config",
-                        "controlMappingSources": [
-                            {
-                                "sourceName": "S3-check",
-                                "sourceSetUpOption": "System_Controls_Mapping",
-                                "sourceType": "AWS_Config",
-                                "sourceKeyword": {
-                                    "keywordInputType": "SELECT_FROM_LIST",
-                                    "keywordValue": "Custom_gc09_check_netsec_architecture-conformance-pack",
-                                },
-                            }
-                        ],
-                        "tags": {},
-                    },
+                    
                     {
                         "type": "Custom",
                         "name": "gc09_check_non_public_storage_accounts",

@@ -57,7 +57,7 @@ def rule_event_pattern_matches_guard_duty_findings(rule_event_pattern: str | Non
     )
 
 
-def check_rule_sns_or_log_grp_target_is_setup(sns_client, event_bridge_client, rule, event):
+def check_rule_sns_or_log_grp_target_is_setup(sns_client, event_bridge_client, rule, event, log_source_attestation_file_path):
     resource_type = "AWS::Events::Rule"
     
 
@@ -104,6 +104,19 @@ def check_rule_sns_or_log_grp_target_is_setup(sns_client, event_bridge_client, r
                             resource_type=resource_type,
                             annotation="An Event rule that has a CloudWatch log group is setup and confirmed.",
                         )
+        else:
+            #  check for attestation file path
+            s3_client = get_client("s3")
+            log_source_attestation_file_exists_flag = check_s3_object_exists(s3_client, log_source_attestation_file_path)
+            if log_source_attestation_file_exists_flag:
+                logger.info("### Log source attestation file exists")
+                return build_evaluation(
+                            rule.get("Name"),
+                            "COMPLIANT",
+                            event,
+                            resource_type=resource_type,
+                            annotation="Log Source Attestation File Provided.",
+                        )      
     
     
     return build_evaluation(
@@ -116,7 +129,7 @@ def check_rule_sns_or_log_grp_target_is_setup(sns_client, event_bridge_client, r
 
    # is target an SNS input transformer?
   
-def check_alerts_flag_misuse(event, rule_parameters, aws_account_id, evaluations, aws_s3_client, aws_guard_duty_client, aws_event_bridge_client, aws_sns_client, aws_cloudwatch_client):
+def check_alerts_flag_misuse(event, rule_parameters, aws_account_id, evaluations, aws_s3_client, aws_guard_duty_client, aws_event_bridge_client, aws_sns_client, aws_cloudwatch_client, log_source_attestation_file_path):
     rules = list_all_event_bridge_rules(aws_event_bridge_client)
 
     guard_duty_is_setup = False
@@ -130,7 +143,7 @@ def check_alerts_flag_misuse(event, rule_parameters, aws_account_id, evaluations
         if len(guardduty_rules) > 0:
                 # yes, check that an SNS target is setup that sends an email notification to authorized personnel
             for rule in guardduty_rules:
-                eval = check_rule_sns_or_log_grp_target_is_setup(aws_sns_client, aws_event_bridge_client, rule, event)
+                eval = check_rule_sns_or_log_grp_target_is_setup(aws_sns_client, aws_event_bridge_client, rule, event, log_source_attestation_file_path)
                 if eval.get("ComplianceType") == "COMPLIANT":
                     guard_duty_is_setup = True
                 evaluations.append(eval)
@@ -178,7 +191,7 @@ def check_alerts_flag_misuse(event, rule_parameters, aws_account_id, evaluations
                     # yes, check that an SNS target is setup that sends an email notification to authorized personnel or a log group is setup
                 for rule in filtered_rules:
                     
-                    eval = check_rule_sns_or_log_grp_target_is_setup(aws_sns_client, aws_event_bridge_client, rule, event)
+                    eval = check_rule_sns_or_log_grp_target_is_setup(aws_sns_client, aws_event_bridge_client, rule, event, log_source_attestation_file_path)
                     if eval.get("ComplianceType") == "COMPLIANT":
                         is_compliant = True
                         evaluations.append(eval)
@@ -321,6 +334,8 @@ def lambda_handler(event, context):
     aws_config_client = get_client("config", aws_account_id, execution_role_name, is_not_audit_account)
     aws_organizations_client = get_client("organizations", aws_account_id, execution_role_name, is_not_audit_account)
 
+    log_source_attestation_file_path = rule_parameters.get("LogSourceAttestationFilePath", "")
+    
     if aws_account_id != get_organizations_mgmt_account_id(aws_organizations_client):
         logger.info("Not checked in account %s as this is not the Management Account", aws_account_id)
         return submit_evaluations(aws_config_client, event, [build_evaluation(
@@ -360,7 +375,7 @@ def lambda_handler(event, context):
             gr_requirement_type=gr_requirement_type
         )])
     
-    evaluations = check_alerts_flag_misuse(event, rule_parameters, aws_account_id, evaluations, aws_s3_client, aws_guard_duty_client, aws_event_bridge_client, aws_sns_client, aws_cloudwatch_client)
+    evaluations = check_alerts_flag_misuse(event, rule_parameters, aws_account_id, evaluations, aws_s3_client, aws_guard_duty_client, aws_event_bridge_client, aws_sns_client, aws_cloudwatch_client, log_source_attestation_file_path)
 
     logger.info("AWS Config updating evaluations: %s", evaluations)
     submit_evaluations(aws_config_client, event, evaluations)
