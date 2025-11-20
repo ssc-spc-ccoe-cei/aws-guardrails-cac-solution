@@ -133,8 +133,9 @@ def assess_api_gw_encryption_at_rest(api_gw_client, event):
                                 api_id,
                             )
                     # build evaluation
+                    resource_identifier = f"{api_id}:{deployment_id}:{stage_name}"
                     local_evaluations.append(
-                        build_evaluation(stage_name, compliance_status, event, resource_type, annotation)
+                        build_evaluation(resource_identifier, compliance_status, event, resource_type, annotation)
                     )
                     if compliance_status == "NON_COMPLIANT":
                         NONCOMPLIANT_SERVICES.add("API Gateway")
