@@ -752,7 +752,7 @@ def assess_cloud_front_ssl_enforcement(cloud_front_client, event: dict) -> list[
             continue
 
         min_protocol_version = viewer_certificate.get("MinimumProtocolVersion", None)
-        if min_protocol_version.startswith("TLSv1.2"):
+        if min_protocol_version[:7] in ["TLSv1.2", "TLSv1.3"]:
             annotation = f"Distribution has a minimum protocol version of TLS1.2. ({min_protocol_version})"
             local_evaluations.append(build_evaluation(resource_id, "COMPLIANT", event, resource_type, annotation))
         else:
