@@ -237,14 +237,14 @@ def is_target_group_alb(elb_v2_client, target_group_arn):
             target = target_health.get('Target', {})
             target_id = target.get('Id', '')
             
-            # If target ID looks like a DNS name, it could be an ALB
-            if '.' in target_id:
+            # If target ID looks like a application load balancer
+            if 'loadbalancer/app' in target_id:
                 # Check if this DNS name belongs to an ALB
                 try:
                     # Get all load balancers and check if any match this DNS name
                     lb_response = elb_v2_client.describe_load_balancers()
                     for lb in lb_response.get('LoadBalancers', []):
-                        if lb.get('DNSName') == target_id and lb.get('Type') == 'application':
+                        if lb.get('LoadBalancerArn') == target_id and lb.get('Type') == 'application':
                             return True
                 except botocore.exceptions.ClientError as ex:
                     logger.error(f"Error checking if target is ALB: {ex}")
