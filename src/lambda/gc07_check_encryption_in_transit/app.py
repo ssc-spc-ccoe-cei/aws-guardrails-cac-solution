@@ -304,7 +304,7 @@ def assess_elb_v2_ssl_enforcement(elb_v2_client, event: dict):
                 
                 PageSize=PAGE_SIZE,
             )
-            logger.info("### load balancer . %s ###", load_balancer)
+            
             b_more_data = True
             i_retries = 0
             while b_more_data and (i_retries < MAXIMUM_API_RETRIES):
@@ -314,13 +314,13 @@ def assess_elb_v2_ssl_enforcement(elb_v2_client, event: dict):
                         listener_compliance = ""
                         listener_annotation = ""
                         listener_protocol = listener.get("Protocol", "")
-                        logger.info("### listener protocal. %s ###", listener_protocol)
+                        
 
                         # Check if this is a TCP listener on a Network Load Balancer
                         is_nlb_with_alb_target = False
                         if (listener_protocol.lower() == "tcp" and 
                             load_balancer.get("Type", "").lower() == "network"):
-                            logger.info("### nlb found ###")
+                            
                             # Check if any target group for this listener points to an ALB
                             for action in listener.get("DefaultActions", []):
                                 if action.get("Type") == "forward" and action.get("TargetGroupArn"):
@@ -330,7 +330,7 @@ def assess_elb_v2_ssl_enforcement(elb_v2_client, event: dict):
                                         break
 
                         if listener_protocol.lower() not in ["https", "tls"]:
-                            logger.info("### protocol is not in https or tls ###")
+                            
                              # Special case: NLB with TCP listener pointing to ALB
                             if is_nlb_with_alb_target:
                                 listener_compliance = "COMPLIANT"
@@ -599,9 +599,9 @@ def assess_rest_api_stages_ssl_enforcement(api_gw_client, event: dict):
                                                 else:
                                                     if HTTP or (HTTP and AWS):
                                                         custom_domains = fetch_custom_domain_names(api_gw_client)
-                                                        logger.info("###Custom domains : %s ", str(custom_domains))
+                                                        
                                                         if api_id in custom_domains:
-                                                            logger.info("###REST API Found in Custom domains : %s ", api_id)
+                                                            
                                                             compliance_status = "COMPLIANT"
                                                             compliance_annotation = "REST API has custom domain with mTLS enabled"
                                                         else:
