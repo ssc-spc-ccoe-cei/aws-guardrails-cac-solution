@@ -15,7 +15,7 @@
             ],
             "Condition": {
                 "StringEquals": {
-                    "aws:PrincipalOrgID": "{ORGANIZATION_ID}"
+                    "aws:PrincipalOrgID": {ORGANIZATION_ID}
                 }
             }
         }
