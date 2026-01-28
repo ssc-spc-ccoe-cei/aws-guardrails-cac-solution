@@ -64,7 +64,7 @@ Resources:
       Handler: app.lambda_handler
       Role: !Sub "arn:aws:iam::${AuditAccountID}:role/${RolePrefix}default_assessment_role"
       Runtime: !Ref PythonRuntime
-      Timeout: 180
+      Timeout: 300
       Layers:
         - !Ref CloudGuardrailsCommonLayer
       LoggingConfig:
