@@ -133,9 +133,8 @@ def assess_api_gw_encryption_at_rest(api_gw_client, event):
                                 api_id,
                             )
                     # build evaluation
-                    resource_identifier = f"{api_id}:{deployment_id}:{stage_name}"
                     local_evaluations.append(
-                        build_evaluation(resource_identifier, compliance_status, event, resource_type, annotation)
+                        build_evaluation(stage_name, compliance_status, event, resource_type, annotation)
                     )
                     if compliance_status == "NON_COMPLIANT":
                         NONCOMPLIANT_SERVICES.add("API Gateway")
@@ -241,7 +240,6 @@ def assess_cloudtrail_encryption_at_rest(s3_client, AWScloudtrail_client, event)
             annotation = "AWS Control Tower Trail"
         
         else:
-
             if trail.get("KmsKeyId", ""):
                 compliance_status = "COMPLIANT"
                 annotation = "KMS key confirmed"
@@ -250,7 +248,7 @@ def assess_cloudtrail_encryption_at_rest(s3_client, AWScloudtrail_client, event)
                 s3_bucket_name = trail.get("S3BucketName", "")
                 if s3_bucket_name:
                     bucket_encrypted_flag = check_s3_bucket_encryption(s3_client, s3_bucket_name)
-                    if bucket_encrypted_flag:
+                    if bucket_encrypted_flag or s3_bucket_name.startswith(CLOUD_TRAIL_PLACEHOLDER_BUCKET_PREFIX):
                         logger.info("### trail bucket %s  has encryption", s3_bucket_name)
                         compliance_status = "COMPLIANT"
                         annotation = "Trail bucket has encryption enabled"
@@ -653,11 +651,13 @@ def lambda_handler(event, context):
     global NONCOMPLIANT_SERVICES
     global PAGE_SIZE
     global INTERVAL_BETWEEN_API_CALLS
+    global CLOUD_TRAIL_PLACEHOLDER_BUCKET_PREFIX
 
     NONCOMPLIANT_SERVICES = set({})
     EBS_ENCRYPTION_AT_REST = False
     PAGE_SIZE = 25
     INTERVAL_BETWEEN_API_CALLS = 0.1
+    CLOUD_TRAIL_PLACEHOLDER_BUCKET_PREFIX = "codepipeline-cloudtrail-placeholder-bucket-"
 
     # establish AWS API clients
     aws_api_gw_client = get_client("apigateway", aws_account_id, execution_role_name, is_not_audit_account)
