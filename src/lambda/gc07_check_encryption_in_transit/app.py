@@ -217,42 +217,17 @@ def assess_redshift_clusters_ssl_enforcement(redshift_client, event: dict):
     # logger.info("Redshift - reporting %s evaluations.", len(local_evaluations))
     return local_evaluations
 
-def is_target_group_alb(elb_v2_client, target_group_arn):
+def is_target_group_alb(elb_v2_client, target_group_arn: str) -> bool:
     """
-    Check if a target group's target is an Application Load Balancer.
-    
-    Args:
-        elb_v2_client: The ELBv2 boto3 client
-        target_group_arn: The ARN of the target group to check
-        
-    Returns:
-        bool: True if the target group is an ALB, False otherwise
+    Return True if the target group has TargetType = 'alb'.
     """
     try:
-        # Get the target health to find the targets
-        response = elb_v2_client.describe_target_health(TargetGroupArn=target_group_arn)
-        
-        # Check each target to see if it's an ALB
-        for target_health in response.get('TargetHealthDescriptions', []):
-            target = target_health.get('Target', {})
-            target_id = target.get('Id', '')
-            
-            # If target ID looks like a application load balancer
-            if 'loadbalancer/app' in target_id:
-                # Check if this DNS name belongs to an ALB
-                try:
-                    # Get all load balancers and check if any match this DNS name
-                    lb_response = elb_v2_client.describe_load_balancers()
-                    for lb in lb_response.get('LoadBalancers', []):
-                        if lb.get('LoadBalancerArn') == target_id and lb.get('Type') == 'application':
-                            return True
-                except botocore.exceptions.ClientError as ex:
-                    logger.error(f"Error checking if target is ALB: {ex}")
-                    
+        resp = elb_v2_client.describe_target_groups(TargetGroupArns=[target_group_arn])
+        tgs = resp.get("TargetGroups", [])
+        return bool(tgs and tgs[0].get("TargetType", "").lower() == "alb")
     except botocore.exceptions.ClientError as ex:
-        logger.error(f"Error describing target health: {ex}")
-    
-    return False
+        logger.error("ELBv2 - Error checking target group type for %s: %s", target_group_arn, ex)
+        return False
 
 def assess_elb_v2_ssl_enforcement(elb_v2_client, event: dict):
     """
@@ -314,43 +289,65 @@ def assess_elb_v2_ssl_enforcement(elb_v2_client, event: dict):
                         listener_compliance = ""
                         listener_annotation = ""
                         listener_protocol = listener.get("Protocol", "")
-                        
 
-                        # Check if this is a TCP listener on a Network Load Balancer
-                        is_nlb_with_alb_target = False
-                        if (listener_protocol.lower() == "tcp" and 
-                            load_balancer.get("Type", "").lower() == "network"):
-                            
-                            # Check if any target group for this listener points to an ALB
+                        listener_port = listener.get("Port")  # NEW
+
+                        # NEW: Detect the special case (NLB TCP:443 -> ALB target group)
+                        is_nlb_with_alb_target_tcp443 = False
+                        if (
+                            load_balancer.get("Type", "").lower() == "network"
+                            and listener_protocol.upper() == "TCP"
+                            and listener_port == 443
+                        ):
                             for action in listener.get("DefaultActions", []):
-                                if action.get("Type") == "forward" and action.get("TargetGroupArn"):
-                                    target_group_arn = action.get("TargetGroupArn")
-                                    if is_target_group_alb(elb_v2_client, target_group_arn):
-                                        is_nlb_with_alb_target = True
+                                if action.get("Type") == "forward":
+                                    # Single target group form
+                                    tg_arn = action.get("TargetGroupArn")
+                                    if tg_arn and is_target_group_alb(elb_v2_client, tg_arn):
+                                        is_nlb_with_alb_target_tcp443 = True
                                         break
+                                    # ForwardConfig (multiple TGs) form
+                                    for tg in action.get("ForwardConfig", {}).get("TargetGroups", []):
+                                        tg_arn2 = tg.get("TargetGroupArn")
+                                        if tg_arn2 and is_target_group_alb(elb_v2_client, tg_arn2):
+                                            is_nlb_with_alb_target_tcp443 = True
+                                            break
+                                if is_nlb_with_alb_target_tcp443:
+                                    break
 
                         if listener_protocol.lower() not in ["https", "tls"]:
-                            
-                             # Special case: NLB with TCP listener pointing to ALB
-                            if is_nlb_with_alb_target:
+                            # Special case: NLB TCP:443 forwarding to ALB
+                            if is_nlb_with_alb_target_tcp443:
                                 listener_compliance = "COMPLIANT"
-                                listener_annotation = f"TCP listener on NLB with ALB target group - {listener.get("ListenerArn", "")}"
+                                listener_annotation = (
+                                    f"NLB TCP:443 listener forwarding to ALB target group - "
+                                    f"{listener.get('ListenerArn', '')}"
+                                )
                             else:
                                 redirect_flag = False
                                 for action in listener.get("DefaultActions", []):
-                                    if (action.get("Type") == "redirect" and action.get("RedirectConfig", {}).get("Protocol") == "HTTPS"):
+                                    if (
+                                        action.get("Type") == "redirect"
+                                        and action.get("RedirectConfig", {}).get("Protocol") == "HTTPS"
+                                    ):
                                         redirect_flag = True
                                         break
 
                                 if redirect_flag:
                                     listener_compliance = "COMPLIANT"
-                                    listener_annotation = f"HTTP listener with HTTPS redirection - {listener.get("ListenerArn", "")}"
+                                    listener_annotation = (
+                                        f"HTTP listener with HTTPS redirection - {listener.get('ListenerArn', '')}"
+                                    )
                                 else:
                                     listener_compliance = "NON_COMPLIANT"
-                                    listener_annotation = "Non HTTPS/TLS listener protocol - {}".format(listener_protocol)
+                                    listener_annotation = (
+                                        f"Non HTTPS/TLS listener protocol - {listener_protocol}"
+                                    )
                         else:
                             listener_compliance = "COMPLIANT"
-                            listener_annotation = f"Listener uses HTTPS/TLS - {listener.get("ListenerArn", "")}"
+                            listener_annotation = (
+                                f"Listener uses HTTPS/TLS - {listener.get('ListenerArn', '')}"
+                            )
                         local_evaluations.append(
                             build_evaluation(
                                 listener.get("ListenerArn", ""),
@@ -360,6 +357,7 @@ def assess_elb_v2_ssl_enforcement(elb_v2_client, event: dict):
                                 annotation=listener_annotation,
                             )
                         )
+
                     if next_marker:
                         time.sleep(INTERVAL_BETWEEN_API_CALLS)
                         try:
