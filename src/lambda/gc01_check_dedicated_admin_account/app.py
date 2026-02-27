@@ -4,8 +4,13 @@
 
 import json
 import logging
+import datetime
 
 import botocore.exceptions
+
+# Feature flag: when True, use PIM/JIT logic (CloudTrail-based recent elevation checks)
+# Default False preserves original behaviour.
+PIM_ENABLED = False
 
 from utils import (
     is_scheduled_notification,
@@ -767,6 +772,180 @@ def policies_grant_admin_access(iam_client, managed_policies, inline_policies):
 
 
 
+def _utc_now():
+    return datetime.datetime.now(datetime.timezone.utc)
+
+
+def _extract_session_issuer_username(cloudtrail_event: dict) -> str | None:
+    """Best-effort extraction of the principal user name that performed an action."""
+    ui = cloudtrail_event.get("userIdentity", {}) or {}
+
+    # Typical for assumed role in automation
+    session_context = ui.get("sessionContext", {}) or {}
+    session_issuer = session_context.get("sessionIssuer", {}) or {}
+    if session_issuer.get("userName"):
+        return str(session_issuer.get("userName")).lower()
+
+    if ui.get("userName"):
+        return str(ui.get("userName")).lower()
+
+    arn = ui.get("arn")
+    if arn and "/" in arn:
+        return str(arn).split("/")[-1].lower()
+
+    return None
+
+
+def _cloudtrail_lookup_events_last_24h(cloudtrail_client, event_names: list[str], now_utc=None):
+    """Lookup CloudTrail events by name for the last 24 hours."""
+    if now_utc is None:
+        now_utc = _utc_now()
+    start = now_utc - datetime.timedelta(hours=24)
+
+    events = []
+    for name in event_names:
+        next_token = None
+        while True:
+            resp = (
+                cloudtrail_client.lookup_events(
+                    LookupAttributes=[{"AttributeKey": "EventName", "AttributeValue": name}],
+                    StartTime=start,
+                    EndTime=now_utc,
+                    NextToken=next_token,
+                    MaxResults=50,
+                )
+                if next_token
+                else cloudtrail_client.lookup_events(
+                    LookupAttributes=[{"AttributeKey": "EventName", "AttributeValue": name}],
+                    StartTime=start,
+                    EndTime=now_utc,
+                    MaxResults=50,
+                )
+            )
+            events.extend(resp.get("Events", []))
+            next_token = resp.get("NextToken")
+            if not next_token:
+                break
+
+    return events
+
+
+def _is_admin_permission_set_arn(permission_set_arn: str, admin_permission_sets_by_account: dict[str, list[str]]) -> bool:
+    for _acct_id, ps_arns in admin_permission_sets_by_account.items():
+        if permission_set_arn in ps_arns:
+            return True
+    return False
+
+
+def evaluate_pim_jit_via_identity_center(
+    organizations_client,
+    iam_client,
+    sso_admin_client,
+    identity_store_client,
+    cloudtrail_client,
+    privileged_users_list,
+    event,
+    aws_account_id,
+    sso_users_by_instance,
+    sso_instance_id_by_arn,
+):
+    """
+    PIM/JIT logic for Identity Center:
+      - Identify admin-capable permission sets (same logic as current code).
+      - Look for CloudTrail events in last 24h that indicate a principal was granted access via assignments.
+      - If no relevant assignment events -> COMPLIANT.
+      - If relevant events -> ensure the actor principal is in privileged_users_list -> COMPLIANT else NON_COMPLIANT.
+
+    Notes:
+      - This assesses *recent elevation actions* rather than current steady-state membership.
+      - Event names and payload shapes can vary; this is best-effort.
+    """
+
+    # Build set of admin permission set ARNs across instances/accounts
+    admin_permission_sets = set()
+    for instance_arn in sso_users_by_instance.keys():
+        admin_ps_by_acct = get_admin_permission_sets_for_instance_by_account(
+            iam_client, sso_admin_client, instance_arn, organizations_client
+        )
+        for _acct_id, ps_arns in admin_ps_by_acct.items():
+            for ps_arn in ps_arns:
+                admin_permission_sets.add(ps_arn)
+
+    if not admin_permission_sets:
+        # No admin permission sets found -> treat as compliant for this PIM path
+        annotation = "No admin-capable permission sets detected in Identity Center."
+        return [build_evaluation(aws_account_id, "COMPLIANT", event, annotation=annotation)]
+
+    # CloudTrail events: assignment operations to accounts
+    # Common Identity Center Admin events include:
+    # - CreateAccountAssignment
+    # - DeleteAccountAssignment
+    # - CreateAccountAssignmentForPrincipal
+    # - DeleteAccountAssignmentForPrincipal
+    # Depending on API/console, names can differ; include several.
+    candidate_event_names = [
+        "CreateAccountAssignment",
+        "CreateAccountAssignmentForPrincipal",
+        "DeleteAccountAssignment",
+        "DeleteAccountAssignmentForPrincipal",
+    ]
+
+    now_utc = _utc_now()
+    raw_events = _cloudtrail_lookup_events_last_24h(cloudtrail_client, candidate_event_names, now_utc=now_utc)
+
+    privileged = set([u.lower() for u in privileged_users_list])
+
+    elevation_actors = set()
+    relevant_events_count = 0
+
+    for ev in raw_events:
+        try:
+            detail = json.loads(ev.get("CloudTrailEvent", "{}"))
+        except json.JSONDecodeError:
+            continue
+
+        # Focus on management account assignments; many payloads carry accountId / targetId
+        req = detail.get("requestParameters", {}) or {}
+        target_acct = req.get("targetId") or req.get("accountId") or req.get("AccountId")
+        if target_acct and str(target_acct) != str(mane_id):
+            continue
+
+        # Permission set arn appears as permissionSetArn in many events
+        ps_arn = req.get("permissionSetArn") or req.get("permissionSetArnList")
+        if isinstance(ps_arn, list):
+            # any admin PS
+            if not any(p in admin_permission_sets for p in ps_arn):
+                continue
+        elif isinstance(ps_arn, str):
+            if ps_arn not in admin_permission_sets:
+                continue
+        else:
+            # If absent, skip; we only want explicit admin PS assignment events
+            continue
+
+        relevant_events_count += 1
+        actor = _extract_session_issuer_username(detail)
+        if actor:
+            elevation_actors.add(actor)
+
+    if relevant_events_count == 0:
+        annotation = "No Identity Center admin permission set assignments detected in the last 24 hours."
+        return [build_evaluation(aws_account_id, "COMPLIANT", event, annotation=annotation)]
+
+    not_approved = sorted([u for u in elevation_actors if u not in privileged])
+    if not not_approved:
+        annotation = (
+            "Identity Center admin permission set assignment activity detected in last 24 hours, "
+            "and all actors are in the privileged list."
+        )
+        return [build_evaluation(aws_account_id, "COMPLIANT", event, annotation=annotation)]
+
+    annotation = (
+        f"Identity Center admin permission set assignment activity detected in last 24 hours by non-privileged actor(s): {not_approved}."
+    )
+    return [build_evaluation(aws_account_id, "NON_COMPLIANT", event, annotation=annotation)]
+
+
 def lambda_handler(event, context):
     """
     Main entry point for the AWS Lambda.
@@ -789,8 +968,7 @@ def lambda_handler(event, context):
     is_not_audit_account = aws_account_id != audit_account_id
 
     aws_organizations_client = get_client("organizations", aws_account_id, execution_role_name, is_not_audit_account)
-    
-    
+
     global mane_id
     mane_id = get_organizations_mgmt_account_id(aws_organizations_client)
     # Ensure we are in the Management Account
@@ -804,6 +982,9 @@ def lambda_handler(event, context):
     aws_sso_admin_client = get_client("sso-admin", aws_account_id, execution_role_name, is_not_audit_account)
     aws_identity_store_client = get_client("identitystore", aws_account_id, execution_role_name, is_not_audit_account)
     aws_s3_client = get_client("s3")
+    aws_cloudtrail_client = None
+    if PIM_ENABLED:
+        aws_cloudtrail_client = get_client("cloudtrail", aws_account_id, execution_role_name, is_not_audit_account)
 
     evaluations = []
 
@@ -851,26 +1032,45 @@ def lambda_handler(event, context):
         evaluations.append(build_evaluation(aws_account_id, "NON_COMPLIANT", event, annotation=annotation))
     else:
         # Fetch user lists from S3
-        privileged_users_list = [user.lower() for user in get_lines_from_s3_file(aws_s3_client, privileged_users_file_path)]
-        non_privileged_users_list = [user.lower() for user in get_lines_from_s3_file(aws_s3_client, non_privileged_users_file_path)]
+        privileged_users_list = [
+            user.lower() for user in get_lines_from_s3_file(aws_s3_client, privileged_users_file_path)
+        ]
+        non_privileged_users_list = [
+            user.lower() for user in get_lines_from_s3_file(aws_s3_client, non_privileged_users_file_path)
+        ]
 
         # Fetch SSO info
-        sso_users_by_instance, sso_instance_id_by_arn = fetch_sso_users(aws_sso_admin_client, aws_identity_store_client, mane_id)
-       # logger.info(f"{sso_users_by_instance}")
-
-        # Main check
-        evaluations += check_users(
-            aws_organizations_client,
-            aws_sso_admin_client,
-            aws_iam_client,
-            aws_identity_store_client,
-            privileged_users_list,
-            non_privileged_users_list,
-            event,
-            aws_account_id,
-            sso_users_by_instance,
-            sso_instance_id_by_arn,
+        sso_users_by_instance, sso_instance_id_by_arn = fetch_sso_users(
+            aws_sso_admin_client, aws_identity_store_client, mane_id
         )
+
+        if PIM_ENABLED:
+            evaluations += evaluate_pim_jit_via_identity_center(
+                aws_organizations_client,
+                aws_iam_client,
+                aws_sso_admin_client,
+                aws_identity_store_client,
+                aws_cloudtrail_client,
+                privileged_users_list,
+                event,
+                aws_account_id,
+                sso_users_by_instance,
+                sso_instance_id_by_arn,
+            )
+        else:
+            # Main check (original behavior)
+            evaluations += check_users(
+                aws_organizations_client,
+                aws_sso_admin_client,
+                aws_iam_client,
+                aws_identity_store_client,
+                privileged_users_list,
+                non_privileged_users_list,
+                event,
+                aws_account_id,
+                sso_users_by_instance,
+                sso_instance_id_by_arn,
+            )
 
     logger.info("AWS Config updating evaluations: %s", evaluations)
     submit_evaluations(aws_config_client, event, evaluations)
