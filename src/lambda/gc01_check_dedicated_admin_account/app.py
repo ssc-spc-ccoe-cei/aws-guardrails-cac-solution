@@ -176,55 +176,6 @@ def fetch_sso_users(sso_admin_client, identity_store_client, management_account_
     return users_by_instance, instance_id_by_arn
 
 
-
-
-def fetch_sso_group_ids_for_user(identity_store_client, identity_store_id, user_id): 
-    """
-    Return the list of group IDs for which the specified user is a member.
-    """
-    group_ids = []
-    # First, list all groups in the identity store.
-    groups = []
-    next_token = None
-    while True:
-        response = (
-            identity_store_client.list_groups(IdentityStoreId=identity_store_id, NextToken=next_token)
-            if next_token
-            else identity_store_client.list_groups(IdentityStoreId=identity_store_id)
-        )
-        groups.extend(response.get("Groups", []))
-        next_token = response.get("NextToken")
-        if not next_token:
-            break
-
-    # Now, for each group, check if the user is a member.
-    for group in groups:
-        group_id = group.get("GroupId")
-        membership_next_token = None
-        while True:
-            response = (
-                identity_store_client.list_group_memberships(
-                    IdentityStoreId=identity_store_id,
-                    GroupId=group_id,
-                    NextToken=membership_next_token,
-                )
-                if membership_next_token
-                else identity_store_client.list_group_memberships(
-                    IdentityStoreId=identity_store_id,
-                    GroupId=group_id,
-                )
-            )
-            for membership in response.get("GroupMemberships", []):
-                if membership.get("MemberId", {}).get("UserId") == user_id:
-                    group_ids.append(group_id)
-                    break  # Found the user in this group; move on to the next group.
-            membership_next_token = response.get("NextToken")
-            if not membership_next_token:
-                break
-
-    return group_ids
-
-
 def policy_doc_gives_admin_access(policy_doc: str) -> bool:
     """
     Check if the given JSON policy document has Effect=Allow, Action=*, Resource=*
@@ -575,50 +526,124 @@ def get_admin_permission_sets_for_instance_by_account(iam_client, sso_admin_clie
         raise ex
 
     return permission_sets
-
-
-def user_assigned_to_permission_set(sso_admin_client, user_id, user_group_ids, instance_arn, account_id, permission_set_arn):
-    """
-    Check if the user is assigned to the given permission set either directly 
-    (PrincipalType == 'USER') or via a group membership (PrincipalType == 'GROUP').
-    """
-    try:
-        next_token = None
-        while True:
-            response = (
-                sso_admin_client.list_account_assignments(
-                    AccountId=account_id,
-                    InstanceArn=instance_arn,
-                    PermissionSetArn=permission_set_arn,
-                    NextToken=next_token,
-                )
-                if next_token
-                else sso_admin_client.list_account_assignments(
-                    AccountId=account_id,
-                    InstanceArn=instance_arn,
-                    PermissionSetArn=permission_set_arn,
-                )
+        
+        
+def _list_account_assignments_all(sso_admin_client, instance_arn: str, account_id: str, permission_set_arn: str) -> list[dict]:
+    """List *all* assignments for a given (account, permission set)."""
+    assignments: list[dict] = []
+    next_token = None
+    while True:
+        resp = (
+            sso_admin_client.list_account_assignments(
+                AccountId=account_id,
+                InstanceArn=instance_arn,
+                PermissionSetArn=permission_set_arn,
+                NextToken=next_token,
             )
-            for assignment in response.get("AccountAssignments", []):
-                principal_id = assignment.get("PrincipalId")
-                principal_type = assignment.get("PrincipalType")
-               # logger.info (f"assigment:{assigment}")
-
-                # Direct user assignment
-                if principal_type == "USER" and principal_id == user_id:
-                    return True
-                # Group-based assignment
-                if principal_type == "GROUP" and principal_id in user_group_ids:
-                    return True
-
-            next_token = response.get("NextToken")
-            if not next_token:
-                break
-        return False
-    except botocore.exceptions.ClientError as ex:
-        ex.response["Error"]["Message"] = "InternalError"
-        ex.response["Error"]["Code"] = "InternalError"
-        raise ex
+            if next_token
+            else sso_admin_client.list_account_assignments(
+                AccountId=account_id,
+                InstanceArn=instance_arn,
+                PermissionSetArn=permission_set_arn,
+            )
+        )
+        assignments.extend(resp.get("AccountAssignments", []) or [])
+        next_token = resp.get("NextToken")
+        if not next_token:
+            break
+    return assignments
+ 
+ 
+def _get_group_user_ids_cached(identity_store_client, identity_store_id: str, group_id: str, cache: dict[str, set[str]]) -> set[str]:
+    """Expand a GROUP principal to userIds (cached)."""
+    if group_id in cache:
+        return cache[group_id]
+ 
+    user_ids: set[str] = set()
+    next_token = None
+    while True:
+        resp = (
+            identity_store_client.list_group_memberships(
+                IdentityStoreId=identity_store_id,
+                GroupId=group_id,
+                NextToken=next_token,
+            )
+            if next_token
+            else identity_store_client.list_group_memberships(
+                IdentityStoreId=identity_store_id,
+                GroupId=group_id,
+            )
+        )
+ 
+        for membership in resp.get("GroupMemberships", []) or []:
+            uid = membership.get("MemberId", {}).get("UserId")
+            if uid:
+                user_ids.add(uid)
+ 
+        next_token = resp.get("NextToken")
+        if not next_token:
+            break
+ 
+    cache[group_id] = user_ids
+    return user_ids
+        
+        
+def _detect_admin_sso_users_for_instance(
+    *,
+    organizations_client,
+    iam_client,
+    sso_admin_client,
+    identity_store_client,
+    instance_arn: str,
+    instance_id: str,
+    sso_users: list[dict],
+) -> set[str]:
+    """
+    Returns a set of SSO usernames that have admin via:
+      - direct USER assignment to an admin permission set, or
+      - GROUP assignment where user is a member of that group.
+    """
+    # Map UserId -> username once (avoid scanning users repeatedly)
+    user_id_to_name: dict[str, str] = {}
+    for u in sso_users:
+        uid = u.get("UserId")
+        name = u.get("UserName")
+        if uid and name:
+            user_id_to_name[str(uid)] = str(name)
+ 
+    admin_permission_sets_by_account = get_admin_permission_sets_for_instance_by_account(
+        iam_client, sso_admin_client, instance_arn, organizations_client
+    )
+ 
+    admin_usernames: set[str] = set()
+    group_members_cache: dict[str, set[str]] = {}
+ 
+    # Iterate assignments once per (account, admin perm set)
+    for account_id, perm_sets in admin_permission_sets_by_account.items():
+        for ps_arn in perm_sets:
+            assignments = _list_account_assignments_all(sso_admin_client, instance_arn, account_id, ps_arn)
+ 
+            for assn in assignments:
+                principal_type = assn.get("PrincipalType")
+                principal_id = assn.get("PrincipalId")
+                if not principal_type or not principal_id:
+                    continue
+ 
+                if principal_type == "USER":
+                    name = user_id_to_name.get(str(principal_id))
+                    if name:
+                        admin_usernames.add(name)
+ 
+                elif principal_type == "GROUP":
+                    group_user_ids = _get_group_user_ids_cached(
+                        identity_store_client, instance_id, str(principal_id), group_members_cache
+                    )
+                    for uid in group_user_ids:
+                        name = user_id_to_name.get(str(uid))
+                        if name:
+                            admin_usernames.add(name)
+ 
+    return admin_usernames
 
 
 def check_users(
@@ -658,27 +683,16 @@ def check_users(
 
     # === SSO (Identity Center) Checks ===
     for instance_arn, sso_users in sso_users_by_instance.items():
-        admin_permission_sets_by_account = get_admin_permission_sets_for_instance_by_account(
-            iam_client, sso_admin_client, instance_arn, organizations_client
-        )
         instance_id = sso_instance_id_by_arn[instance_arn]
-        
-
-        for user in sso_users:
-            user_name = user.get("UserName")
-            user_id = user.get("UserId")
-            user_group_ids = fetch_sso_group_ids_for_user(identity_store_client, instance_id, user_id)
-            
-            if user_name in privileged_user_list:
-                if at_least_one_privileged_user_has_admin_access:
-                    continue
-            for a_id, perm_sets in admin_permission_sets_by_account.items():
-               # logger.info(f"{admin_permission_sets_by_account}")
-                for p_arn in perm_sets:
-                    if user_assigned_to_permission_set(sso_admin_client, user_id, user_group_ids, instance_arn, a_id, p_arn): 
-                        admin_users_detected.add(user_name)
-                        logger.info(f"Found admin user {user_name}") 
-                        break
+        admin_users_detected |= _detect_admin_sso_users_for_instance(
+            organizations_client=organizations_client,
+            iam_client=iam_client,
+            sso_admin_client=sso_admin_client,
+            identity_store_client=identity_store_client,
+            instance_arn=instance_arn,
+            instance_id=instance_id,
+            sso_users=sso_users,
+        )
 
     admin_users_detected = set([user.lower() for user in admin_users_detected])
     logger.info(f"Admin Users Detected: {admin_users_detected}")
