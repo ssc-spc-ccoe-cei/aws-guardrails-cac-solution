@@ -68,6 +68,8 @@ Parameters:
     Type: String
   LogSourceAttestationFilePath:
     Type: String
+  ExternalAlertsAttestationFilePath:
+    Type: String
 
   # GC02
   S3AccountManagementPlanPath:
@@ -122,6 +124,8 @@ Parameters:
   S3EmergencyAccountAlertsRuleNamesPath:
     Type: String
   LogSourceNonComplianceAttestationFilePath:
+    Type: String
+  ExternalAlertsNonComplianceAttestationFilePath:
     Type: String
 
 Resources:
@@ -248,6 +252,11 @@ Resources:
           Fn::If:
             - logSourceAttestationFilePath
             - Ref: LogSourceAttestationFilePath
+            - Ref: AWS::NoValue
+        ExternalAlertsAttestationFilePath:
+          Fn::If:
+            - externalAlertsAttestationFilePath
+            - Ref: ExternalAlertsAttestationFilePath
             - Ref: AWS::NoValue
       Scope:
         ComplianceResourceTypes:
@@ -1478,6 +1487,11 @@ Resources:
             - logSourceNonComplianceAttestationFilePath
             - Ref: LogSourceNonComplianceAttestationFilePath
             - Ref: AWS::NoValue
+        ExternalAlertsNonComplianceAttestationFilePath:
+          Fn::If:
+            - externalAlertsNonComplianceAttestationFilePath
+            - Ref: ExternalAlertsNonComplianceAttestationFilePath
+            - Ref: AWS::NoValue
       Scope:
         ComplianceResourceTypes:
           - AWS::Account
@@ -1655,6 +1669,11 @@ Conditions:
       - Fn::Equals:
           - ""
           - Ref: LogSourceAttestationFilePath
+  externalAlertsAttestationFilePath:
+    Fn::Not:
+      - Fn::Equals:
+          - ""
+          - Ref: ExternalAlertsAttestationFilePath
   # GC02
   s3AccountManagementPlanPath:
     Fn::Not:
@@ -1769,3 +1788,8 @@ Conditions:
       - Fn::Equals:
           - ""
           - Ref: LogSourceNonComplianceAttestationFilePath
+  externalAlertsNonComplianceAttestationFilePath:
+    Fn::Not:
+      - Fn::Equals:
+          - ""
+          - Ref: ExternalAlertsNonComplianceAttestationFilePath

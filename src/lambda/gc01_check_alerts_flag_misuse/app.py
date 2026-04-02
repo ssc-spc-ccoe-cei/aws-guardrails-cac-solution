@@ -335,6 +335,7 @@ def lambda_handler(event, context):
     aws_organizations_client = get_client("organizations", aws_account_id, execution_role_name, is_not_audit_account)
 
     log_source_attestation_file_path = rule_parameters.get("LogSourceAttestationFilePath", "")
+    external_alerts_attestation_file_path = rule_parameters.get("ExternalAlertsAttestationFilePath", "")
     
     if aws_account_id != get_organizations_mgmt_account_id(aws_organizations_client):
         logger.info("Not checked in account %s as this is not the Management Account", aws_account_id)
@@ -374,6 +375,17 @@ def lambda_handler(event, context):
             event,
             gr_requirement_type=gr_requirement_type
         )])
+    # Client is using system external to AWS to create event notifications
+    if external_alerts_attestation_file_path:
+        s3_client = get_client("s3")
+        if check_s3_object_exists(s3_client, external_alerts_attestation_file_path):
+            logger.info("### External alerts attestation file exists")
+            return submit_evaluations(aws_config_client, event, [build_evaluation(
+                aws_account_id,
+                "COMPLIANT",
+                event,
+                annotation='External alerts attestation file provided.'
+            )])  
     
     evaluations = check_alerts_flag_misuse(event, rule_parameters, aws_account_id, evaluations, aws_s3_client, aws_guard_duty_client, aws_event_bridge_client, aws_sns_client, aws_cloudwatch_client, log_source_attestation_file_path)
 
