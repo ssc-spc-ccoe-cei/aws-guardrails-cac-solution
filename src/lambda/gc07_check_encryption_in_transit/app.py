@@ -597,9 +597,9 @@ def assess_rest_api_stages_ssl_enforcement(api_gw_client, event: dict):
                                                 else:
                                                     if HTTP or (HTTP and AWS):
                                                         custom_domains = fetch_custom_domain_names(api_gw_client)
-                                                        
+                                                        logger.info("###Custom domains : %s ", str(custom_domains))
                                                         if api_id in custom_domains:
-                                                            
+                                                            logger.info("###REST API Found in Custom domains : %s ", api_id)
                                                             compliance_status = "COMPLIANT"
                                                             compliance_annotation = "REST API has custom domain with mTLS enabled"
                                                         else:
