@@ -217,6 +217,17 @@ def assess_redshift_clusters_ssl_enforcement(redshift_client, event: dict):
     # logger.info("Redshift - reporting %s evaluations.", len(local_evaluations))
     return local_evaluations
 
+def is_target_group_alb(elb_v2_client, target_group_arn: str) -> bool:
+    """
+    Return True if the target group has TargetType = 'alb'.
+    """
+    try:
+        resp = elb_v2_client.describe_target_groups(TargetGroupArns=[target_group_arn])
+        tgs = resp.get("TargetGroups", [])
+        return bool(tgs and tgs[0].get("TargetType", "").lower() == "alb")
+    except botocore.exceptions.ClientError as ex:
+        logger.error("ELBv2 - Error checking target group type for %s: %s", target_group_arn, ex)
+        return False
 
 def assess_elb_v2_ssl_enforcement(elb_v2_client, event: dict):
     """
@@ -236,6 +247,7 @@ def assess_elb_v2_ssl_enforcement(elb_v2_client, event: dict):
                         {
                             "LoadBalancerArn": load_balancer.get("LoadBalancerArn"),
                             "LoadBalancerName": load_balancer.get("LoadBalancerName"),
+                            "Type": load_balancer.get("Type"),  # Added type to identify NLB vs ALB
                         }
                     )
                 if next_marker:
@@ -264,8 +276,10 @@ def assess_elb_v2_ssl_enforcement(elb_v2_client, event: dict):
         try:
             response = elb_v2_client.describe_listeners(
                 LoadBalancerArn=load_balancer.get("LoadBalancerArn", ""),
+                
                 PageSize=PAGE_SIZE,
             )
+            
             b_more_data = True
             i_retries = 0
             while b_more_data and (i_retries < MAXIMUM_API_RETRIES):
@@ -275,22 +289,65 @@ def assess_elb_v2_ssl_enforcement(elb_v2_client, event: dict):
                         listener_compliance = ""
                         listener_annotation = ""
                         listener_protocol = listener.get("Protocol", "")
-                        if listener_protocol.lower() not in ["https", "tls"]:
-                            redirect_flag = False
+
+                        listener_port = listener.get("Port")  # NEW
+
+                        # NEW: Detect the special case (NLB TCP:443 -> ALB target group)
+                        is_nlb_with_alb_target_tcp443 = False
+                        if (
+                            load_balancer.get("Type", "").lower() == "network"
+                            and listener_protocol.upper() == "TCP"
+                            and listener_port == 443
+                        ):
                             for action in listener.get("DefaultActions", []):
-                                if (action.get("Type") == "redirect" and action.get("RedirectConfig", {}).get("Protocol") == "HTTPS"):
-                                    redirect_flag = True
+                                if action.get("Type") == "forward":
+                                    # Single target group form
+                                    tg_arn = action.get("TargetGroupArn")
+                                    if tg_arn and is_target_group_alb(elb_v2_client, tg_arn):
+                                        is_nlb_with_alb_target_tcp443 = True
+                                        break
+                                    # ForwardConfig (multiple TGs) form
+                                    for tg in action.get("ForwardConfig", {}).get("TargetGroups", []):
+                                        tg_arn2 = tg.get("TargetGroupArn")
+                                        if tg_arn2 and is_target_group_alb(elb_v2_client, tg_arn2):
+                                            is_nlb_with_alb_target_tcp443 = True
+                                            break
+                                if is_nlb_with_alb_target_tcp443:
                                     break
 
-                            if redirect_flag:
+                        if listener_protocol.lower() not in ["https", "tls"]:
+                            # Special case: NLB TCP:443 forwarding to ALB
+                            if is_nlb_with_alb_target_tcp443:
                                 listener_compliance = "COMPLIANT"
-                                listener_annotation = f"HTTP listener with HTTPS redirection - {listener.get("ListenerArn", "")}"
+                                listener_annotation = (
+                                    f"NLB TCP:443 listener forwarding to ALB target group - "
+                                    f"{listener.get('ListenerArn', '')}"
+                                )
                             else:
-                                listener_compliance = "NON_COMPLIANT"
-                                listener_annotation = "Non HTTPS/TLS listener protocol - {}".format(listener_protocol)
+                                redirect_flag = False
+                                for action in listener.get("DefaultActions", []):
+                                    if (
+                                        action.get("Type") == "redirect"
+                                        and action.get("RedirectConfig", {}).get("Protocol") == "HTTPS"
+                                    ):
+                                        redirect_flag = True
+                                        break
+
+                                if redirect_flag:
+                                    listener_compliance = "COMPLIANT"
+                                    listener_annotation = (
+                                        f"HTTP listener with HTTPS redirection - {listener.get('ListenerArn', '')}"
+                                    )
+                                else:
+                                    listener_compliance = "NON_COMPLIANT"
+                                    listener_annotation = (
+                                        f"Non HTTPS/TLS listener protocol - {listener_protocol}"
+                                    )
                         else:
                             listener_compliance = "COMPLIANT"
-                            listener_annotation = f"Listener uses HTTPS/TLS - {listener.get("ListenerArn", "")}"
+                            listener_annotation = (
+                                f"Listener uses HTTPS/TLS - {listener.get('ListenerArn', '')}"
+                            )
                         local_evaluations.append(
                             build_evaluation(
                                 listener.get("ListenerArn", ""),
@@ -300,6 +357,7 @@ def assess_elb_v2_ssl_enforcement(elb_v2_client, event: dict):
                                 annotation=listener_annotation,
                             )
                         )
+
                     if next_marker:
                         time.sleep(INTERVAL_BETWEEN_API_CALLS)
                         try:
@@ -752,7 +810,7 @@ def assess_cloud_front_ssl_enforcement(cloud_front_client, event: dict) -> list[
             continue
 
         min_protocol_version = viewer_certificate.get("MinimumProtocolVersion", None)
-        if min_protocol_version.startswith("TLSv1.2"):
+        if min_protocol_version[:7] in ["TLSv1.2", "TLSv1.3"]:
             annotation = f"Distribution has a minimum protocol version of TLS1.2. ({min_protocol_version})"
             local_evaluations.append(build_evaluation(resource_id, "COMPLIANT", event, resource_type, annotation))
         else:

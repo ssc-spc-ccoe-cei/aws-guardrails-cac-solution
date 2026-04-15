@@ -138,13 +138,26 @@ def lambda_handler(event, context):
             event,
             gr_requirement_type=gr_requirement_type
         )])
+
+    external_alerts_attestation_file_path = rule_parameters.get("ExternalAlertsNonComplianceAttestationFilePath", "")
+    if (
+        external_alerts_attestation_file_path and 
+        check_s3_object_exists(aws_s3_client, external_alerts_attestation_file_path)
+    ):
+        return submit_evaluations(aws_config_client, event, [build_evaluation(
+            aws_account_id,
+            "COMPLIANT",
+            event,
+            annotation="External alerts attestation file provided."
+        )])
+
+
         
     rule_resource_type = "AWS::Events::Rule"
     file_param_name = "s3ObjectPath"
     rule_names_file_path = rule_parameters.get(file_param_name, "")
 
     log_source_attestation_file_path = rule_parameters.get("LogSourceNonComplianceAttestationFilePath", "")
-
 
     if not check_s3_object_exists(aws_s3_client, rule_names_file_path):
         annotation = f"No file found for s3 path '{rule_names_file_path}' via '{file_param_name}' input parameter."

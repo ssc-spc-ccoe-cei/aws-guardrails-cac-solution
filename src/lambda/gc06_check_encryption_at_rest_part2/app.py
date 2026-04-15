@@ -71,11 +71,8 @@ def assess_open_search_encryption_at_rest(open_search_client, event):
         compliance_status = "NON_COMPLIANT"
         compliance_annotation = "Not encrypted at rest"
 
-        # Fix for AWS Config resource type:
-        #   - 'AWS::Elasticsearch::Domain' for ES domains
-        #   - 'AWS::OpenSearchService::Domain' for OpenSearch domains
         if engine_type == "OpenSearch":
-            resource_type = "AWS::Elasticsearch::Domain"
+            resource_type = "AWS::OpenSearch::Domain"
         else:
             resource_type = "AWS::Elasticsearch::Domain"
 
