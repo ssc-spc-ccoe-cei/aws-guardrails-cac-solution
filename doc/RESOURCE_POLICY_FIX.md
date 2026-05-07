@@ -35,29 +35,65 @@ Partition the organization's accounts into groups of **≤70** and create **one 
 <org_name>gc01_check_root_mfa_p3       ← partition 3
 ```
 
-### New Components
+---
 
-#### 1. Account Partition Custom Resource Lambda (`aws_account_partitioner`)
+## New Components
 
-A new Lambda function deployed as a **CloudFormation Custom Resource** in `main.yaml`. It:
+### 1. DynamoDB Partition State Table
 
-1. Queries `organizations:ListAccounts` for all active accounts.
-2. Sorts accounts deterministically (by Account ID).
-3. Partitions them into groups of 70.
-4. Produces CloudFormation outputs:
-   - **`AccountPartitionMapping`** — JSON mapping each Account ID → partition number.
-   - **`PartitionCount`** — total number of partitions.
-   - **`PartitionAccounts`** — JSON mapping each partition number → list of account IDs.
-5. Writes the mapping to S3 (`s3://<PipelineBucket>/<DeployVersion>/partition_mapping.json`) so downstream templates and Lambdas can consume it.
+A single DynamoDB table stores the account-to-partition mapping. The schema is intentionally minimal — consuming processes reconstruct partition lists, counts, etc. at runtime.
 
-**Outputs (CloudFormation):**
-```yaml
-AccountPartitionMapping:   # {"111111111111": 1, "222222222222": 1, ..., "888888888888": 2}
-PartitionCount:            # "2"
-PartitionAccounts:         # {"1": ["111...", ...], "2": ["777...", ...]}
+**Table Name:** `gc-guardrails-partition-state`
+
+| Attribute | Type | Description |
+|-----------|------|-------------|
+| `AccountId` (PK) | String | 12-digit AWS Account ID |
+| `PartitionId` | Number | Partition number (1, 2, or 3) |
+
+**Example items:**
+```
+{ "AccountId": "111111111111", "PartitionId": 1 }
+{ "AccountId": "222222222222", "PartitionId": 1 }
+{ "AccountId": "333333333333", "PartitionId": 2 }
 ```
 
-#### 2. Modified `AuditAccountPreRequisitesPart1–8.yaml`
+Consumers can:
+- **Get partition for an account:** `GetItem(AccountId)`.
+- **Get all accounts in a partition:** `Scan` with `FilterExpression: PartitionId = :p` (≤210 items total, scan is fine).
+- **Count accounts per partition:** Aggregate at runtime.
+- **Get total partition count:** `max(PartitionId)` from a full scan.
+
+The table is created in `main.yaml` alongside the partitioner Lambda.
+
+---
+
+### 2. Account Partition Lambda (`aws_account_partitioner`)
+
+A new Lambda function responsible for **managing partition state**. It runs in two contexts:
+
+- **At deployment time:** As a CloudFormation Custom Resource in `main.yaml` (initial setup).
+- **Post-deployment:** As Step 1 of the Step Function orchestration (triggered by cron).
+
+**Behaviour:**
+
+1. Queries `organizations:ListAccounts` for all active accounts.
+2. Reads current partition state from DynamoDB.
+3. Identifies new accounts not yet assigned and removed/suspended accounts.
+4. Assigns new accounts to existing partitions with room (< 70), or creates a new partition (up to max 3).
+5. Removes entries for inactive/deleted accounts.
+6. Writes updated state back to DynamoDB.
+7. Returns:
+   - `partitionCount` — current number of partitions.
+   - `partitionsChanged` — boolean indicating if the partition count changed (i.e., a new partition was created or removed).
+
+**CloudFormation Custom Resource outputs (at deployment):**
+```yaml
+PartitionCount:   # "2"
+```
+
+---
+
+### 3. Modified `AuditAccountPreRequisitesPart1–8.yaml`
 
 Each template receives `PartitionCount` as a parameter. Using CloudFormation `Conditions`, it conditionally creates cloned Lambda functions:
 
@@ -79,132 +115,214 @@ Resources:
 
 All clones share the same code package and IAM execution role — only the `FunctionName` differs.
 
-#### 3. Modified `ConformancePack.yaml`
+---
 
-The Conformance Pack receives the `AccountPartitionMapping` as a parameter. For each Config rule, a **mapping lookup** determines which Lambda clone to target based on `AWS::AccountId`:
+### 4. Modified `ConformancePack.yaml` — Separate Config Rules Per Partition
+
+For each guardrail, separate Config rules are conditionally created per partition. Each rule targets the corresponding Lambda clone.
+
+**Example based on the existing `GC01CheckRootAccountMFAEnabled` rule:**
 
 ```yaml
-# Pseudo-logic per rule:
-# partition = FindInMap[AccountPartitionMapping, AWS::AccountId]
-# lambda_suffix = if partition == 1 then "" else "_p{partition}"
-# SourceIdentifier = arn:...:function:<org>gc01_check_root_mfa{lambda_suffix}
+Parameters:
+  PartitionCount:
+    Type: String
+    Default: "1"
+  # ... existing parameters ...
+
+Conditions:
+  HasPartition2: !Not [!Equals [!Ref PartitionCount, "1"]]
+  HasPartition3: !Equals [!Ref PartitionCount, "3"]
+
+Resources:
+  # Partition 1 — always created (handles accounts in partition 1)
+  GC01CheckRootAccountMFAEnabled:
+    Type: "AWS::Config::ConfigRule"
+    Properties:
+      ConfigRuleName: gc01_check_root_mfa
+      Description: Checks Root account to ensure MFA is enabled
+      InputParameters:
+        ExecutionRoleName:
+          Fn::If:
+            - GCLambdaExecutionRoleName
+            - Ref: GCLambdaExecutionRoleName
+            - Ref: AWS::NoValue
+        AuditAccountID:
+          Fn::If:
+            - auditAccountID
+            - Ref: AuditAccountID
+            - Ref: AWS::NoValue
+      Scope:
+        ComplianceResourceTypes:
+          - AWS::Account
+      MaximumExecutionFrequency: TwentyFour_Hours
+      Source:
+        Owner: CUSTOM_LAMBDA
+        SourceIdentifier:
+          Fn::Join:
+            - ""
+            - - "arn:aws:lambda:ca-central-1:"
+              - Ref: AuditAccountID
+              - !Sub ":function:${OrganizationName}gc01_check_root_mfa"
+        SourceDetails:
+          - EventSource: aws.config
+            MessageType: ScheduledNotification
+            MaximumExecutionFrequency: TwentyFour_Hours
+
+  # Partition 2 — conditionally created
+  GC01CheckRootAccountMFAEnabledP2:
+    Type: "AWS::Config::ConfigRule"
+    Condition: HasPartition2
+    Properties:
+      ConfigRuleName: gc01_check_root_mfa_p2
+      Description: Checks Root account to ensure MFA is enabled (Partition 2)
+      InputParameters:
+        ExecutionRoleName:
+          Fn::If:
+            - GCLambdaExecutionRoleName
+            - Ref: GCLambdaExecutionRoleName
+            - Ref: AWS::NoValue
+        AuditAccountID:
+          Fn::If:
+            - auditAccountID
+            - Ref: AuditAccountID
+            - Ref: AWS::NoValue
+      Scope:
+        ComplianceResourceTypes:
+          - AWS::Account
+      MaximumExecutionFrequency: TwentyFour_Hours
+      Source:
+        Owner: CUSTOM_LAMBDA
+        SourceIdentifier:
+          Fn::Join:
+            - ""
+            - - "arn:aws:lambda:ca-central-1:"
+              - Ref: AuditAccountID
+              - !Sub ":function:${OrganizationName}gc01_check_root_mfa_p2"
+        SourceDetails:
+          - EventSource: aws.config
+            MessageType: ScheduledNotification
+            MaximumExecutionFrequency: TwentyFour_Hours
+
+  # Partition 3 — conditionally created
+  GC01CheckRootAccountMFAEnabledP3:
+    Type: "AWS::Config::ConfigRule"
+    Condition: HasPartition3
+    Properties:
+      ConfigRuleName: gc01_check_root_mfa_p3
+      Description: Checks Root account to ensure MFA is enabled (Partition 3)
+      InputParameters:
+        ExecutionRoleName:
+          Fn::If:
+            - GCLambdaExecutionRoleName
+            - Ref: GCLambdaExecutionRoleName
+            - Ref: AWS::NoValue
+        AuditAccountID:
+          Fn::If:
+            - auditAccountID
+            - Ref: AuditAccountID
+            - Ref: AWS::NoValue
+      Scope:
+        ComplianceResourceTypes:
+          - AWS::Account
+      MaximumExecutionFrequency: TwentyFour_Hours
+      Source:
+        Owner: CUSTOM_LAMBDA
+        SourceIdentifier:
+          Fn::Join:
+            - ""
+            - - "arn:aws:lambda:ca-central-1:"
+              - Ref: AuditAccountID
+              - !Sub ":function:${OrganizationName}gc01_check_root_mfa_p3"
+        SourceDetails:
+          - EventSource: aws.config
+            MessageType: ScheduledNotification
+            MaximumExecutionFrequency: TwentyFour_Hours
 ```
 
-Since Conformance Packs don't support `Fn::FindInMap` natively, the partition mapping is passed as an input parameter and the guardrail Lambda itself resolves the correct function name at evaluation time, OR separate Config rules per partition are conditionally created.
+**Key point:** Since this is an Organization Conformance Pack, every rule is deployed to every account. Each account will have all partition rules deployed, but only the Lambda matching that account's partition will have the resource-based policy permitting invocation. Config rules targeting a Lambda without permission will fail closed (non-evaluating), which is acceptable — OR the guardrail Lambda itself can check the invoking account against DynamoDB and return `NOT_APPLICABLE` if the account isn't in its partition.
 
-#### 4. Modified `aws_lambda_permissions_setup` — Partition-Aware Permissions
+---
 
-This is the key change for **ongoing operations** post-deployment. The existing Lambda is extended to:
+### 5. Modified `aws_lambda_permissions_setup` — Single Responsibility: Sync Permissions
 
-1. **Fetch the partition mapping** from S3 (`partition_mapping.json`) or from its environment variables / input parameters.
-2. **Detect new accounts** not present in any partition.
-3. **Assign new accounts to existing partitions** if a partition has room (< 70 accounts).
-4. **Create new partitions** if all existing partitions are full (triggers Lambda cloning — see below).
-5. **Apply `AddPermission`** only for accounts in each partition to the corresponding Lambda clone.
-6. **Write updated mappings** back to S3.
+The existing Lambda is simplified to a **single concern**: ensure each Lambda clone's resource-based policy matches the accounts in its DynamoDB partition.
 
-##### Pseudo-code for the enhanced `apply_lambda_permissions`:
+**Behaviour:**
 
-```python
-def apply_lambda_permissions():
-    # 1. Get current org accounts
-    current_accounts = get_accounts()  # existing function
-    
-    # 2. Load partition mapping from S3
-    mapping = load_partition_mapping_from_s3()
-    # mapping = {"partitions": {"1": ["acct1", ...], "2": [...]}, "partition_size": 70}
-    
-    # 3. Identify new accounts not in any partition
-    all_mapped = set()
-    for accts in mapping["partitions"].values():
-        all_mapped.update(accts)
-    
-    new_accounts = [a for a in current_accounts 
-                    if a["Id"] not in all_mapped and a["Status"] == "ACTIVE"]
-    removed_accounts = all_mapped - {a["Id"] for a in current_accounts if a["Status"] == "ACTIVE"}
-    
-    # 4. Remove inactive/deleted accounts from partitions
-    for partition_id, accts in mapping["partitions"].items():
-        mapping["partitions"][partition_id] = [a for a in accts if a not in removed_accounts]
-    
-    # 5. Assign new accounts to partitions with room, or create new partitions
-    for account in new_accounts:
-        placed = False
-        for partition_id in sorted(mapping["partitions"].keys()):
-            if len(mapping["partitions"][partition_id]) < PARTITION_SIZE:
-                mapping["partitions"][partition_id].append(account["Id"])
-                placed = True
-                break
-        if not placed:
-            new_partition_id = str(max(int(k) for k in mapping["partitions"].keys()) + 1)
-            if int(new_partition_id) > MAX_PARTITIONS:
-                raise Exception("Exceeded maximum partition count (3 / 210 accounts)")
-            mapping["partitions"][new_partition_id] = [account["Id"]]
-            # Trigger clone creation for the new partition
-            create_lambda_clones_for_partition(new_partition_id)
-    
-    # 6. Apply permissions per partition per lambda
-    for base_lambda_name, metadata in lambda_functions.items():
-        for partition_id, accts in mapping["partitions"].items():
-            clone_name = base_lambda_name if partition_id == "1" else f"{base_lambda_name}_p{partition_id}"
-            sync_permissions_for_lambda(clone_name, accts)
-    
-    # 7. Save updated mapping to S3
-    save_partition_mapping_to_s3(mapping)
-```
+1. Read all items from `gc-guardrails-partition-state` DynamoDB table.
+2. Reconstruct partition → account list mapping at runtime.
+3. For each base guardrail Lambda and each partition:
+   - Determine clone name (`gc*` for partition 1, `gc*_p2` for partition 2, etc.).
+   - Call `GetPolicy` to read current resource-based policy statements.
+   - **Add** `lambda:AddPermission` for accounts in the partition that are missing from the policy.
+   - **Remove** `lambda:RemovePermission` for accounts in the policy that are no longer in the partition.
+4. Return success/failure.
 
-##### New helper: `create_lambda_clones_for_partition`
+No state management, no account detection, no Lambda cloning. Just permission synchronization.
 
-When a new partition is needed at runtime (accounts grew past a boundary), the Lambda:
+---
 
-1. For each base `gc*` function, reads its configuration (`GetFunction`).
-2. Creates a clone with suffix `_p{N}` using the same code, handler, role, timeout, and environment.
-3. Applies `AddPermission` for the accounts in the new partition.
+### 6. Step Function Orchestration — Post-Deployment Account Growth
 
-This can also be done via a CloudFormation stack update triggered by the Lambda (invoking `cloudformation:UpdateStack` on the parent StackSet), which is the preferred approach for auditability.
+A Step Function provides **observability** and **orchestration** for the ongoing sync process.
 
-##### New helper: `sync_permissions_for_lambda`
+**Trigger:** EventBridge cron rule (every 6 hours).
 
-Replaces the current per-account `AddPermission` loop. It:
-
-1. Calls `GetPolicy` on the Lambda clone.
-2. Compares existing authorized accounts to the partition's account list.
-3. **Adds** permissions for new accounts in the partition.
-4. **Removes** stale permissions for accounts no longer in the partition (accounts moved, closed, or rebalanced).
-
-### Data Flow
+**State Machine:**
 
 ```
-┌───────────────────────┐
-│ organizations:        │
-│ ListAccounts          │
-│ (200 accounts)        │
-└──────────┬────────────┘
-           │
-           ▼
-┌───────────────────────┐     ┌──────────────────────────────┐
-│ aws_account_           │────▶│ S3: partition_mapping.json    │
-│ partitioner Lambda     │     │ {                            │
-│ (Custom Resource)      │     │   "1": [acct1..acct70],      │
-│                        │     │   "2": [acct71..acct140],    │
-│ - sorts accounts       │     │   "3": [acct141..acct200]   │
-│ - creates partitions   │     │ }                            │
-│ - outputs mapping      │     └──────────────────────────────┘
-└───────────┬────────────┘               │
-            │                            │
-            ▼                            ▼
-┌────────────────────────┐   ┌─────────────────────────────────┐
-│ AuditAccountPreReq     │   │ aws_lambda_permissions_setup    │
-│ Part1..8 StackSets     │   │ (enhanced)                      │
-│                        │   │                                 │
-│ Creates per partition: │   │ - reads partition_mapping.json  │
-│  gc01_check_root_mfa   │   │ - detects new/removed accounts │
-│  gc01_check_root_mfa_p2│   │ - assigns to partitions        │
-│  gc01_check_root_mfa_p3│   │ - creates clones if needed     │
-│  ...                   │   │ - AddPermission per partition   │
-└────────────────────────┘   │ - updates mapping on S3        │
-                             └─────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────┐
+│  Step Function: gc-guardrails-partition-sync                 │
+│                                                             │
+│  ┌─────────────────────────┐                                │
+│  │ Step 1: Invoke          │                                │
+│  │ aws_account_partitioner │                                │
+│  │                         │                                │
+│  │ Output:                 │                                │
+│  │  partitionsChanged: T/F │                                │
+│  │  partitionCount: N      │                                │
+│  └────────────┬────────────┘                                │
+│               │                                             │
+│               ▼                                             │
+│  ┌─────────────────────────┐                                │
+│  │ Step 2: Choice          │                                │
+│  │                         │                                │
+│  │ partitionsChanged?      │                                │
+│  └──┬──────────────────┬───┘                                │
+│     │ true             │ false                              │
+│     ▼                  │                                    │
+│  ┌──────────────────┐  │                                    │
+│  │ Step 3: Update   │  │                                    │
+│  │ StackSets        │  │                                    │
+│  │ (.sync pattern)  │  │                                    │
+│  │                  │  │                                    │
+│  │ - Part1–8 SSets  │  │                                    │
+│  │ - ConformancePack│  │                                    │
+│  │   (new           │  │                                    │
+│  │   PartitionCount)│  │                                    │
+│  └────────┬─────────┘  │                                    │
+│           │             │                                    │
+│           ▼             ▼                                    │
+│  ┌─────────────────────────────┐                            │
+│  │ Step 4: Invoke              │                            │
+│  │ aws_lambda_permissions_setup│                            │
+│  │                             │                            │
+│  │ Syncs resource policies     │                            │
+│  │ for all Lambda clones       │                            │
+│  └─────────────────────────────┘                            │
+└─────────────────────────────────────────────────────────────┘
 ```
+
+**Why Step Functions:**
+- The `.sync` integration pattern natively waits for CloudFormation StackSet operations to complete — no Lambda timeout concerns, no polling logic.
+- Full execution history for auditability and debugging.
+- Built-in retry and error handling per step.
+- Visual workflow in the AWS Console.
+
+**Step 3 detail:** Uses the Step Functions AWS SDK integration to call `cloudformation:UpdateStackSet` with the `.sync` suffix. This updates `AuditAccountPreRequisitesPart1–8` and the ConformancePack with the new `PartitionCount` parameter, causing CloudFormation to create/remove Lambda clones and Config rules based on the Conditions defined in the templates.
+
+---
 
 ## Proposed Solution Diagram
 
@@ -216,33 +334,39 @@ flowchart TB
         root["root.yaml"]
         main["main.yaml"]
 
-        partitioner["aws_account_partitioner\n(new Custom Resource Lambda)"]
-        s3map["S3: partition_mapping.json\n{1: [acct1–70], 2: [acct71–140], 3: [acct141–210]}"]
+        partitioner["aws_account_partitioner\n(Custom Resource + Step Fn Step 1)"]
+        ddb["DynamoDB:\ngc-guardrails-partition-state\n| AccountId (PK) | PartitionId |"]
 
         left["AuditAccountPreRequisitesPart1..8.yaml"]
         bottom["AuditAccountPreRequisitesPartN.yaml"]
         right["ConformancePack.yaml"]
 
+        sfn["Step Function:\ngc-guardrails-partition-sync"]
         cron["EventBridge CronJob\n(every 6 hours)"]
-        lambda["aws_lambda_permissions_setup\n(enhanced: partition-aware)"]
+        lambda["aws_lambda_permissions_setup\n(reads DynamoDB, syncs permissions only)"]
 
         root --> main
 
-        main -->|"0 — deploy partitioner first"| partitioner
-        partitioner -->|"outputs PartitionCount +\nAccountPartitionMapping"| s3map
+        main -->|"0 — deploy partitioner + DDB table"| partitioner
+        partitioner -->|"writes partition state"| ddb
 
         main -->|"1 — passes PartitionCount"| left
         main -->|"2"| bottom
-        main -->|"3 — passes mapping"| right
+        main -->|"3 — passes PartitionCount"| right
+
+        cron -->|"triggers"| sfn
+        sfn -->|"Step 1"| partitioner
+        sfn -->|"Step 3 (if changed):\nUpdateStackSet .sync"| left
+        sfn -->|"Step 3 (if changed):\nUpdateStackSet .sync"| right
+        sfn -->|"Step 4"| lambda
+        lambda -->|"reads partition state"| ddb
 
         bottom --> lambda
-        cron --> lambda
-        lambda -->|"reads/writes"| s3map
 
-        noteP["queries org accounts,\nsorts & partitions into\ngroups of ≤70,\nwrites mapping to S3"]
-        noteL["creates gc* Lambda functions.\nif PartitionCount > 1, creates\nclones: gc*_p2, gc*_p3\nusing Conditions."]
-        noteR["for each config rule,\nresolves correct Lambda clone\nbased on account's partition\nfrom mapping."]
-        noteB["reads partition_mapping.json.\nfor each partition, applies\nAddPermission only for that\npartition's accounts to the\ncorresponding Lambda clone.\n\nOn cron: detects new accounts,\nassigns to partitions, creates\nnew clones if needed, syncs\npermissions."]
+        noteP["queries org accounts,\nassigns to partitions of ≤70,\nwrites to DynamoDB,\nreturns partitionsChanged + count"]
+        noteL["creates gc* Lambda functions.\nif PartitionCount > 1, creates\nclones: gc*_p2, gc*_p3\nusing CFN Conditions."]
+        noteR["separate Config rules per partition\n(conditionally created).\neach targets corresponding\nLambda clone."]
+        noteB["reads DynamoDB partition state.\nfor each Lambda clone, syncs\nresource policy to match\npartition's account list.\nAdds missing, removes stale."]
 
         noteP -.-> partitioner
         noteL -.-> left
@@ -255,123 +379,120 @@ flowchart TB
     classDef aws fill:#f28c28,stroke:#f28c28,color:#fff;
     classDef cron fill:#e91e63,stroke:#e91e63,color:#fff;
     classDef newcomp fill:#4caf50,stroke:#388e3c,color:#fff;
-    classDef s3 fill:#1565c0,stroke:#0d47a1,color:#fff;
+    classDef ddb fill:#1565c0,stroke:#0d47a1,color:#fff;
+    classDef sfn fill:#7b1fa2,stroke:#4a148c,color:#fff;
 
     class root,main,left,bottom,right yaml;
     class noteP,noteL,noteR,noteB note;
     class lambda aws;
     class cron cron;
     class partitioner newcomp;
-    class s3map s3;
+    class ddb ddb;
+    class sfn sfn;
 ```
 
-## Side-by-Side: Current vs. Proposed
-
-```mermaid
-flowchart LR
-    subgraph Current["Current Solution"]
-        direction TB
-        C_left["Part1..8\n1 Lambda per guardrail"]
-        C_perm["aws_lambda_permissions_setup"]
-        C_cp["ConformancePack\n1 Config Rule → 1 Lambda"]
-        C_policy["Resource Policy\nALL accounts in 1 policy\n⚠️ > 70 accounts = FAIL"]
-
-        C_left --> C_perm
-        C_perm --> C_policy
-        C_cp --> C_left
-    end
-
-    subgraph Proposed["Proposed Solution"]
-        direction TB
-        P_left["Part1..8\nN clones per guardrail\n(N = ceil(accounts/70))"]
-        P_perm["aws_lambda_permissions_setup\n(partition-aware)"]
-        P_cp["ConformancePack\nConfig Rule → clone\nbased on account partition"]
-        P_policy["Resource Policy per clone\n≤70 accounts each\n✅ always under 20KB"]
-
-        P_left --> P_perm
-        P_perm --> P_policy
-        P_cp --> P_left
-    end
-
-    classDef fail fill:#ffcdd2,stroke:#e53935,color:#333;
-    classDef pass fill:#c8e6c9,stroke:#43a047,color:#333;
-    class C_policy fail;
-    class P_policy pass;
-```
+---
 
 ## Post-Deployment Account Growth Handling
 
 The **key requirement** is that after initial deployment, when new accounts join the organization, permissions are adjusted automatically without manual redeployment.
 
-### How it works:
+### Flow by Scenario
 
-1. **EventBridge cron** fires every 6 hours, invoking `aws_lambda_permissions_setup` with `RequestType: "Cron"`.
-2. The enhanced Lambda:
-   - Calls `organizations:ListAccounts` to get current accounts.
-   - Reads `partition_mapping.json` from S3.
-   - Identifies accounts not yet in any partition.
-   - Attempts to place them in existing partitions with room (< 70).
-   - If all partitions are full, creates a new partition (up to max 3):
-     - Clones each base `gc*` Lambda with `_p{N}` suffix using the `lambda:CreateFunction` API (same code, role, handler).
-     - Adds the new accounts' permissions to the new clones.
-   - Removes permissions for any accounts no longer active.
-   - Writes updated `partition_mapping.json` back to S3.
-3. **Config rules** in the Conformance Pack resolve to the correct clone at evaluation time.
+| Scenario | Step Function Behaviour |
+|----------|------------------------|
+| New account, partition has room | Partitioner assigns account → DynamoDB. `partitionsChanged=false`. StackSet update skipped. Permissions Lambda adds `AddPermission` for the new account on the relevant clone. |
+| New account, all partitions full | Partitioner creates new partition → DynamoDB. `partitionsChanged=true`. StackSet update creates new Lambda clones + Config rules. Permissions Lambda adds permissions for all accounts in the new partition. |
+| Account removed/suspended | Partitioner removes from DynamoDB. Permissions Lambda calls `RemovePermission` for stale accounts. |
+| >210 accounts | Partitioner logs error and raises CloudWatch alarm. Step Function fails at Step 1. Manual intervention required. |
+| Step Function step fails | Built-in retry (configurable). Execution history shows exactly which step failed. Next cron in 6h retries from scratch. |
 
-### Failure Modes & Safeguards
+### Deployment-Time vs. Post-Deployment
 
-| Scenario | Behaviour |
-|----------|-----------|
-| New account, partition has room | Account added to existing partition; `AddPermission` called on existing clone |
-| New account, all partitions full | New partition + Lambda clones created; capped at 3 partitions (210 accounts) |
-| Account removed/suspended | Permissions cleaned up on next cron run |
-| >210 accounts | Lambda logs error and raises alarm; manual intervention required |
-| Cron fails | Next cron in 6h retries; `AddPermission` is idempotent for existing statements |
+| Phase | What runs | How |
+|-------|-----------|-----|
+| **Initial deploy** | `aws_account_partitioner` as CFN Custom Resource → outputs `PartitionCount` → StackSets use it as parameter → `aws_lambda_permissions_setup` runs as CFN Custom Resource in PartN | CloudFormation orchestrates everything |
+| **Post-deploy (cron)** | Step Function: partitioner → (optional StackSet update) → permissions sync | EventBridge → Step Function |
 
-### Required IAM Additions for `aws_lambda_permissions_setup`
+---
 
-The enhanced Lambda needs these additional permissions beyond the current set:
+## Required IAM Permissions
+
+### `aws_account_partitioner`
 
 ```yaml
-- Sid: AllowLambdaCloneManagement
+- Sid: AllowOrganizationsRead
   Action:
-    - "lambda:CreateFunction"
-    - "lambda:GetFunction"
-    - "lambda:UpdateFunctionCode"
-    - "lambda:UpdateFunctionConfiguration"
-    - "lambda:RemovePermission"
-    - "lambda:ListTags"
-    - "lambda:TagResource"
-  Resource:
-    - !Sub "arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:${OrganizationName}gc*"
+    - "organizations:ListAccounts"
+    - "organizations:DescribeOrganization"
+  Resource: "*"
   Effect: Allow
-- Sid: AllowS3MappingAccess
+- Sid: AllowDynamoDBAccess
   Action:
-    - "s3:GetObject"
-    - "s3:PutObject"
+    - "dynamodb:PutItem"
+    - "dynamodb:DeleteItem"
+    - "dynamodb:Scan"
+    - "dynamodb:GetItem"
   Resource:
-    - !Sub "arn:aws:s3:::${PipelineBucket}/${DeployVersion}/partition_mapping.json"
-  Effect: Allow
-- Sid: AllowPassRole
-  Action:
-    - "iam:PassRole"
-  Resource:
-    - !Sub "arn:aws:iam::${AWS::AccountId}:role/${RolePrefix}*"
+    - !GetAtt PartitionStateTable.Arn
   Effect: Allow
 ```
 
+### `aws_lambda_permissions_setup`
+
+```yaml
+- Sid: AllowLambdaPermissions
+  Action:
+    - "lambda:AddPermission"
+    - "lambda:RemovePermission"
+    - "lambda:GetPolicy"
+  Resource:
+    - !Sub "arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:${OrganizationName}gc*"
+  Effect: Allow
+- Sid: AllowDynamoDBRead
+  Action:
+    - "dynamodb:Scan"
+    - "dynamodb:GetItem"
+  Resource:
+    - !GetAtt PartitionStateTable.Arn
+  Effect: Allow
+```
+
+### Step Function Execution Role
+
+```yaml
+- Sid: AllowInvokeLambdas
+  Action:
+    - "lambda:InvokeFunction"
+  Resource:
+    - !GetAtt AccountPartitionerLambda.Arn
+    - !GetAtt LambdaPermissionsLambda.Arn
+  Effect: Allow
+- Sid: AllowStackSetUpdates
+  Action:
+    - "cloudformation:UpdateStackSet"
+    - "cloudformation:DescribeStackSetOperation"
+  Resource:
+    - !Sub "arn:aws:cloudformation:${AWS::Region}:${AWS::AccountId}:stackset/*"
+  Effect: Allow
+```
+
+---
+
 ## Implementation Checklist
 
-- [ ] Create `src/lambda/aws_account_partitioner/` — new Custom Resource Lambda
-- [ ] Update `main.yaml` — add `aws_account_partitioner` resource before StackSets
-- [ ] Update `AuditAccountPreRequisitesPart1–8.yaml` — add conditional Lambda clones
-- [ ] Update `ConformancePack.yaml` — partition-aware Config rule targets
+- [ ] Create DynamoDB table `gc-guardrails-partition-state` in `main.yaml`
+- [ ] Create `src/lambda/aws_account_partitioner/` — new partition management Lambda
+- [ ] Update `main.yaml` — add partitioner as Custom Resource before StackSets, add DynamoDB table, add Step Function
+- [ ] Update `AuditAccountPreRequisitesPart1–8.yaml` — add conditional Lambda clones based on `PartitionCount`
+- [ ] Update `ConformancePack.yaml` — add conditional Config rules per partition (as shown in section 4)
 - [ ] Update `src/lambda/aws_lambda_permissions_setup/app.py`:
-  - [ ] Add S3 read/write for `partition_mapping.json`
-  - [ ] Add partition-aware permission assignment
-  - [ ] Add new account detection and partition placement
-  - [ ] Add Lambda cloning logic for new partitions
-  - [ ] Add stale permission cleanup
-- [ ] Update `AuditAccountPreRequisitesPartN.yaml` — add new IAM permissions
+  - [ ] Replace hardcoded account iteration with DynamoDB read
+  - [ ] Add partition-aware permission assignment (per clone)
+  - [ ] Add `RemovePermission` for stale accounts
+  - [ ] Remove account detection / state management logic (moved to partitioner)
+- [ ] Update `AuditAccountPreRequisitesPartN.yaml` — add DynamoDB read permissions for `aws_lambda_permissions_setup`
+- [ ] Create Step Function state machine definition (ASL) in `main.yaml` or separate template
+- [ ] Create EventBridge rule to trigger Step Function on 6-hour schedule
 - [ ] Update `doc/ENHANCE.md` — document new partition-aware guardrail addition process
 - [ ] Test with 1, 70, 71, 140, 141, 200 account scenarios
