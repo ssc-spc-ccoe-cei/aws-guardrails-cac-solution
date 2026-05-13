@@ -749,6 +749,87 @@ Resources:
         ]
 
   ##################################################
+  # Partition State — DynamoDB Table + Partitioner
+  ##################################################
+
+  PartitionStateTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: gc-guardrails-partition-state
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: AccountId
+          AttributeType: S
+      KeySchema:
+        - AttributeName: AccountId
+          KeyType: HASH
+
+  AccountPartitionerRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub "${OrganizationName}AccountPartitionerRole"
+      ManagedPolicyArns:
+        - !Sub arn:${AWS::Partition}:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action:
+              - sts:AssumeRole
+      Path: "/"
+      Policies:
+        - PolicyName: AllowOrganizationsRead
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Sid: AllowOrganizationsRead
+                Effect: Allow
+                Action:
+                  - "organizations:ListAccounts"
+                  - "organizations:DescribeOrganization"
+                Resource: "*"
+        - PolicyName: AllowDynamoDBAccess
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Sid: AllowDynamoDBAccess
+                Effect: Allow
+                Action:
+                  - "dynamodb:PutItem"
+                  - "dynamodb:DeleteItem"
+                  - "dynamodb:Scan"
+                  - "dynamodb:GetItem"
+                Resource:
+                  - !GetAtt PartitionStateTable.Arn
+
+  AccountPartitionerLambda:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub "${OrganizationName}aws_account_partitioner"
+      Description: Partitions organization accounts into groups of ≤70 for guardrail Lambda cloning
+      Handler: app.lambda_handler
+      Runtime: python3.12
+      Timeout: 180
+      MemorySize: 128
+      Role: !GetAtt AccountPartitionerRole.Arn
+      Code:
+        S3Bucket: !Ref PipelineBucket
+        S3Key: !Sub "${DeployVersion}/aws_account_partitioner.zip"
+      Environment:
+        Variables:
+          PARTITION_TABLE_NAME: !Ref PartitionStateTable
+          MAX_ACCOUNTS_PER_PARTITION: "70"
+          MAX_PARTITIONS: "3"
+
+  InvokeAccountPartitioner:
+    Type: Custom::AccountPartitioner
+    Properties:
+      ServiceToken: !GetAtt AccountPartitionerLambda.Arn
+      InvokeUpdate: !Ref InvokeUpdate
+
+  ##################################################
   # Part 2 - Audit Account Pre-requisites
   ##################################################
   AuditAccountPreRequisitesPart1:
