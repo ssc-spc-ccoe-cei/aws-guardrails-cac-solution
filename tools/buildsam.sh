@@ -23,8 +23,12 @@ fi
 if [[ $SEARCH_PATH == "" ]]; then
   SEARCH_PATH='./'
 fi
-for file in $(find $SEARCH_PATH -name template.yaml | xargs realpath); do
+for file in $(find $SEARCH_PATH \( -name template.yaml -o -name template.build.yaml \) | xargs realpath); do
   path=$(dirname $file)
+  template_file=$(basename $file)
+  if [[ $template_file == 'template.yaml' && -f "$path/template.build.yaml" ]]; then
+    continue
+  fi
   if [[ $path == */build ]]
   then
     echo "$path is a build directory. SKIPPING... ❎"
@@ -33,9 +37,9 @@ for file in $(find $SEARCH_PATH -name template.yaml | xargs realpath); do
     cd $path
     IS_SAM_TEMPLATE=`grep "$SAM_TRANSFORM_IDENFITIER" $file | wc -l`
     if [[ $IS_SAM_TEMPLATE -eq 1 ]]; then
-      sam build -b ./$BUILD_DIR/ -u
+      sam build -t "$template_file" -b ./$BUILD_DIR/ -u
       if [[ $? -ne 0 ]]; then
-        echo "Failed to Build SAM for $path ❌"
+        echo "Failed to Build SAM for $path using $template_file ❌"
         exit 1
       fi
       ## Below needed as sam does not copy *.so libs into builds https://github.com/aws/aws-sam-cli/issues/1360
