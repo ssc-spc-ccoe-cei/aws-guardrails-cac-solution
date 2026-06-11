@@ -35,6 +35,8 @@ Metadata:
           - DeployVersion
           - DestBucketName
           - EvidenceBucketName
+          - MaxAccountsPerPartition
+          - MaxPartitions
     ParameterLabels:
       OrganizationName:
         default: The name of the organization
@@ -90,6 +92,10 @@ Metadata:
         default: GC04 Enterprise Monitoring IAM Trusted Principal
       PythonRuntime:
         default: Python Runtime
+      MaxAccountsPerPartition:
+        default: Max accounts per partition (Account Partitioner)
+      MaxPartitions:
+        default: Max number of partitions (Account Partitioner)
 
 Parameters:
   OrganizationName:
@@ -205,6 +211,37 @@ Parameters:
     Type: String
     Default: "python3.12"
     Description: The python runtime to use for the compliance dashboard
+  MaxAccountsPerPartition:
+    Type: Number
+    Default: 70
+    MinValue: 1
+    MaxValue: 200
+    Description: >-
+      Maximum number of accounts assigned to each partition by the Account
+      Partitioner Lambda. Keeps each guardrail Lambda's resource-based policy
+      under the 20 KB IAM limit. Adjust only if the underlying policy size
+      assumption changes.
+  MaxPartitions:
+    Type: Number
+    Default: 3
+    MinValue: 1
+    MaxValue: 3
+    Description: >-
+      Maximum number of partitions the Account Partitioner Lambda is allowed
+      to create. Hard-capped at 3 because the AuditAccountPreRequisitesPart*
+      templates and ConformancePack only define conditional clones for
+      partitions 1, 2, and 3. Total addressable accounts =
+      MaxAccountsPerPartition x MaxPartitions (default 70 x 3 = 210).
+  RootStackName:
+    Type: String
+    Description: >-
+      Name of the root CloudFormation stack (passed in from root.yaml). The
+      partition-sync Step Function calls cloudformation:UpdateStack against
+      this stack to cascade fresh AccountsInP1/P2/P3 values into the
+      ConformancePack nested stack and PartitionCount into the Part1-8
+      StackSets when the partitioner reports accountsChanged=true. Nested
+      stacks cannot be updated directly, so the state machine has to target
+      the root.
 
 Conditions:
   GenerateEvidenceBucketName: !Equals [!Ref EvidenceBucketName, ""]
@@ -755,7 +792,7 @@ Resources:
   PartitionStateTable:
     Type: AWS::DynamoDB::Table
     Properties:
-      TableName: gc-guardrails-partition-state
+      TableName: !Sub "${OrganizationName}-gc-guardrails-partition-state"
       BillingMode: PAY_PER_REQUEST
       AttributeDefinitions:
         - AttributeName: AccountId
@@ -808,9 +845,9 @@ Resources:
     Type: AWS::Lambda::Function
     Properties:
       FunctionName: !Sub "${OrganizationName}aws_account_partitioner"
-      Description: Partitions organization accounts into groups of ≤70 for guardrail Lambda cloning
+      Description: Partitions organization accounts into groups of ≤MaxAccountsPerPartition for guardrail Lambda cloning
       Handler: app.lambda_handler
-      Runtime: python3.12
+      Runtime: !Ref PythonRuntime
       Timeout: 180
       MemorySize: 128
       Role: !GetAtt AccountPartitionerRole.Arn
@@ -820,8 +857,8 @@ Resources:
       Environment:
         Variables:
           PARTITION_TABLE_NAME: !Ref PartitionStateTable
-          MAX_ACCOUNTS_PER_PARTITION: "70"
-          MAX_PARTITIONS: "3"
+          MAX_ACCOUNTS_PER_PARTITION: !Ref MaxAccountsPerPartition
+          MAX_PARTITIONS: !Ref MaxPartitions
 
   InvokeAccountPartitioner:
     Type: Custom::AccountPartitioner
@@ -884,6 +921,8 @@ Resources:
           ParameterValue: !Ref DeployVersion
         - ParameterKey: InvokeUpdate
           ParameterValue: !Ref InvokeUpdate
+        - ParameterKey: PartitionCount
+          ParameterValue: !GetAtt InvokeAccountPartitioner.PartitionCount
       PermissionModel: SERVICE_MANAGED
       StackInstancesGroup:
         - DeploymentTargets:
@@ -925,6 +964,8 @@ Resources:
           ParameterValue: !Ref RolePrefix
         - ParameterKey: DefaultCloudProfile
           ParameterValue: !Ref DefaultCloudProfile
+        - ParameterKey: PartitionCount
+          ParameterValue: !GetAtt InvokeAccountPartitioner.PartitionCount
       PermissionModel: SERVICE_MANAGED
       StackInstancesGroup:
         - DeploymentTargets:
@@ -966,6 +1007,8 @@ Resources:
           ParameterValue: !Ref RolePrefix
         - ParameterKey: DefaultCloudProfile
           ParameterValue: !Ref DefaultCloudProfile
+        - ParameterKey: PartitionCount
+          ParameterValue: !GetAtt InvokeAccountPartitioner.PartitionCount
       PermissionModel: SERVICE_MANAGED
       StackInstancesGroup:
         - DeploymentTargets:
@@ -1007,6 +1050,8 @@ Resources:
           ParameterValue: !Ref RolePrefix
         - ParameterKey: DefaultCloudProfile
           ParameterValue: !Ref DefaultCloudProfile
+        - ParameterKey: PartitionCount
+          ParameterValue: !GetAtt InvokeAccountPartitioner.PartitionCount
       PermissionModel: SERVICE_MANAGED
       StackInstancesGroup:
         - DeploymentTargets:
@@ -1049,6 +1094,8 @@ Resources:
           ParameterValue: !Ref RolePrefix
         - ParameterKey: DefaultCloudProfile
           ParameterValue: !Ref DefaultCloudProfile
+        - ParameterKey: PartitionCount
+          ParameterValue: !GetAtt InvokeAccountPartitioner.PartitionCount
       PermissionModel: SERVICE_MANAGED
       StackInstancesGroup:
         - DeploymentTargets:
@@ -1090,6 +1137,8 @@ Resources:
           ParameterValue: !Ref RolePrefix
         - ParameterKey: DefaultCloudProfile
           ParameterValue: !Ref DefaultCloudProfile
+        - ParameterKey: PartitionCount
+          ParameterValue: !GetAtt InvokeAccountPartitioner.PartitionCount
       PermissionModel: SERVICE_MANAGED
       StackInstancesGroup:
         - DeploymentTargets:
@@ -1131,6 +1180,8 @@ Resources:
           ParameterValue: !Ref RolePrefix
         - ParameterKey: DefaultCloudProfile
           ParameterValue: !Ref DefaultCloudProfile
+        - ParameterKey: PartitionCount
+          ParameterValue: !GetAtt InvokeAccountPartitioner.PartitionCount
       PermissionModel: SERVICE_MANAGED
       StackInstancesGroup:
         - DeploymentTargets:
@@ -1172,6 +1223,8 @@ Resources:
           ParameterValue: !Ref RolePrefix
         - ParameterKey: DefaultCloudProfile
           ParameterValue: !Ref DefaultCloudProfile
+        - ParameterKey: PartitionCount
+          ParameterValue: !GetAtt InvokeAccountPartitioner.PartitionCount
       PermissionModel: SERVICE_MANAGED
       StackInstancesGroup:
         - DeploymentTargets:
@@ -1218,6 +1271,8 @@ Resources:
           ParameterValue: !Ref AuditAccountID
         - ParameterKey: RolePrefix
           ParameterValue: !Ref RolePrefix
+        - ParameterKey: PartitionStateTableName
+          ParameterValue: !Ref PartitionStateTable
       PermissionModel: SERVICE_MANAGED
       StackInstancesGroup:
         - DeploymentTargets:
@@ -1670,9 +1725,19 @@ Resources:
         - !Ref GCLambdaExecutionRole2
 
   #######################################################
-  # Part 4 - Conformance Pack
+  # Part 4 - Conformance Pack (partitioned)
   #######################################################
+  # Up to 3 Organization Conformance Packs are deployed, one per
+  # partition produced by ``aws_account_partitioner``. Each pack reuses
+  # ConformancePack.yaml in S3 with a different ``PartitionSuffix``
+  # (``""`` / ``"_p2"`` / ``"_p3"``) so its Config rules invoke the
+  # matching guardrail Lambda clones. The ``ExcludedAccounts`` list on
+  # each pack guarantees every org account receives exactly one pack —
+  # the one for the partition it is assigned to. See
+  # ConformancePackPartitions.yaml for the full set of resources and
+  # conditions.
   ConformancePack:
+    Type: AWS::CloudFormation::Stack
     DependsOn:
       - AuditAccountPreRequisitesPart1
       - AuditAccountPreRequisitesPart2
@@ -1684,264 +1749,39 @@ Resources:
       - AuditAccountPreRequisitesPart8
       - AuditAccountPreRequisitesPartN
       #- AllAccountPreRequisites
-    Type: AWS::Config::OrganizationConformancePack
     Properties:
-      ConformancePackInputParameters:
-        - ParameterName: UpdateTriggerVersion
-          ParameterValue: !Ref InvokeUpdate
-        - ParameterName: GCLambdaExecutionRoleName
-          ParameterValue: !Sub "${AccelRolePrefix}GCLambdaExecutionRole"
-        - ParameterName: GCLambdaExecutionRoleName2
-          ParameterValue: !Sub ${AccelRolePrefix}GCLambdaExecutionRole2
-        - ParameterName: AuditAccountID
-          ParameterValue: !Ref AuditAccountID
-        - ParameterName: DeployVersion
-          ParameterValue: !Ref DeployVersion
-        - ParameterName: BGA1
-          ParameterValue: !Ref BGA1
-        - ParameterName: BGA2
-          ParameterValue: !Ref BGA2
-        - ParameterName: BGA3
-          ParameterValue: !Ref BGA3
-        - ParameterName: BGA4
-          ParameterValue: !Ref BGA4
-        - ParameterName: LogArchiveAccountName
-          ParameterValue: !Ref LogArchiveAccountName
-        - ParameterName: OrganizationName
-          ParameterValue: !Ref OrganizationName
-        - ParameterName: GC03AlarmList
-          ParameterValue: "AWS-IAM-Authentication-From-Unapproved-IP,AWS-SSO-Authentication-From-Unapproved-IP,AWS-Console-SignIn-Without-MFA"
-        - ParameterName: EnterpriseMonitoringIAMRoleName
-          ParameterValue: !Ref GC04EnterpriseMonitoringIAMRoleName
-        - ParameterName: EnterpriseMonitoringIAMTrustedPrincipal
-          ParameterValue: !Ref GC04EnterpriseMonitoringIAMTrustedPrincipal
-        - ParameterName: S3AttestationLetterPath
-          ParameterValue: !Sub
-            - "s3://${ClientEvidenceBucket}/gc-01/attestation_letter.pdf"
-            - ClientEvidenceBucket:
-                !If [
-                  GenerateEvidenceBucketName,
-                  !GetAtt GenerateEvidenceBucketName.EvidenceBucketName,
-                  !Ref EvidenceBucketName,
-                ]
-        - ParameterName: RuleNamingConventionFilePath
-          ParameterValue: !Sub
-            - "s3://${ClientEvidenceBucket}/gc-01/rule_naming_convention.txt"
-            - ClientEvidenceBucket:
-                !If [
-                  GenerateEvidenceBucketName,
-                  !GetAtt GenerateEvidenceBucketName.EvidenceBucketName,
-                  !Ref EvidenceBucketName,
-                ]
-        - ParameterName: PrivilegedUsersFilePath
-          ParameterValue: !Sub
-            - "s3://${ClientEvidenceBucket}/gc-01/privileged_users.txt"
-            - ClientEvidenceBucket:
-                !If [
-                  GenerateEvidenceBucketName,
-                  !GetAtt GenerateEvidenceBucketName.EvidenceBucketName,
-                  !Ref EvidenceBucketName,
-                ]
-        - ParameterName: NonPrivilegedUsersFilePath
-          ParameterValue: !Sub
-            - "s3://${ClientEvidenceBucket}/gc-01/non_privileged_users.txt"
-            - ClientEvidenceBucket:
-                !If [
-                  GenerateEvidenceBucketName,
-                  !GetAtt GenerateEvidenceBucketName.EvidenceBucketName,
-                  !Ref EvidenceBucketName,
-                ]
-        - ParameterName: LogSourceAttestationFilePath
-          ParameterValue: !Sub
-            - "s3://${ClientEvidenceBucket}/gc-01/logSource_attestation.pdf"
-            - ClientEvidenceBucket:
-                !If [
-                  GenerateEvidenceBucketName,
-                  !GetAtt GenerateEvidenceBucketName.EvidenceBucketName,
-                  !Ref EvidenceBucketName,
-                ]
-        - ParameterName: ExternalAlertsAttestationFilePath
-          ParameterValue: !Sub
-            - "s3://${ClientEvidenceBucket}/gc-01/external_alerts_attestation.pdf"
-            - ClientEvidenceBucket:
-                !If [
-                  GenerateEvidenceBucketName,
-                  !GetAtt GenerateEvidenceBucketName.EvidenceBucketName,
-                  !Ref EvidenceBucketName,
-                ]
-        - ParameterName: S3AccountManagementPlanPath
-          ParameterValue: !Sub
-            - "s3://${ClientEvidenceBucket}/gc-02/account_management_plan.pdf"
-            - ClientEvidenceBucket:
-                !If [
-                  GenerateEvidenceBucketName,
-                  !GetAtt GenerateEvidenceBucketName.EvidenceBucketName,
-                  !Ref EvidenceBucketName,
-                ]
-        - ParameterName: S3RoleAssignmentReviewDocumentPath
-          ParameterValue: !Sub
-            - "s3://${ClientEvidenceBucket}/gc-02/access_reviews_privileged_roles.pdf"
-            - ClientEvidenceBucket:
-                !If [
-                  GenerateEvidenceBucketName,
-                  !GetAtt GenerateEvidenceBucketName.EvidenceBucketName,
-                  !Ref EvidenceBucketName,
-                ]
-        - ParameterName: S3AccessManagementAttestationDocumentPath
-          ParameterValue: !Sub
-            - "s3://${ClientEvidenceBucket}/gc-02/access_management_attestation.pdf"
-            - ClientEvidenceBucket:
-                !If [
-                  GenerateEvidenceBucketName,
-                  !GetAtt GenerateEvidenceBucketName.EvidenceBucketName,
-                  !Ref EvidenceBucketName,
-                ]
-        - ParameterName: S3AdminAccountListPath
-          ParameterValue: !Sub
-            - "s3://${ClientEvidenceBucket}/gc-02/admin_accounts.txt"
-            - ClientEvidenceBucket:
-                !If [
-                  GenerateEvidenceBucketName,
-                  !GetAtt GenerateEvidenceBucketName.EvidenceBucketName,
-                  !Ref EvidenceBucketName,
-                ]
-        - ParameterName: S3VpnIpRangesPath
-          ParameterValue: !Sub
-            - "s3://${ClientEvidenceBucket}/gc-03/vpn_ip_ranges.txt"
-            - ClientEvidenceBucket:
-                !If [
-                  GenerateEvidenceBucketName,
-                  !GetAtt GenerateEvidenceBucketName.EvidenceBucketName,
-                  !Ref EvidenceBucketName,
-                ]
-        - ParameterName: S3CasCurrentlyInUsePath
-          ParameterValue: !Sub
-            - "s3://${ClientEvidenceBucket}/gc-07/cas_currently_in_use.txt"
-            - ClientEvidenceBucket:
-                !If [
-                  GenerateEvidenceBucketName,
-                  !GetAtt GenerateEvidenceBucketName.EvidenceBucketName,
-                  !Ref EvidenceBucketName,
-                ]
-        - ParameterName: S3NonComplianceOptoutFilePath
-          ParameterValue: !Sub
-            - "s3://${ClientEvidenceBucket}/gc-07/GR07_lb_attestation.pdf"
-            - ClientEvidenceBucket:
-                !If [
-                  GenerateEvidenceBucketName,
-                  !GetAtt GenerateEvidenceBucketName.EvidenceBucketName,
-                  !Ref EvidenceBucketName,
-                ]
-        - ParameterName: S3SecureNetworkTransmissionPolicyPath
-          ParameterValue: !Sub
-            - "s3://${ClientEvidenceBucket}/gc-07/secure_network_transmission.pdf"
-            - ClientEvidenceBucket:
-                !If [
-                  GenerateEvidenceBucketName,
-                  !GetAtt GenerateEvidenceBucketName.EvidenceBucketName,
-                  !Ref EvidenceBucketName,
-                ]
-        - ParameterName: S3TargetNetworkArchitecturePath
-          ParameterValue: !Sub
-            - "s3://${ClientEvidenceBucket}/gc-08/target_network_architecture.pdf"
-            - ClientEvidenceBucket:
-                !If [
-                  GenerateEvidenceBucketName,
-                  !GetAtt GenerateEvidenceBucketName.EvidenceBucketName,
-                  !Ref EvidenceBucketName,
-                ]
-        - ParameterName: S3TargetCloudDeploymentGuideDocumentPath
-          ParameterValue: !Sub
-            - "s3://${ClientEvidenceBucket}/gc-08/cloud_deployment_guide.pdf"
-            - ClientEvidenceBucket:
-                !If [
-                  GenerateEvidenceBucketName,
-                  !GetAtt GenerateEvidenceBucketName.EvidenceBucketName,
-                  !Ref EvidenceBucketName,
-                ]
-        - ParameterName: S3TargetCloudSegmentationDesignDocumentPath
-          ParameterValue: !Sub
-            - "s3://${ClientEvidenceBucket}/gc-08/cloud_segmentation_design.pdf"
-            - ClientEvidenceBucket:
-                !If [
-                  GenerateEvidenceBucketName,
-                  !GetAtt GenerateEvidenceBucketName.EvidenceBucketName,
-                  !Ref EvidenceBucketName,
-                ]
-        - ParameterName: S3NetworkArchitectureDocumentPath
-          ParameterValue: !Sub
-            - "s3://${ClientEvidenceBucket}/gc-09/network_security_architecture.pdf"
-            - ClientEvidenceBucket:
-                !If [
-                  GenerateEvidenceBucketName,
-                  !GetAtt GenerateEvidenceBucketName.EvidenceBucketName,
-                  !Ref EvidenceBucketName,
-                ]
-        - ParameterName: S3LogBucketsPath
-          ParameterValue: !Sub
-            - "s3://${ClientEvidenceBucket}/gc-10/log_buckets.txt"
-            - ClientEvidenceBucket:
-                !If [
-                  GenerateEvidenceBucketName,
-                  !GetAtt GenerateEvidenceBucketName.EvidenceBucketName,
-                  !Ref EvidenceBucketName,
-                ]
-        - ParameterName: S3MonitoringUseCasesPath
-          ParameterValue: !Sub
-            - "s3://${ClientEvidenceBucket}/gc-11/monitoring_usecases.pdf"
-            - ClientEvidenceBucket:
-                !If [
-                  GenerateEvidenceBucketName,
-                  !GetAtt GenerateEvidenceBucketName.EvidenceBucketName,
-                  !Ref EvidenceBucketName,
-                ]
-        - ParameterName: S3AccountManagementProcedurePath
-          ParameterValue: !Sub
-            - "s3://${ClientEvidenceBucket}/gc-13/emergency_account_management_procedures.pdf"
-            - ClientEvidenceBucket:
-                !If [
-                  GenerateEvidenceBucketName,
-                  !GetAtt GenerateEvidenceBucketName.EvidenceBucketName,
-                  !Ref EvidenceBucketName,
-                ]
-        - ParameterName: S3AccountMgmtApprovalsPath
-          ParameterValue: !Sub
-            - "s3://${ClientEvidenceBucket}/gc-13/emergency_account_management_approvals.pdf"
-            - ClientEvidenceBucket:
-                !If [
-                  GenerateEvidenceBucketName,
-                  !GetAtt GenerateEvidenceBucketName.EvidenceBucketName,
-                  !Ref EvidenceBucketName,
-                ]
-        - ParameterName: S3EmergencyAccountAlertsRuleNamesPath
-          ParameterValue: !Sub
-            - "s3://${ClientEvidenceBucket}/gc-13/rule_names.txt"
-            - ClientEvidenceBucket:
-                !If [
-                  GenerateEvidenceBucketName,
-                  !GetAtt GenerateEvidenceBucketName.EvidenceBucketName,
-                  !Ref EvidenceBucketName,
-                ]
-        - ParameterName: LogSourceNonComplianceAttestationFilePath
-          ParameterValue: !Sub
-            - "s3://${ClientEvidenceBucket}/gc-13/logSource_attestation.pdf"
-            - ClientEvidenceBucket:
-                !If [
-                  GenerateEvidenceBucketName,
-                  !GetAtt GenerateEvidenceBucketName.EvidenceBucketName,
-                  !Ref EvidenceBucketName,
-                ]
-        - ParameterName: ExternalAlertsNonComplianceAttestationFilePath
-          ParameterValue: !Sub
-            - "s3://${ClientEvidenceBucket}/gc-13/external_alerts_attestation.pdf"
-            - ClientEvidenceBucket:
-                !If [
-                  GenerateEvidenceBucketName,
-                  !GetAtt GenerateEvidenceBucketName.EvidenceBucketName,
-                  !Ref EvidenceBucketName,
-                ]
-      OrganizationConformancePackName: !Sub "${OrganizationName}-GC-CP-Guardrails"
-      TemplateS3Uri: !Sub s3://${PipelineBucket}/${DeployVersion}/ConformancePack.yaml
+      TemplateURL: !Sub https://${PipelineBucket}.s3.${AWS::Region}.amazonaws.com/${DeployVersion}/ConformancePackPartitions.yaml
+      Parameters:
+        # Per-partition account lists from the partitioner. Each pack's
+        # presence is driven entirely by whether its list is non-empty;
+        # the parent ``PartitionCount`` is not consumed here.
+        AccountsInP1: !GetAtt InvokeAccountPartitioner.AccountsInP1
+        AccountsInP2: !GetAtt InvokeAccountPartitioner.AccountsInP2
+        AccountsInP3: !GetAtt InvokeAccountPartitioner.AccountsInP3
+        # Wiring / packaging
+        PipelineBucket: !Ref PipelineBucket
+        DeployVersion: !Ref DeployVersion
+        InvokeUpdate: !Ref InvokeUpdate
+        # Shared inputs forwarded to each pack
+        OrganizationName: !Ref OrganizationName
+        AccelRolePrefix: !Ref AccelRolePrefix
+        AuditAccountID: !Ref AuditAccountID
+        BGA1: !Ref BGA1
+        BGA2: !Ref BGA2
+        BGA3: !Ref BGA3
+        BGA4: !Ref BGA4
+        LogArchiveAccountName: !Ref LogArchiveAccountName
+        ClientEvidenceBucket:
+          !If [
+            GenerateEvidenceBucketName,
+            !GetAtt GenerateEvidenceBucketName.EvidenceBucketName,
+            !Ref EvidenceBucketName,
+          ]
+        GC04EnterpriseMonitoringIAMRoleName: !Ref GC04EnterpriseMonitoringIAMRoleName
+        GC04EnterpriseMonitoringIAMTrustedPrincipal: !Ref GC04EnterpriseMonitoringIAMTrustedPrincipal
+        # GC03AlarmList is intentionally not passed in here — the nested
+        # stack defaults it to the canonical alarm-name list. Override
+        # there if it ever needs to change.
 
   #######################################################
   # Part 5 - Audit Manager Components
@@ -2115,6 +1955,34 @@ Resources:
           Regions:
             - us-east-1
       StackSetName: !Sub "${OrganizationName}-Compliance-Role-Generator"
+
+  #######################################################
+  # Partition-sync orchestration (factored out)
+  #
+  # Post-deployment, an EventBridge cron fires every 6 hours and starts
+  # the gc-guardrails-partition-sync Step Function defined in
+  # PartitionSyncStateMachine.yaml. Pulling these ~290 lines out of
+  # main.yaml keeps the deployment-critical template focused on
+  # deployment-time resources. See PartitionSyncStateMachine.yaml and
+  # doc/RESOURCE_POLICY_FIX.md for the full state-machine design.
+  #
+  # DependsOn:
+  #   - AccountPartitionerLambda: partitioner Lambda must exist before
+  #     the state machine's IAM role grants Invoke against it.
+  #   - AuditAccountPreRequisitesPartN: the permissions Lambda lives
+  #     in this StackSet; gating on PartN ensures the Lambda is in
+  #     place by the time the first cron fires (6 h after deploy).
+  #######################################################
+  PartitionSyncStack:
+    Type: AWS::CloudFormation::Stack
+    DependsOn:
+      - AccountPartitionerLambda
+      - AuditAccountPreRequisitesPartN
+    Properties:
+      TemplateURL: !Sub https://${PipelineBucket}.s3.${AWS::Region}.amazonaws.com/${DeployVersion}/PartitionSyncStateMachine.yaml
+      Parameters:
+        OrganizationName: !Ref OrganizationName
+        RootStackName: !Ref RootStackName
 
 Outputs:
   ClientEvidenceBucket:

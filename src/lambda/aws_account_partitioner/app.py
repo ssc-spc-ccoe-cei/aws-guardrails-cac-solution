@@ -119,6 +119,11 @@ def compute_partition_counts(state):
 def assign_partitions(active_accounts, current_state):
     """Determines partition assignments for new accounts and removals for stale ones.
 
+    New accounts are assigned in deterministic sorted order to whichever
+    existing partition has room (lowest-numbered first), or to a new
+    partition if no existing slot can take them. Accounts already in
+    ``current_state`` are never moved.
+
     :param active_accounts: set of active account IDs from Organizations
     :param current_state: dict mapping AccountId -> PartitionId from DynamoDB
     :return: tuple (accounts_to_add, accounts_to_remove, new_partition_count, partitions_changed)
@@ -126,6 +131,8 @@ def assign_partitions(active_accounts, current_state):
         - accounts_to_remove: set of AccountIds to remove from DynamoDB
         - new_partition_count: int, total partitions after assignment
         - partitions_changed: bool, whether partition count changed
+          (informational only — see ``run_partitioner`` docstring for how
+          this is consumed downstream)
     """
     # Identify accounts to remove (in DynamoDB but no longer active)
     accounts_to_remove = set(current_state.keys()) - active_accounts
@@ -208,10 +215,60 @@ def write_partition_state(table_name, accounts_to_add, accounts_to_remove):
         table.put_item(Item={"AccountId": account_id, "PartitionId": partition_id})
 
 
+def build_partition_account_lists(state, partition_count):
+    """Groups partition state into per-partition account-id lists.
+
+    The returned dict has an entry for every partition slot from 1 to
+    ``MAX_PARTITIONS`` (not just the populated ones) so the caller can
+    safely look up ``AccountsInP1`` / ``AccountsInP2`` / ``AccountsInP3``
+    regardless of how many partitions are currently in use. Slots above
+    ``partition_count`` map to empty lists.
+
+    :param state: dict mapping AccountId -> PartitionId
+    :param partition_count: total number of partitions in use (int >= 1)
+    :return: dict mapping partition_id (1..MAX_PARTITIONS) -> sorted list
+        of AccountId strings.
+    """
+    lists = {p: [] for p in range(1, MAX_PARTITIONS + 1)}
+    for account_id, partition_id in state.items():
+        if partition_id in lists:
+            lists[partition_id].append(account_id)
+    for partition_id in lists:
+        lists[partition_id].sort()
+    return lists
+
+
 def run_partitioner():
     """Main partitioning logic. Returns result dict.
 
-    :return: dict with partitionCount (int) and partitionsChanged (bool)
+    :return: dict with the following keys:
+
+        * ``partitionCount`` -- int, total partitions in use (1..MAX_PARTITIONS)
+        * ``partitionsChanged`` -- bool, whether partition *count* changed
+          (a new partition was opened or a trailing one collapsed).
+          **Returned for observability only.** Surfaced in CloudWatch
+          logs, the Custom Resource response, and the Step Function
+          execution history so operators can tell at a glance whether a
+          sync run opened/collapsed a partition vs. merely added an
+          account to an existing one. The Step Function's
+          ``MembershipChanged?`` choice does NOT branch on this flag,
+          because every partition-count change is necessarily also a
+          membership change — testing it would be strictly redundant
+          with ``accountsChanged``.
+        * ``accountsChanged`` -- bool, whether partition *membership* changed
+          (at least one account was added to or removed from the
+          ``gc-guardrails-partition-state`` table on this run). **The
+          Step Function gates the root-stack UpdateStack cascade on this
+          flag alone.** It covers both the count-changing cases
+          (opening/collapsing a partition) and the count-stable
+          membership-change case: new accounts joining a multi-
+          partition org must be added to the OTHER partitions'
+          ``ExcludedAccounts`` lists, which only happens when the
+          ConformancePack nested stack is re-rendered.
+        * ``accountsInPartition`` -- dict mapping partition_id (1..MAX_PARTITIONS)
+          -> list of account-id strings; slots above partitionCount are empty
+          lists. Used by the CloudFormation Custom Resource caller to compute
+          ``ExcludedAccounts`` lists for each Organization Conformance Pack.
     """
     logger.info("Starting account partitioning...")
     logger.info("Configuration: MAX_ACCOUNTS_PER_PARTITION=%d, MAX_PARTITIONS=%d",
@@ -230,17 +287,35 @@ def run_partitioner():
         active_accounts, current_state
     )
 
+    accounts_changed = bool(accounts_to_add) or bool(accounts_to_remove)
+
     logger.info(
-        "Partition result: %d new assignments, %d removals, %d total partitions, changed=%s",
-        len(accounts_to_add), len(accounts_to_remove), partition_count, partitions_changed
+        "Partition result: %d new assignments, %d removals, %d total partitions, "
+        "partitions_changed=%s, accounts_changed=%s",
+        len(accounts_to_add), len(accounts_to_remove), partition_count,
+        partitions_changed, accounts_changed,
     )
 
     # Step 4: Write changes to DynamoDB
     write_partition_state(PARTITION_TABLE_NAME, accounts_to_add, accounts_to_remove)
 
+    # Step 5: Build per-partition account lists from the final state. We
+    # recompute "final state" locally rather than re-scanning DynamoDB to
+    # avoid a race window where a parallel run could see stale data.
+    final_state = {k: v for k, v in current_state.items() if k not in accounts_to_remove}
+    final_state.update(accounts_to_add)
+    accounts_in_partition = build_partition_account_lists(final_state, partition_count)
+
+    for p in sorted(accounts_in_partition):
+        logger.info(
+            "Partition %d holds %d account(s)", p, len(accounts_in_partition[p])
+        )
+
     return {
         "partitionCount": partition_count,
         "partitionsChanged": partitions_changed,
+        "accountsChanged": accounts_changed,
+        "accountsInPartition": accounts_in_partition,
     }
 
 
@@ -271,6 +346,31 @@ def send(event, context, response_status, response_data, physical_resource_id=No
         logger.error("send(..) failed executing http.request(..): %s", err)
 
 
+def _build_cfn_response_data(result):
+    """Builds the ``Data`` dict returned to CloudFormation Custom Resource.
+
+    Per-partition account lists are returned as comma-separated strings (one
+    string per slot, padded out to ``MAX_PARTITIONS``) so the nested
+    ConformancePackPartitions stack can compute ``ExcludedAccounts`` lists
+    with ``Fn::Split`` / ``Fn::Join``.
+
+    The total response body is capped at 4 KB by CloudFormation; with
+    ``MAX_ACCOUNTS_PER_PARTITION * MAX_PARTITIONS = 210`` account IDs at
+    13 bytes each (12 digits + comma), the combined payload stays well
+    under that limit.
+    """
+    accounts_in_partition = result["accountsInPartition"]
+    data = {
+        "PartitionCount": str(result["partitionCount"]),
+        "PartitionsChanged": str(result["partitionsChanged"]),
+        "AccountsChanged": str(result["accountsChanged"]),
+    }
+    for partition_id in range(1, MAX_PARTITIONS + 1):
+        key = f"AccountsInP{partition_id}"
+        data[key] = ",".join(accounts_in_partition.get(partition_id, []))
+    return data
+
+
 def lambda_handler(event, context):
     """Main entry point for Lambda.
 
@@ -283,18 +383,25 @@ def lambda_handler(event, context):
     request_type = event.get("RequestType", "")
 
     if request_type == "Delete":
-        # Nothing to tear down — DynamoDB table is managed by CloudFormation
-        send(event, context, SUCCESS, {"PartitionCount": "0"})
+        # Nothing to tear down — DynamoDB table is managed by CloudFormation.
+        # Return a fully-shaped (zeroed) payload so any !GetAtt references
+        # in the consuming template still resolve cleanly during stack
+        # deletion.
+        empty = {
+            "PartitionCount": "0",
+            "PartitionsChanged": "false",
+            "AccountsChanged": "false",
+        }
+        for partition_id in range(1, MAX_PARTITIONS + 1):
+            empty[f"AccountsInP{partition_id}"] = ""
+        send(event, context, SUCCESS, empty)
         return
 
     if request_type in ("Create", "Update"):
         # CloudFormation Custom Resource invocation
         try:
             result = run_partitioner()
-            response_data = {
-                "PartitionCount": str(result["partitionCount"]),
-                "PartitionsChanged": str(result["partitionsChanged"]),
-            }
+            response_data = _build_cfn_response_data(result)
             send(event, context, SUCCESS, response_data)
         except Exception as e:
             logger.error("Partitioner failed: %s", e)
@@ -302,10 +409,13 @@ def lambda_handler(event, context):
         return
 
     if request_type == "StepFunction":
-        # Step Function invocation — return result directly
+        # Step Function invocation — return result directly. Convert the
+        # per-partition lists to the same comma-separated string shape as
+        # the Custom Resource response so downstream steps can rely on a
+        # single contract.
         try:
             result = run_partitioner()
-            return result
+            return _build_cfn_response_data(result)
         except Exception as e:
             logger.error("Partitioner failed: %s", e)
             raise

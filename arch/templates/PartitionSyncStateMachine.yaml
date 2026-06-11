@@ -1,0 +1,337 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: >-
+  GC Guardrails — partition-sync Step Function and 6-hour EventBridge
+  cron. Factored out of main.yaml so its 290 lines don't have to be
+  navigated alongside the rest of the deployment template. The state
+  machine invokes aws_account_partitioner, optionally calls UpdateStack
+  on the root (when accountsChanged is true) to cascade fresh
+  AccountsInP1/P2/P3 and PartitionCount through the rest of the stack,
+  then invokes aws_lambda_permissions_setup. Full design: see
+  doc/RESOURCE_POLICY_FIX.md.
+
+Parameters:
+  OrganizationName:
+    Type: String
+    Description: >-
+      Prefix used in front of every guardrail Lambda function name.
+      Used here to construct the ARNs that the state-machine IAM role
+      must allow lambda:InvokeFunction against (the partitioner Lambda
+      in main.yaml, and the permissions Lambda in PartN's StackSet).
+
+  RootStackName:
+    Type: String
+    Description: >-
+      Name of the root CloudFormation stack. The state machine calls
+      cloudformation:UpdateStack against this stack to cascade fresh
+      AccountsInP1/P2/P3 values into the ConformancePack nested stack
+      and PartitionCount into the Part1-8 StackSets whenever the
+      partitioner reports membership or partition-count changes. Nested
+      stacks cannot be updated directly, so the state machine has to
+      target the root.
+
+Resources:
+  PartitionSyncStateMachineLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub "/aws/vendedlogs/states/${OrganizationName}gc-guardrails-partition-sync"
+      RetentionInDays: 90
+
+  PartitionSyncStateMachineRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub "${OrganizationName}PartitionSyncStateMachineRole"
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: states.amazonaws.com
+            Action: sts:AssumeRole
+      Path: "/"
+      Policies:
+        - PolicyName: AllowInvokeLambdas
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              # Both Lambdas are referenced by deterministic name
+              # ("${OrganizationName}<suffix>"). The partitioner lives
+              # in main.yaml, the permissions Lambda in PartN's
+              # StackSet — both deployed to the same account as this
+              # state machine, so no cross-account assume-role is
+              # needed.
+              - Sid: AllowInvokePartitionSyncLambdas
+                Effect: Allow
+                Action:
+                  - "lambda:InvokeFunction"
+                Resource:
+                  - !Sub "arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:${OrganizationName}aws_account_partitioner"
+                  - !Sub "arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:${OrganizationName}aws_lambda_permissions_setup"
+        - PolicyName: AllowRootStackUpdate
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              # cloudformation:UpdateStack + DescribeStacks on the root.
+              # We can't construct the root stack ARN exactly here
+              # (the unique-id suffix is unknown), so we wildcard the
+              # tail and constrain by stack-name.
+              - Sid: AllowRootStackUpdate
+                Effect: Allow
+                Action:
+                  - "cloudformation:UpdateStack"
+                  - "cloudformation:DescribeStacks"
+                Resource:
+                  - !Sub "arn:aws:cloudformation:${AWS::Region}:${AWS::AccountId}:stack/${RootStackName}/*"
+        - PolicyName: AllowStateMachineLogging
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              # Logging permissions for STANDARD state machines must be
+              # broad (* resource) per the AWS Step Functions docs.
+              # The execution role still constrains *which* state
+              # machine can write logs.
+              - Sid: AllowCloudWatchLogsDelivery
+                Effect: Allow
+                Action:
+                  - "logs:CreateLogDelivery"
+                  - "logs:GetLogDelivery"
+                  - "logs:UpdateLogDelivery"
+                  - "logs:DeleteLogDelivery"
+                  - "logs:ListLogDeliveries"
+                  - "logs:PutResourcePolicy"
+                  - "logs:DescribeResourcePolicies"
+                  - "logs:DescribeLogGroups"
+                Resource: "*"
+
+  PartitionSyncStateMachine:
+    Type: AWS::StepFunctions::StateMachine
+    Properties:
+      StateMachineName: !Sub "${OrganizationName}gc-guardrails-partition-sync"
+      StateMachineType: STANDARD
+      RoleArn: !GetAtt PartitionSyncStateMachineRole.Arn
+      LoggingConfiguration:
+        Level: ERROR
+        IncludeExecutionData: false
+        Destinations:
+          - CloudWatchLogsLogGroup:
+              LogGroupArn: !GetAtt PartitionSyncStateMachineLogGroup.Arn
+      DefinitionSubstitutions:
+        PartitionerFunctionName: !Sub "${OrganizationName}aws_account_partitioner"
+        PermissionsFunctionName: !Sub "${OrganizationName}aws_lambda_permissions_setup"
+        RootStackName: !Ref RootStackName
+      DefinitionString: |-
+        {
+          "Comment": "Sync partition state, Lambda clones, and resource policies. Triggered on a 6-hour EventBridge schedule.",
+          "StartAt": "InvokePartitioner",
+          "States": {
+            "InvokePartitioner": {
+              "Type": "Task",
+              "Resource": "arn:aws:states:::lambda:invoke",
+              "Parameters": {
+                "FunctionName": "${PartitionerFunctionName}",
+                "Payload": {
+                  "RequestType": "StepFunction"
+                }
+              },
+              "ResultSelector": {
+                "PartitionsChanged.$": "$.Payload.PartitionsChanged",
+                "AccountsChanged.$": "$.Payload.AccountsChanged",
+                "PartitionCount.$": "$.Payload.PartitionCount"
+              },
+              "ResultPath": "$.partitioner",
+              "Retry": [
+                {
+                  "ErrorEquals": [
+                    "Lambda.ServiceException",
+                    "Lambda.AWSLambdaException",
+                    "Lambda.SdkClientException",
+                    "Lambda.TooManyRequestsException"
+                  ],
+                  "IntervalSeconds": 2,
+                  "MaxAttempts": 6,
+                  "BackoffRate": 2.0
+                }
+              ],
+              "Next": "MembershipChanged?"
+            },
+            "MembershipChanged?": {
+              "Type": "Choice",
+              "Comment": "Trigger the root-stack UpdateStack cascade when partition membership has changed on this run (an account was added to or removed from the gc-guardrails-partition-state table). Gating on accountsChanged alone is sufficient: every partition-count change is necessarily accompanied by a membership change (the account that opened or closed the partition), and the count-stable membership-change case (account joining a non-full partition) also requires the cascade so the OTHER partitions' ExcludedAccounts lists get re-rendered. PartitionsChanged is captured into $.partitioner for log/execution-history visibility — it tells operators at a glance whether a sync run opened or collapsed a partition vs. merely added an account to an existing one — but it is intentionally NOT branched on here because doing so would be strictly redundant with accountsChanged.",
+              "Choices": [
+                {
+                  "Variable": "$.partitioner.AccountsChanged",
+                  "StringEquals": "True",
+                  "Next": "UpdateRootStack"
+                }
+              ],
+              "Default": "InvokePermissionsSync"
+            },
+            "UpdateRootStack": {
+              "Type": "Task",
+              "Resource": "arn:aws:states:::aws-sdk:cloudformation:updateStack",
+              "Comment": "Bumps InvokeUpdate on the root stack so the Custom::AccountPartitioner re-runs and refreshes !GetAtt AccountsInP1/P2/P3 (which feed the ConformancePack nested stack) and PartitionCount (which feeds the Part1-8 StackSets). UsePreviousTemplate=true keeps every other parameter at its prior value.",
+              "Parameters": {
+                "StackName": "${RootStackName}",
+                "UsePreviousTemplate": true,
+                "Capabilities": [
+                  "CAPABILITY_IAM",
+                  "CAPABILITY_NAMED_IAM",
+                  "CAPABILITY_AUTO_EXPAND"
+                ],
+                "Parameters": [
+                  {
+                    "ParameterKey": "InvokeUpdate",
+                    "ParameterValue.$": "States.UUID()"
+                  }
+                ]
+              },
+              "ResultPath": "$.stackUpdate",
+              "Retry": [
+                {
+                  "ErrorEquals": [
+                    "CloudFormation.CloudFormationException"
+                  ],
+                  "IntervalSeconds": 30,
+                  "MaxAttempts": 2,
+                  "BackoffRate": 2.0
+                }
+              ],
+              "Catch": [
+                {
+                  "Comment": "If the root stack is already updating (e.g. a CICD deploy is mid-flight) UpdateStack throws ValidationError. Skip the wait/poll branch — the in-flight update will pick up the new partition state via the partitioner Custom Resource on its way through, and the next cron will retry if not.",
+                  "ErrorEquals": [
+                    "States.ALL"
+                  ],
+                  "ResultPath": "$.stackUpdateError",
+                  "Next": "InvokePermissionsSync"
+                }
+              ],
+              "Next": "WaitForStackUpdate"
+            },
+            "WaitForStackUpdate": {
+              "Type": "Wait",
+              "Seconds": 60,
+              "Next": "DescribeRootStack"
+            },
+            "DescribeRootStack": {
+              "Type": "Task",
+              "Resource": "arn:aws:states:::aws-sdk:cloudformation:describeStacks",
+              "Parameters": {
+                "StackName": "${RootStackName}"
+              },
+              "ResultSelector": {
+                "Status.$": "$.Stacks[0].StackStatus"
+              },
+              "ResultPath": "$.stackStatus",
+              "Next": "StackUpdateComplete?"
+            },
+            "StackUpdateComplete?": {
+              "Type": "Choice",
+              "Choices": [
+                {
+                  "Variable": "$.stackStatus.Status",
+                  "StringEquals": "UPDATE_COMPLETE",
+                  "Next": "InvokePermissionsSync"
+                },
+                {
+                  "Or": [
+                    {
+                      "Variable": "$.stackStatus.Status",
+                      "StringEquals": "UPDATE_IN_PROGRESS"
+                    },
+                    {
+                      "Variable": "$.stackStatus.Status",
+                      "StringEquals": "UPDATE_COMPLETE_CLEANUP_IN_PROGRESS"
+                    },
+                    {
+                      "Variable": "$.stackStatus.Status",
+                      "StringEquals": "REVIEW_IN_PROGRESS"
+                    }
+                  ],
+                  "Next": "WaitForStackUpdate"
+                }
+              ],
+              "Default": "StackUpdateFailed"
+            },
+            "StackUpdateFailed": {
+              "Type": "Fail",
+              "Error": "RootStackUpdateFailed",
+              "Cause": "Root stack did not reach UPDATE_COMPLETE; check CloudFormation events for the root stack and the next 6h cron run will retry from scratch."
+            },
+            "InvokePermissionsSync": {
+              "Type": "Task",
+              "Resource": "arn:aws:states:::lambda:invoke",
+              "Parameters": {
+                "FunctionName": "${PermissionsFunctionName}",
+                "Payload": {
+                  "RequestType": "StepFunction"
+                }
+              },
+              "ResultPath": "$.permissionsSync",
+              "Retry": [
+                {
+                  "ErrorEquals": [
+                    "Lambda.ServiceException",
+                    "Lambda.AWSLambdaException",
+                    "Lambda.SdkClientException",
+                    "Lambda.TooManyRequestsException"
+                  ],
+                  "IntervalSeconds": 2,
+                  "MaxAttempts": 6,
+                  "BackoffRate": 2.0
+                }
+              ],
+              "End": true
+            }
+          }
+        }
+
+  PartitionSyncScheduleRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub "${OrganizationName}PartitionSyncScheduleRole"
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: events.amazonaws.com
+            Action: sts:AssumeRole
+      Path: "/"
+      Policies:
+        - PolicyName: AllowStartStateMachine
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Sid: AllowStartPartitionSyncExecution
+                Effect: Allow
+                Action:
+                  - "states:StartExecution"
+                Resource:
+                  - !Ref PartitionSyncStateMachine
+
+  PartitionSyncScheduleRule:
+    Type: AWS::Events::Rule
+    Properties:
+      Name: !Sub "${OrganizationName}gc-guardrails-partition-sync-schedule"
+      Description: >-
+        Triggers the gc-guardrails-partition-sync Step Function every 6
+        hours so newly-added / removed accounts are picked up without a
+        manual redeploy. Replaces the previous direct-invocation cron on
+        aws_lambda_permissions_setup.
+      ScheduleExpression: "rate(6 hours)"
+      State: ENABLED
+      Targets:
+        - Id: PartitionSyncStateMachineTarget
+          Arn: !Ref PartitionSyncStateMachine
+          RoleArn: !GetAtt PartitionSyncScheduleRole.Arn
+
+Outputs:
+  StateMachineArn:
+    Description: ARN of the gc-guardrails-partition-sync Step Function.
+    Value: !Ref PartitionSyncStateMachine
+  StateMachineName:
+    Description: Name of the gc-guardrails-partition-sync Step Function.
+    Value: !GetAtt PartitionSyncStateMachine.Name
+  ScheduleRuleArn:
+    Description: ARN of the EventBridge cron rule that drives the state machine.
+    Value: !GetAtt PartitionSyncScheduleRule.Arn

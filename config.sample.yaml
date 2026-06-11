@@ -19,3 +19,7 @@ Parameters:
   AdditionalAssessmentAdminRoleARN: ""
   ExecutionName: ""
   DeployRoles: "false"
+  # Account Partitioner Lambda tuning (defaults match main.yaml/root.yaml).
+  # Increase MaxPartitions if the org grows beyond MaxAccountsPerPartition x MaxPartitions accounts.
+  MaxAccountsPerPartition: 70
+  MaxPartitions: 3

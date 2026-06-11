@@ -17,6 +17,13 @@ At approximately **70 accounts**, the accumulated policy statements exceed 20KB,
 
 ## Proposed Solution — Partitioned Lambda Cloning
 
+> **Companion document:** [`CONFORMANCE_PACK_IMPLEMENTATION.md`](./CONFORMANCE_PACK_IMPLEMENTATION.md)
+> covers the conformance-pack and Audit Manager portions of this design
+> (Sections 4 and 5 below) in greater depth — including the full
+> `ExcludedAccounts` YAML, per-partition condition combinations, the
+> CloudFormation 4 KB response-cap analysis, and Audit Manager evidence
+> routing diagrams. This document is the high-level design overview.
+
 ### Core Idea
 
 Partition the organization's accounts into groups of **≤70** and create **one clone of each guardrail Lambda per partition**. Each clone's resource policy only contains the accounts in its partition, staying well within 20KB.
@@ -79,17 +86,26 @@ A new Lambda function responsible for **managing partition state**. It runs in t
 1. Queries `organizations:ListAccounts` for all active accounts.
 2. Reads current partition state from DynamoDB.
 3. Identifies new accounts not yet assigned and removed/suspended accounts.
-4. Assigns new accounts to existing partitions with room (< 70), or creates a new partition (up to max 3).
+4. **Greedily** assigns new (sorted) accounts to the lowest-numbered partition with room (< `MAX_ACCOUNTS_PER_PARTITION`), opening a new partition as needed up to `MAX_PARTITIONS`.
 5. Removes entries for inactive/deleted accounts.
-6. Writes updated state back to DynamoDB.
-7. Returns:
-   - `partitionCount` — current number of partitions.
-   - `partitionsChanged` — boolean indicating if the partition count changed (i.e., a new partition was created or removed).
+6. **Stable assignment:** existing rows in DynamoDB are never re-balanced — only new accounts are placed.
+7. If a *trailing* partition becomes empty (e.g. every P3 account leaves), `partitionCount` is reduced to the highest occupied partition. Non-trailing partitions are **not** collapsed (an empty P2 with P3 still occupied leaves `partitionCount=3`).
+8. Writes updated state back to DynamoDB.
 
-**CloudFormation Custom Resource outputs (at deployment):**
-```yaml
-PartitionCount:   # "2"
-```
+**Return shape (identical in both CFN Custom Resource and Step Function contexts):**
+
+| Field | Type | Description |
+|---|---|---|
+| `partitionCount` | int | Current number of partitions in use (1..`MAX_PARTITIONS`). |
+| `partitionsChanged` | bool | True if `partitionCount` differs from the previous run. **Returned for observability only** — surfaced in CloudWatch logs, the Custom Resource response, and the Step Function execution history so operators can tell at a glance whether a sync run opened/collapsed a partition vs. merely added an account to an existing one. The Step Function does **not** branch on this flag (see `accountsChanged` below). |
+| `accountsChanged` | bool | True if at least one account was added to, or removed from, the partition state on this run. **Critical:** the Step Function gates the root-stack UpdateStack cascade on this flag alone. It covers both the count-changing cases (opening or collapsing a partition is always accompanied by a membership change) and the count-stable case — a new account joining an existing partition with room leaves `partitionCount` unchanged, but the *other* partitions' `ExcludedAccounts` lists must still be re-rendered so the new account doesn't receive multiple Organization Conformance Packs simultaneously. Testing `partitionsChanged` in the choice would be strictly redundant. |
+| `AccountsInP1` | string | Comma-separated 12-digit account IDs in partition 1. Empty string if unused. |
+| `AccountsInP2` | string | As above for partition 2. |
+| `AccountsInP3` | string | As above for partition 3. |
+
+The per-partition account lists are consumed downstream by `ConformancePackPartitions.yaml` (see Section 4) to build each Organization Conformance Pack's `ExcludedAccounts`.
+
+**CloudFormation 4 KB response-body cap.** Custom Resource response bodies are capped at 4096 bytes. With `MAX_ACCOUNTS_PER_PARTITION × MAX_PARTITIONS = 70 × 3 = 210` account IDs at ~14 bytes each (12-digit + comma), the combined `AccountsInPx` payload at 210 accounts is ~3.4 KB plus envelope — fits comfortably. Raising either limit further would require revisiting this.
 
 ---
 
@@ -117,134 +133,120 @@ All clones share the same code package and IAM execution role — only the `Func
 
 ---
 
-### 4. Modified `ConformancePack.yaml` — Separate Config Rules Per Partition
+### 4. Modified `ConformancePack.yaml` + new `ConformancePackPartitions.yaml` — One Pack Per Partition
 
-For each guardrail, separate Config rules are conditionally created per partition. Each rule targets the corresponding Lambda clone.
+The original design considered deploying one Organization Conformance Pack containing
+**three copies** of each Config rule (conditionally created per partition), with all
+copies deployed to every account and the un-permitted ones failing closed.
+**This was abandoned** because:
 
-**Example based on the existing `GC01CheckRootAccountMFAEnabled` rule:**
+- CloudFormation `Conditions` are evaluated at template-processing time and cannot
+  reference `!GetAtt` from a Custom Resource, so the per-partition account assignments
+  produced by `aws_account_partitioner` cannot drive `Conditions` inside `main.yaml`.
+- Fail-closed evaluations would muddy Config and Audit Manager evidence.
+
+The adopted approach instead deploys **up to three separate `AWS::Config::OrganizationConformancePack` resources** — one per non-empty partition — each running the **same 37-rule template** (`ConformancePack.yaml`) but parameterised with a different Lambda-clone target. Per-pack `ExcludedAccounts` ensures every org account receives **exactly one** pack.
+
+#### 4a. `ConformancePack.yaml` — single `PartitionSuffix` parameter
+
+Rather than duplicating every rule three times, a single new input parameter is added:
 
 ```yaml
-Parameters:
-  PartitionCount:
-    Type: String
-    Default: "1"
-  # ... existing parameters ...
-
-Conditions:
-  HasPartition2: !Not [!Equals [!Ref PartitionCount, "1"]]
-  HasPartition3: !Equals [!Ref PartitionCount, "3"]
-
-Resources:
-  # Partition 1 — always created (handles accounts in partition 1)
-  GC01CheckRootAccountMFAEnabled:
-    Type: "AWS::Config::ConfigRule"
-    Properties:
-      ConfigRuleName: gc01_check_root_mfa
-      Description: Checks Root account to ensure MFA is enabled
-      InputParameters:
-        ExecutionRoleName:
-          Fn::If:
-            - GCLambdaExecutionRoleName
-            - Ref: GCLambdaExecutionRoleName
-            - Ref: AWS::NoValue
-        AuditAccountID:
-          Fn::If:
-            - auditAccountID
-            - Ref: AuditAccountID
-            - Ref: AWS::NoValue
-      Scope:
-        ComplianceResourceTypes:
-          - AWS::Account
-      MaximumExecutionFrequency: TwentyFour_Hours
-      Source:
-        Owner: CUSTOM_LAMBDA
-        SourceIdentifier:
-          Fn::Join:
-            - ""
-            - - "arn:aws:lambda:ca-central-1:"
-              - Ref: AuditAccountID
-              - !Sub ":function:${OrganizationName}gc01_check_root_mfa"
-        SourceDetails:
-          - EventSource: aws.config
-            MessageType: ScheduledNotification
-            MaximumExecutionFrequency: TwentyFour_Hours
-
-  # Partition 2 — conditionally created
-  GC01CheckRootAccountMFAEnabledP2:
-    Type: "AWS::Config::ConfigRule"
-    Condition: HasPartition2
-    Properties:
-      ConfigRuleName: gc01_check_root_mfa_p2
-      Description: Checks Root account to ensure MFA is enabled (Partition 2)
-      InputParameters:
-        ExecutionRoleName:
-          Fn::If:
-            - GCLambdaExecutionRoleName
-            - Ref: GCLambdaExecutionRoleName
-            - Ref: AWS::NoValue
-        AuditAccountID:
-          Fn::If:
-            - auditAccountID
-            - Ref: AuditAccountID
-            - Ref: AWS::NoValue
-      Scope:
-        ComplianceResourceTypes:
-          - AWS::Account
-      MaximumExecutionFrequency: TwentyFour_Hours
-      Source:
-        Owner: CUSTOM_LAMBDA
-        SourceIdentifier:
-          Fn::Join:
-            - ""
-            - - "arn:aws:lambda:ca-central-1:"
-              - Ref: AuditAccountID
-              - !Sub ":function:${OrganizationName}gc01_check_root_mfa_p2"
-        SourceDetails:
-          - EventSource: aws.config
-            MessageType: ScheduledNotification
-            MaximumExecutionFrequency: TwentyFour_Hours
-
-  # Partition 3 — conditionally created
-  GC01CheckRootAccountMFAEnabledP3:
-    Type: "AWS::Config::ConfigRule"
-    Condition: HasPartition3
-    Properties:
-      ConfigRuleName: gc01_check_root_mfa_p3
-      Description: Checks Root account to ensure MFA is enabled (Partition 3)
-      InputParameters:
-        ExecutionRoleName:
-          Fn::If:
-            - GCLambdaExecutionRoleName
-            - Ref: GCLambdaExecutionRoleName
-            - Ref: AWS::NoValue
-        AuditAccountID:
-          Fn::If:
-            - auditAccountID
-            - Ref: AuditAccountID
-            - Ref: AWS::NoValue
-      Scope:
-        ComplianceResourceTypes:
-          - AWS::Account
-      MaximumExecutionFrequency: TwentyFour_Hours
-      Source:
-        Owner: CUSTOM_LAMBDA
-        SourceIdentifier:
-          Fn::Join:
-            - ""
-            - - "arn:aws:lambda:ca-central-1:"
-              - Ref: AuditAccountID
-              - !Sub ":function:${OrganizationName}gc01_check_root_mfa_p3"
-        SourceDetails:
-          - EventSource: aws.config
-            MessageType: ScheduledNotification
-            MaximumExecutionFrequency: TwentyFour_Hours
+PartitionSuffix:
+  Type: String
+  Default: ""
+  AllowedValues: ["", "_p2", "_p3"]
 ```
 
-**Key point:** Since this is an Organization Conformance Pack, every rule is deployed to every account. Each account will have all partition rules deployed, but only the Lambda matching that account's partition will have the resource-based policy permitting invocation. Config rules targeting a Lambda without permission will fail closed (non-evaluating), which is acceptable — OR the guardrail Lambda itself can check the invoking account against DynamoDB and return `NOT_APPLICABLE` if the account isn't in its partition.
+…and appended to every `ConfigRuleName` and to the Lambda function name in every
+`SourceIdentifier` (37 rules × 2 substitutions). Example:
+
+```yaml
+# Before
+ConfigRuleName: gc01_check_root_mfa
+SourceIdentifier:
+  Fn::Join: ["", ["arn:aws:lambda:ca-central-1:", !Ref AuditAccountID,
+                  !Sub ":function:${OrganizationName}gc01_check_root_mfa"]]
+
+# After
+ConfigRuleName: !Sub "gc01_check_root_mfa${PartitionSuffix}"
+SourceIdentifier:
+  Fn::Join: ["", ["arn:aws:lambda:ca-central-1:", !Ref AuditAccountID,
+                  !Sub ":function:${OrganizationName}gc01_check_root_mfa${PartitionSuffix}"]]
+```
+
+When the P2 pack passes `PartitionSuffix: "_p2"`, the deployed rule becomes
+`gc01_check_root_mfa_p2` and targets the `<org>gc01_check_root_mfa_p2` Lambda clone.
+
+#### 4b. `ConformancePackPartitions.yaml` — new nested stack
+
+A new nested template replaces the single inline
+`AWS::Config::OrganizationConformancePack` in `main.yaml`. **The logical name
+`ConformancePack` is preserved** so the existing
+`AuditAccountAuditManager DependsOn: ConformancePack` reference still resolves.
+
+Why a nested stack: the per-partition account lists arrive from the partitioner as
+`!GetAtt` values, which cannot be used in parent-stack `Conditions`. Passing them
+into a nested stack as regular parameters lets the nested stack's `Conditions`
+gate each pack on partition emptiness.
+
+| Resource | Condition | `PartitionSuffix` | `ExcludedAccounts` |
+|---|---|---|---|
+| `ConformancePackP1` (`${OrganizationName}-GC-CP-Guardrails`)    | `HasAccountsInP1` | `""`    | union of P2 ∪ P3 (whichever are non-empty), or `AWS::NoValue` |
+| `ConformancePackP2` (`${OrganizationName}-GC-CP-Guardrails-P2`) | `HasAccountsInP2` | `"_p2"` | union of P1 ∪ P3 (whichever are non-empty), or `AWS::NoValue` |
+| `ConformancePackP3` (`${OrganizationName}-GC-CP-Guardrails-P3`) | `HasAccountsInP3` | `"_p3"` | union of P1 ∪ P2 (whichever are non-empty), or `AWS::NoValue` |
+
+Each pack's `ExcludedAccounts` is built with a nested `!If` ladder so empty
+`AccountsInP*` strings are never `!Split` into the list (which would produce
+trailing empty elements that fail Config's `^\d{12}$` validation).
+
+**Result:** every org account is targeted by exactly one pack — the one matching
+its DynamoDB-assigned partition. For organisations with ≤ 70 accounts the result
+is **indistinguishable from the pre-fix deployment**: one pack, no exclusions,
+base `<org>gc*` Lambdas only — the upgrade path requires no manual configuration.
+
+> See [`CONFORMANCE_PACK_IMPLEMENTATION.md`](./CONFORMANCE_PACK_IMPLEMENTATION.md)
+> for the complete `ExcludedAccounts` `!If`-ladder YAML, all condition
+> combinations, and the full parameter forwarding list.
 
 ---
 
-### 5. Modified `aws_lambda_permissions_setup` — Single Responsibility: Sync Permissions
+### 5. Audit Manager custom framework — three `controlMappingSources` per control
+
+Because Audit Manager controls reference Config rules by *name* (not ARN), each
+control's `controlMappingSources` list is expanded from one entry to three —
+one per partition variant (`…`, `…_p2`, `…_p3`) — so evidence is collected
+regardless of which partition's Config rule produced an evaluation.
+
+```python
+"controlMappingSources": [
+    {"sourceName": "RootMFA-check",     ..., "keywordValue": "Custom_gc01_check_root_mfa-conformance-pack"},
+    {"sourceName": "RootMFA-check-p2",  ..., "keywordValue": "Custom_gc01_check_root_mfa_p2-conformance-pack"},
+    {"sourceName": "RootMFA-check-p3",  ..., "keywordValue": "Custom_gc01_check_root_mfa_p3-conformance-pack"},
+],
+```
+
+Key properties:
+
+- Audit Manager's `CreateControl` / `UpdateControl` does **not** validate that
+  the referenced Config rules exist — `keywordValue` is a soft string reference.
+  At ≤ 70 accounts the `_p2` / `_p3` sources simply return zero evidence and
+  contribute nothing to the merged control.
+- Applies to **37 of 38 controls**; `gc01_check_attestation_letter` is documentation-only
+  and stays at one mapping.
+- Audit Manager's per-control limit of 5 `controlMappingSources` is well above the 3 used.
+- **Forward-compatible with growth:** when an org later crosses 70 (or 140)
+  accounts and `ConformancePackP2` (or `P3`) is deployed, the previously-empty
+  sources start returning real evaluations on the next collection cycle — no
+  framework redeploy, no control rename.
+
+Control names themselves are unchanged, so `aws_compile_audit_report` (which
+groups evidence by control name) continues to produce the same 38 CSV rows
+regardless of partition count.
+
+---
+
+### 6. Modified `aws_lambda_permissions_setup` — Single Responsibility: Sync Permissions
 
 The existing Lambda is simplified to a **single concern**: ensure each Lambda clone's resource-based policy matches the accounts in its DynamoDB partition.
 
@@ -263,7 +265,7 @@ No state management, no account detection, no Lambda cloning. Just permission sy
 
 ---
 
-### 6. Step Function Orchestration — Post-Deployment Account Growth
+### 7. Step Function Orchestration — Post-Deployment Account Growth
 
 A Step Function provides **observability** and **orchestration** for the ongoing sync process.
 
@@ -280,27 +282,40 @@ A Step Function provides **observability** and **orchestration** for the ongoing
 │  │ aws_account_partitioner │                                │
 │  │                         │                                │
 │  │ Output:                 │                                │
-│  │  partitionsChanged: T/F │                                │
-│  │  partitionCount: N      │                                │
+│  │  accountsChanged:   T/F │  (gates Step 2)                │
+│  │  partitionCount:    N   │                                │
+│  │  partitionsChanged: T/F │  (observability only)          │
+│  │  AccountsInP1/P2/P3     │                                │
 │  └────────────┬────────────┘                                │
 │               │                                             │
 │               ▼                                             │
 │  ┌─────────────────────────┐                                │
 │  │ Step 2: Choice          │                                │
 │  │                         │                                │
-│  │ partitionsChanged?      │                                │
+│  │ MembershipChanged?      │                                │
+│  │  (accountsChanged)      │                                │
 │  └──┬──────────────────┬───┘                                │
 │     │ true             │ false                              │
 │     ▼                  │                                    │
 │  ┌──────────────────┐  │                                    │
 │  │ Step 3: Update   │  │                                    │
-│  │ StackSets        │  │                                    │
-│  │ (.sync pattern)  │  │                                    │
+│  │ root stack       │  │                                    │
+│  │ (UsePrevious-    │  │                                    │
+│  │  Template=true)  │  │                                    │
 │  │                  │  │                                    │
-│  │ - Part1–8 SSets  │  │                                    │
-│  │ - ConformancePack│  │                                    │
-│  │   (new           │  │                                    │
-│  │   PartitionCount)│  │                                    │
+│  │ - Custom         │  │                                    │
+│  │   Resource re-   │  │                                    │
+│  │   runs           │  │                                    │
+│  │ - Part1-8        │  │                                    │
+│  │   StackSets see  │  │                                    │
+│  │   new            │  │                                    │
+│  │   PartitionCount │  │                                    │
+│  │ - Conformance-   │  │                                    │
+│  │   Pack nested    │  │                                    │
+│  │   stack re-      │  │                                    │
+│  │   renders with   │  │                                    │
+│  │   fresh          │  │                                    │
+│  │   ExcludedAccts  │  │                                    │
 │  └────────┬─────────┘  │                                    │
 │           │             │                                    │
 │           ▼             ▼                                    │
@@ -320,75 +335,190 @@ A Step Function provides **observability** and **orchestration** for the ongoing
 - Built-in retry and error handling per step.
 - Visual workflow in the AWS Console.
 
-**Step 3 detail:** Uses the Step Functions AWS SDK integration to call `cloudformation:UpdateStackSet` with the `.sync` suffix. This updates `AuditAccountPreRequisitesPart1–8` and the ConformancePack with the new `PartitionCount` parameter, causing CloudFormation to create/remove Lambda clones and Config rules based on the Conditions defined in the templates.
+**Step 3 detail:** Uses the Step Functions AWS SDK integration to call `cloudformation:UpdateStackSet` with the `.sync` suffix. This updates `AuditAccountPreRequisitesPart1–8` with the new `PartitionCount` parameter (which conditionally creates/removes Lambda clones) and triggers re-evaluation of the `ConformancePackPartitions` nested stack, which adds or removes whole conformance packs based on which partitions are now non-empty.
 
 ---
 
-## Proposed Solution Diagram
+## Proposed Solution Diagrams
+
+The system has two distinct flows: a one-shot **deployment-time** flow
+driven by CloudFormation, and a recurring **post-deployment runtime**
+flow driven by an EventBridge cron and a Step Function. They are shown
+separately below.
+
+### Diagram 1 — Deployment-time (CloudFormation orchestration)
+
+Runs once per `aws cloudformation deploy` of `root.yaml`. The partitioner
+runs as a CloudFormation Custom Resource, populates the
+`gc-guardrails-partition-state` DynamoDB table, and returns
+`PartitionCount` + `AccountsInP1/P2/P3` as Custom Resource attributes
+that the rest of the template `!GetAtt`s into the StackSets and the
+nested `ConformancePack` stack. The Step Function and its EventBridge
+rule are created here but do not fire until 6 hours after deployment.
 
 ```mermaid
 flowchart TB
-    subgraph PS["Proposed Solution — Partitioned Lambda Cloning"]
+    subgraph DEPLOY["Deployment-time — CloudFormation Orchestration (one shot)"]
         direction TB
 
         root["root.yaml"]
         main["main.yaml"]
 
-        partitioner["aws_account_partitioner\n(Custom Resource + Step Fn Step 1)"]
-        ddb["DynamoDB:\ngc-guardrails-partition-state\n| AccountId (PK) | PartitionId |"]
+        ddb["DynamoDB:\ngc-guardrails-partition-state"]
+        partLambda["aws_account_partitioner\n(Lambda)"]
+        partCR["InvokeAccountPartitioner\n(CFN Custom Resource)"]
 
-        left["AuditAccountPreRequisitesPart1..8.yaml"]
-        bottom["AuditAccountPreRequisitesPartN.yaml"]
-        right["ConformancePack.yaml"]
+        parts["AuditAccountPreRequisitesPart1..8\n(StackSets — base gc* Lambdas\n+ conditional _p2 / _p3 clones)"]
+        partN["AuditAccountPreRequisitesPartN\n(StackSet)"]
+        permLambda["aws_lambda_permissions_setup\n(Lambda + CFN Custom Resource —\ninitial policy sync)"]
 
-        sfn["Step Function:\ngc-guardrails-partition-sync"]
-        cron["EventBridge CronJob\n(every 6 hours)"]
-        lambda["aws_lambda_permissions_setup\n(reads DynamoDB, syncs permissions only)"]
+        nested["ConformancePackPartitions\n(nested stack)"]
+        packs["1..3 OrganizationConformancePack\nresources, each loading\nConformancePack.yaml with a\ndifferent PartitionSuffix"]
+
+        am["AuditAccountAuditManager\n(StackSet)"]
+        framework["audit_manager_custom_framework.py\n(3 controlMappingSources / control)"]
+
+        psStack["PartitionSyncStack\n(nested stack)"]
+        sfn["PartitionSyncStateMachine\n(defined — idle for first 6h)"]
+        cron["PartitionSyncScheduleRule\n(EventBridge rate(6 hours) —\nfirst fire in 6h)"]
 
         root --> main
 
-        main -->|"0 — deploy partitioner + DDB table"| partitioner
-        partitioner -->|"writes partition state"| ddb
+        main --> ddb
+        main --> partLambda
+        main --> partCR
+        partCR -->|"invokes once"| partLambda
+        partLambda -->|"PutItem per\nactive account"| ddb
+        partCR -.->|"PartitionCount,\nAccountsInP1/P2/P3"| main
 
-        main -->|"1 — passes PartitionCount"| left
-        main -->|"2"| bottom
-        main -->|"3 — passes PartitionCount"| right
+        main -->|"PartitionCount"| parts
+        main -->|"AccountsInP1/P2/P3"| nested
+        nested --> packs
 
-        cron -->|"triggers"| sfn
-        sfn -->|"Step 1"| partitioner
-        sfn -->|"Step 3 (if changed):\nUpdateStackSet .sync"| left
-        sfn -->|"Step 3 (if changed):\nUpdateStackSet .sync"| right
-        sfn -->|"Step 4"| lambda
-        lambda -->|"reads partition state"| ddb
+        main --> partN
+        partN --> permLambda
+        permLambda -->|"reads, then\nAddPermission per account"| ddb
 
-        bottom --> lambda
+        main --> am
+        am -.->|"loads"| framework
 
-        noteP["queries org accounts,\nassigns to partitions of ≤70,\nwrites to DynamoDB,\nreturns partitionsChanged + count"]
-        noteL["creates gc* Lambda functions.\nif PartitionCount > 1, creates\nclones: gc*_p2, gc*_p3\nusing CFN Conditions."]
-        noteR["separate Config rules per partition\n(conditionally created).\neach targets corresponding\nLambda clone."]
-        noteB["reads DynamoDB partition state.\nfor each Lambda clone, syncs\nresource policy to match\npartition's account list.\nAdds missing, removes stale."]
-
-        noteP -.-> partitioner
-        noteL -.-> left
-        right -.-> noteR
-        lambda -.-> noteB
+        main --> psStack
+        psStack --> sfn
+        psStack --> cron
     end
 
     classDef yaml fill:#fff,stroke:#e91e63,stroke-width:2px,color:#333;
-    classDef note fill:#f6efad,stroke:#d6c97a,color:#333;
+    classDef aws fill:#f28c28,stroke:#f28c28,color:#fff;
+    classDef newcomp fill:#4caf50,stroke:#388e3c,color:#fff;
+    classDef ddb fill:#1565c0,stroke:#0d47a1,color:#fff;
+    classDef idle fill:#eee,stroke:#999,color:#666,stroke-dasharray: 5 5;
+
+    class root,main,parts,partN,nested,packs,am,psStack yaml;
+    class permLambda,framework aws;
+    class partLambda,partCR newcomp;
+    class ddb ddb;
+    class sfn,cron idle;
+```
+
+### Diagram 2 — Post-deployment runtime (Step Function on 6-hour cron)
+
+After deployment, the EventBridge rule fires every 6 hours and starts
+the `PartitionSyncStateMachine`. The state machine refreshes the
+partition state in DynamoDB and — whenever partition *membership*
+changed (any account added to or removed from the table) — calls
+`cloudformation:UpdateStack` on the root with a bumped `InvokeUpdate`
+parameter. That re-runs the `InvokeAccountPartitioner` Custom Resource
+(which has `InvokeUpdate: !Ref InvokeUpdate` as a property), cascading
+fresh `AccountsInP1/P2/P3` into the nested `ConformancePack` stack and
+fresh `PartitionCount` into the Part1-8 StackSets. The state machine
+polls the root stack until `UPDATE_COMPLETE`, then invokes the
+permissions Lambda to bring each clone's resource-based policy in line
+with the new DynamoDB state.
+
+> **Why the choice gates on `accountsChanged` alone.** Every partition-
+> count change is necessarily accompanied by a membership change (the
+> account that opened the new partition, or the removal that collapsed
+> a trailing one), so `accountsChanged` is sufficient on its own —
+> testing `partitionsChanged` in the choice would be strictly redundant.
+> `accountsChanged` also covers the count-stable membership-change
+> case: a new account joining an existing partition with room leaves
+> `partitionCount` unchanged, but the *other* partitions'
+> `ExcludedAccounts` lists must still be re-rendered so the new account
+> doesn't simultaneously receive both the P1 pack (because it's no
+> longer in P1's exclusion list) and its assigned partition's pack —
+> that would produce `INSUFFICIENT_DATA` Config evaluations on the
+> duplicated rules until the next CICD deploy. `partitionsChanged` is
+> still returned by the partitioner and captured into the Step Function
+> execution history for observability (it lets operators quickly tell a
+> partition-opening run from a routine account-add), but the choice
+> ignores it.
+
+```mermaid
+flowchart TB
+    subgraph RUNTIME["Post-deployment Runtime — Step Function (every 6 hours)"]
+        direction TB
+
+        cron["PartitionSyncScheduleRule\n(EventBridge rate(6 hours))"]
+
+        subgraph SF["PartitionSyncStateMachine"]
+            direction TB
+            s1["1. InvokePartitioner\n(Lambda Task)"]
+            s2{"2. MembershipChanged?\n(accountsChanged)"}
+            s3["3. UpdateRootStack\n(SDK: cloudformation:updateStack —\nbump InvokeUpdate only,\nUsePreviousTemplate=true)"]
+            s4["4. WaitForStackUpdate (60s)\n→ DescribeRootStack\n→ poll until UPDATE_COMPLETE"]
+            s5["5. InvokePermissionsSync\n(Lambda Task)"]
+            s1 --> s2
+            s2 -->|"True"| s3
+            s3 --> s4
+            s4 --> s5
+            s2 -->|"False"| s5
+        end
+
+        partLambda["aws_account_partitioner"]
+        permLambda["aws_lambda_permissions_setup"]
+        ddb["DynamoDB:\ngc-guardrails-partition-state"]
+
+        root["Root stack\n(CFN re-evaluates on UpdateStack)"]
+        cr["InvokeAccountPartitioner\nCustom Resource\n(property change → re-runs)"]
+        parts["Part1..8 StackSets"]
+        nested["ConformancePackPartitions\nnested stack"]
+        clones["Lambda clones:\ngc*  /  gc*_p2  /  gc*_p3"]
+        packs["1..3 OrganizationConformancePacks"]
+
+        cron -->|"triggers"| SF
+
+        s1 -->|"invoke"| partLambda
+        partLambda -->|"PutItem / DeleteItem"| ddb
+
+        s3 -->|"UpdateStack"| root
+        root -->|"re-runs"| cr
+        cr -->|"invoke"| partLambda
+        cr -.->|"new PartitionCount,\nAccountsInP1/P2/P3"| root
+        root -->|"new PartitionCount"| parts
+        parts -->|"create / destroy"| clones
+        root -->|"new AccountsInP1/P2/P3"| nested
+        nested -->|"create / destroy"| packs
+
+        s5 -->|"invoke"| permLambda
+        permLambda -->|"Scan"| ddb
+        permLambda -->|"AddPermission /\nRemovePermission"| clones
+    end
+
+    classDef sfstate fill:#f3e5f5,stroke:#7b1fa2,color:#4a148c;
+    classDef sfchoice fill:#fff,stroke:#7b1fa2,color:#4a148c,stroke-width:2px;
     classDef aws fill:#f28c28,stroke:#f28c28,color:#fff;
     classDef cron fill:#e91e63,stroke:#e91e63,color:#fff;
     classDef newcomp fill:#4caf50,stroke:#388e3c,color:#fff;
     classDef ddb fill:#1565c0,stroke:#0d47a1,color:#fff;
-    classDef sfn fill:#7b1fa2,stroke:#4a148c,color:#fff;
+    classDef yaml fill:#fff,stroke:#e91e63,stroke-width:2px,color:#333;
 
-    class root,main,left,bottom,right yaml;
-    class noteP,noteL,noteR,noteB note;
-    class lambda aws;
+    class s1,s3,s4,s5 sfstate;
+    class s2 sfchoice;
+    class partLambda,permLambda,clones aws;
     class cron cron;
-    class partitioner newcomp;
     class ddb ddb;
-    class sfn sfn;
+    class root,parts,nested,packs yaml;
+    class cr newcomp;
 ```
 
 ---
@@ -397,21 +527,33 @@ flowchart TB
 
 The **key requirement** is that after initial deployment, when new accounts join the organization, permissions are adjusted automatically without manual redeployment.
 
+### Behaviour at Each Scale
+
+| Active accounts | Partitions | Packs deployed | Behaviour |
+|---:|:---:|:---|:---|
+| 1–70 | 1 | `…-GC-CP-Guardrails` only | **Indistinguishable from pre-fix deployment.** No `ExcludedAccounts`. Every account targets base `<org>gc*` Lambdas. |
+| 71–140 | 2 | `…` + `…-P2` | Each pack lists the *other* partition's accounts in `ExcludedAccounts`, so every account receives exactly one pack. P1 accounts target base Lambdas; P2 accounts target `_p2` clones. |
+| 141–210 | 3 | `…` + `…-P2` + `…-P3` | Each pack excludes the union of the other two partitions' accounts. Three sets of Lambda clones, three packs, every account in exactly one of them. |
+| >210 | — | (failure) | Partitioner raises and the Custom Resource / Step Function step fails. Manual intervention required (raise `MaxAccountsPerPartition`, `MaxPartitions`, or both — but mind the CFN 4 KB response cap). |
+
+Existing account-to-partition assignments are **stable**: they are never re-balanced, only new accounts are placed.
+
 ### Flow by Scenario
 
 | Scenario | Step Function Behaviour |
 |----------|------------------------|
-| New account, partition has room | Partitioner assigns account → DynamoDB. `partitionsChanged=false`. StackSet update skipped. Permissions Lambda adds `AddPermission` for the new account on the relevant clone. |
-| New account, all partitions full | Partitioner creates new partition → DynamoDB. `partitionsChanged=true`. StackSet update creates new Lambda clones + Config rules. Permissions Lambda adds permissions for all accounts in the new partition. |
-| Account removed/suspended | Partitioner removes from DynamoDB. Permissions Lambda calls `RemovePermission` for stale accounts. |
-| >210 accounts | Partitioner logs error and raises CloudWatch alarm. Step Function fails at Step 1. Manual intervention required. |
-| Step Function step fails | Built-in retry (configurable). Execution history shows exactly which step failed. Next cron in 6h retries from scratch. |
+| **No change** (steady state) | Partitioner sees no diff vs. DynamoDB. `accountsChanged=false` (and `partitionsChanged=false`). UpdateRootStack branch skipped. Permissions Lambda still runs and is a no-op on the resource policies. |
+| **New account, partition has room** | Partitioner assigns account to a partition that's still under 70 and writes to DynamoDB. `accountsChanged=true` (`partitionsChanged=false`, since count is unchanged), so the UpdateRootStack branch fires. The root-stack update re-renders `ConformancePackPartitions` with fresh `ExcludedAccounts` lists for every pack (the new account appears in the OTHER packs' exclusion lists so it only receives its own partition's pack). Permissions Lambda then calls `AddPermission` for the new account on the relevant clone. |
+| **New account, all partitions full** | Partitioner opens a new partition and writes to DynamoDB. `accountsChanged=true` (and `partitionsChanged=true`, logged for observability). UpdateRootStack branch fires; the StackSet update creates the new Lambda clones, the root re-renders `ConformancePackPartitions` which adds the new `ConformancePackP2`/`P3`. Permissions Lambda then adds permissions for all accounts in the new partition. |
+| **Account removed/suspended** | Partitioner removes the account from DynamoDB. `accountsChanged=true` (and `partitionsChanged=true` if the removal empties a *trailing* partition and drops `partitionCount`, otherwise `partitionsChanged=false`). UpdateRootStack branch fires; `ConformancePackPartitions` re-renders with the removed account stripped from every `ExcludedAccounts` list. Permissions Lambda calls `RemovePermission` for the stale account on the relevant clone. |
+| **>210 accounts** | Partitioner raises and the Custom Resource / Step Function step fails. CloudWatch alarm fires. Manual intervention required. |
+| **Step Function step fails** | Built-in retry (configurable). Execution history shows exactly which step failed. Next cron in 6h retries from scratch. |
 
 ### Deployment-Time vs. Post-Deployment
 
 | Phase | What runs | How |
 |-------|-----------|-----|
-| **Initial deploy** | `aws_account_partitioner` as CFN Custom Resource → outputs `PartitionCount` → StackSets use it as parameter → `aws_lambda_permissions_setup` runs as CFN Custom Resource in PartN | CloudFormation orchestrates everything |
+| **Initial deploy** | `aws_account_partitioner` as CFN Custom Resource → outputs `PartitionCount` + `AccountsInP1/P2/P3` → StackSets and `ConformancePackPartitions` nested stack consume them → `aws_lambda_permissions_setup` runs as CFN Custom Resource in PartN | CloudFormation orchestrates everything |
 | **Post-deploy (cron)** | Step Function: partitioner → (optional StackSet update) → permissions sync | EventBridge → Step Function |
 
 ---
@@ -475,24 +617,48 @@ The **key requirement** is that after initial deployment, when new accounts join
   Resource:
     - !Sub "arn:aws:cloudformation:${AWS::Region}:${AWS::AccountId}:stackset/*"
   Effect: Allow
+- Sid: AllowParentStackUpdate
+  # Needed to re-render the ConformancePackPartitions nested stack
+  # when AccountsInP1/P2/P3 change.
+  Action:
+    - "cloudformation:UpdateStack"
+    - "cloudformation:DescribeStacks"
+    - "cloudformation:DescribeStackEvents"
+  Resource:
+    - !Sub "arn:aws:cloudformation:${AWS::Region}:${AWS::AccountId}:stack/${AWS::StackName}/*"
+  Effect: Allow
 ```
 
 ---
 
 ## Implementation Checklist
 
-- [ ] Create DynamoDB table `gc-guardrails-partition-state` in `main.yaml`
-- [ ] Create `src/lambda/aws_account_partitioner/` — new partition management Lambda
-- [ ] Update `main.yaml` — add partitioner as Custom Resource before StackSets, add DynamoDB table, add Step Function
-- [ ] Update `AuditAccountPreRequisitesPart1–8.yaml` — add conditional Lambda clones based on `PartitionCount`
-- [ ] Update `ConformancePack.yaml` — add conditional Config rules per partition (as shown in section 4)
-- [ ] Update `src/lambda/aws_lambda_permissions_setup/app.py`:
-  - [ ] Replace hardcoded account iteration with DynamoDB read
-  - [ ] Add partition-aware permission assignment (per clone)
-  - [ ] Add `RemovePermission` for stale accounts
-  - [ ] Remove account detection / state management logic (moved to partitioner)
-- [ ] Update `AuditAccountPreRequisitesPartN.yaml` — add DynamoDB read permissions for `aws_lambda_permissions_setup`
-- [ ] Create Step Function state machine definition (ASL) in `main.yaml` or separate template
-- [ ] Create EventBridge rule to trigger Step Function on 6-hour schedule
-- [ ] Update `doc/ENHANCE.md` — document new partition-aware guardrail addition process
-- [ ] Test with 1, 70, 71, 140, 141, 200 account scenarios
+- [x] Create DynamoDB table `${OrganizationName}-gc-guardrails-partition-state` in `main.yaml`
+- [x] Create `src/lambda/aws_account_partitioner/` — new partition management Lambda (returns `partitionCount`, `partitionsChanged`, `accountsChanged`, `AccountsInP1/P2/P3`)
+- [x] Update `main.yaml` —
+  - [x] Add partitioner as Custom Resource before StackSets
+  - [x] Add DynamoDB table
+  - [x] **Replace inline `AWS::Config::OrganizationConformancePack` with `AWS::CloudFormation::Stack` pointing at `ConformancePackPartitions.yaml`, preserving the logical name `ConformancePack`** so `AuditAccountAuditManager DependsOn` still resolves
+  - [x] Add Step Function and EventBridge rule as an `AWS::CloudFormation::Stack` (`PartitionSyncStack`) pointing at `PartitionSyncStateMachine.yaml`; the 5 underlying resources live in the nested template
+- [x] Update `AuditAccountPreRequisitesPart1–8.yaml` — add conditional Lambda clones based on `PartitionCount`
+- [x] Update `ConformancePack.yaml` — add a single `PartitionSuffix` parameter and append `${PartitionSuffix}` to every `ConfigRuleName` and Lambda `SourceIdentifier` (37 rules × 2 substitutions)
+- [x] Create `arch/templates/ConformancePackPartitions.yaml` — new nested stack creating up to 3 `OrganizationConformancePack` resources with conditional `ExcludedAccounts` `!If` ladders (see [`CONFORMANCE_PACK_IMPLEMENTATION.md`](./CONFORMANCE_PACK_IMPLEMENTATION.md))
+- [x] Update `src/lambda/aws_auditmanager_resources_config_setup/audit_manager_custom_framework.py` — expand each control's `controlMappingSources` from 1 to 3 entries (one per partition variant); skip `gc01_check_attestation_letter`
+- [x] Update `src/lambda/aws_lambda_permissions_setup/app.py`:
+  - [x] Replace hardcoded account iteration with DynamoDB read
+  - [x] Add partition-aware permission assignment (per clone)
+  - [x] Add `RemovePermission` for stale accounts
+  - [x] Remove account detection / state management logic (moved to partitioner)
+- [x] Update `AuditAccountPreRequisitesPartN.yaml` — add DynamoDB read permissions for `aws_lambda_permissions_setup`
+- [x] Create `arch/templates/PartitionSyncStateMachine.yaml` — new nested stack holding the Step Function ASL, EventBridge rule, both IAM roles, and the CloudWatch log group
+  - 8 states: `InvokePartitioner` → `MembershipChanged?` → (`UpdateRootStack` → `WaitForStackUpdate` ⇄ `DescribeRootStack` → `StackUpdateComplete?`) → `InvokePermissionsSync`
+  - `MembershipChanged?` triggers on `accountsChanged="True"` alone so that any membership change — including account additions to *existing* partitions (count unchanged) — cascades through the `ConformancePackPartitions` re-render. `partitionsChanged` is still surfaced in the execution context for observability but not branched on, because every partition-count change is necessarily also a membership change, so testing both would be strictly redundant.
+  - `UpdateRootStack` calls `cloudformation:updateStack` on the root with `UsePreviousTemplate=true` and a single bumped `InvokeUpdate` parameter; the Custom Resource re-runs and refreshes `AccountsInP1/P2/P3`/`PartitionCount` for the nested stack and Part1-8 StackSets
+  - Polls root stack status every 60 s until `UPDATE_COMPLETE`
+  - `Catch` on `UpdateRootStack` falls through to `InvokePermissionsSync` if the root is mid-update (e.g. concurrent CICD deploy)
+  - `root.yaml` now passes `RootStackName: !Ref AWS::StackName` so the state machine knows which stack to target (nested stacks can't be updated directly)
+  - Factoring this out trimmed `main.yaml` from 85.6 KB / 2,291 lines down to 73.5 KB / 1,995 lines (-14 %)
+- [x] Create EventBridge rule (`rate(6 hours)`) to trigger Step Function on a 6-hour schedule (lives in `PartitionSyncStateMachine.yaml`)
+- [ ] Update `doc/ENHANCE.md` — document partition-aware guardrail addition (Lambda name + Config rule both need `${PartitionSuffix}`; Audit Manager control needs 3 mapping sources)
+- [ ] Test with 1, 70, 71, 140, 141, 200 account scenarios; confirm CFN response stays under 4 KB at the upper bound
+

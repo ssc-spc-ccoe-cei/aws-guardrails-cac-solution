@@ -25,3 +25,7 @@ Parameters:
   BGA2: "bgUser2"
   BGA3: "bgUser3"
   BGA4: "bgUser4"
+  # Account Partitioner Lambda tuning (defaults match main.yaml/root.yaml).
+  # Increase MaxPartitions if the org grows beyond MaxAccountsPerPartition x MaxPartitions accounts.
+  MaxAccountsPerPartition: 70
+  MaxPartitions: 3

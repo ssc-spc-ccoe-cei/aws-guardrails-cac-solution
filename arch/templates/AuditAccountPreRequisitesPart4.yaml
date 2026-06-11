@@ -22,11 +22,36 @@ Parameters:
   DefaultCloudProfile:
     Type: String
     Description: The cloud profile to use when one is not provided by an account.
+  PartitionCount:
+    Type: String
+    Default: "1"
+    AllowedValues:
+      - "1"
+      - "2"
+      - "3"
+    Description: >-
+      Number of account partitions to deploy guardrail Lambda clones for.
+      Set by main.yaml from the aws_account_partitioner Custom Resource
+      output. 1 = single partition (legacy behaviour, no clones).
+      2 = create _p2 clones. 3 = create _p2 and _p3 clones.
 
 Conditions:
   IsAuditAccount: !Equals
     - !Ref AWS::AccountId
     - !Ref AuditAccountID
+  CreatePartition2: !Not
+    - !Equals
+      - !Ref PartitionCount
+      - "1"
+  CreatePartition3: !Equals
+    - !Ref PartitionCount
+    - "3"
+  IsAuditAccountAndCreatePartition2: !And
+    - !Condition IsAuditAccount
+    - !Condition CreatePartition2
+  IsAuditAccountAndCreatePartition3: !And
+    - !Condition IsAuditAccount
+    - !Condition CreatePartition3
 
 Resources:
   CloudGuardrailsCommonLayer:
@@ -43,6 +68,44 @@ Resources:
     Type: AWS::Lambda::Function
     Properties:
       FunctionName: !Sub "${OrganizationName}gc11_check_monitoring_all_users"
+      Code: "../../src/lambda/gc11_check_monitoring_all_users/build/GC11CheckMonitoringAllUsersLambda/"
+      Handler: app.lambda_handler
+      Role: !Sub "arn:aws:iam::${AuditAccountID}:role/${RolePrefix}default_assessment_role"
+      Runtime: !Ref PythonRuntime
+      Timeout: 90
+      Layers:
+        - !Ref CloudGuardrailsCommonLayer
+      LoggingConfig:
+        LogGroup: !Sub "${OrganizationName}gc_guardrails"
+        LogFormat: "JSON"
+      Environment:
+        Variables:
+          DEFAULT_CLOUD_PROFILE: !Ref DefaultCloudProfile
+
+  GC11CheckMonitoringAllUsersLambdaP2:
+    Condition: IsAuditAccountAndCreatePartition2
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub "${OrganizationName}gc11_check_monitoring_all_users_p2"
+      Code: "../../src/lambda/gc11_check_monitoring_all_users/build/GC11CheckMonitoringAllUsersLambda/"
+      Handler: app.lambda_handler
+      Role: !Sub "arn:aws:iam::${AuditAccountID}:role/${RolePrefix}default_assessment_role"
+      Runtime: !Ref PythonRuntime
+      Timeout: 90
+      Layers:
+        - !Ref CloudGuardrailsCommonLayer
+      LoggingConfig:
+        LogGroup: !Sub "${OrganizationName}gc_guardrails"
+        LogFormat: "JSON"
+      Environment:
+        Variables:
+          DEFAULT_CLOUD_PROFILE: !Ref DefaultCloudProfile
+
+  GC11CheckMonitoringAllUsersLambdaP3:
+    Condition: IsAuditAccountAndCreatePartition3
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub "${OrganizationName}gc11_check_monitoring_all_users_p3"
       Code: "../../src/lambda/gc11_check_monitoring_all_users/build/GC11CheckMonitoringAllUsersLambda/"
       Handler: app.lambda_handler
       Role: !Sub "arn:aws:iam::${AuditAccountID}:role/${RolePrefix}default_assessment_role"
@@ -76,11 +139,87 @@ Resources:
         Variables:
           DEFAULT_CLOUD_PROFILE: !Ref DefaultCloudProfile
 
+  GC11CheckMonitoringUseCasesLambdaP2:
+    Condition: IsAuditAccountAndCreatePartition2
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub "${OrganizationName}gc11_check_monitoring_use_cases_p2"
+      Code: "../../src/lambda/gc11_check_monitoring_use_cases/build/GC11CheckMonitoringUseCasesLambda/"
+      Handler: app.lambda_handler
+      Role: !Sub "arn:aws:iam::${AuditAccountID}:role/${RolePrefix}default_assessment_role"
+      Runtime: !Ref PythonRuntime
+      Timeout: 90
+      Layers:
+        - !Ref CloudGuardrailsCommonLayer
+      LoggingConfig:
+        LogGroup: !Sub "${OrganizationName}gc_guardrails"
+        LogFormat: "JSON"
+      Environment:
+        Variables:
+          DEFAULT_CLOUD_PROFILE: !Ref DefaultCloudProfile
+
+  GC11CheckMonitoringUseCasesLambdaP3:
+    Condition: IsAuditAccountAndCreatePartition3
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub "${OrganizationName}gc11_check_monitoring_use_cases_p3"
+      Code: "../../src/lambda/gc11_check_monitoring_use_cases/build/GC11CheckMonitoringUseCasesLambda/"
+      Handler: app.lambda_handler
+      Role: !Sub "arn:aws:iam::${AuditAccountID}:role/${RolePrefix}default_assessment_role"
+      Runtime: !Ref PythonRuntime
+      Timeout: 90
+      Layers:
+        - !Ref CloudGuardrailsCommonLayer
+      LoggingConfig:
+        LogGroup: !Sub "${OrganizationName}gc_guardrails"
+        LogFormat: "JSON"
+      Environment:
+        Variables:
+          DEFAULT_CLOUD_PROFILE: !Ref DefaultCloudProfile
+
   GC11CheckPolicyEventLoggingLambda:
     Condition: IsAuditAccount
     Type: AWS::Lambda::Function
     Properties:
       FunctionName: !Sub "${OrganizationName}gc11_check_policy_event_logging"
+      Code: "../../src/lambda/gc11_check_policy_event_logging/build/GC11CheckPolicyEventLoggingLambda/"
+      Handler: app.lambda_handler
+      Role: !Sub "arn:aws:iam::${AuditAccountID}:role/${RolePrefix}default_assessment_role"
+      Runtime: !Ref PythonRuntime
+      Timeout: 90
+      Layers:
+        - !Ref CloudGuardrailsCommonLayer
+      LoggingConfig:
+        LogGroup: !Sub "${OrganizationName}gc_guardrails"
+        LogFormat: "JSON"
+      Environment:
+        Variables:
+          DEFAULT_CLOUD_PROFILE: !Ref DefaultCloudProfile
+
+  GC11CheckPolicyEventLoggingLambdaP2:
+    Condition: IsAuditAccountAndCreatePartition2
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub "${OrganizationName}gc11_check_policy_event_logging_p2"
+      Code: "../../src/lambda/gc11_check_policy_event_logging/build/GC11CheckPolicyEventLoggingLambda/"
+      Handler: app.lambda_handler
+      Role: !Sub "arn:aws:iam::${AuditAccountID}:role/${RolePrefix}default_assessment_role"
+      Runtime: !Ref PythonRuntime
+      Timeout: 90
+      Layers:
+        - !Ref CloudGuardrailsCommonLayer
+      LoggingConfig:
+        LogGroup: !Sub "${OrganizationName}gc_guardrails"
+        LogFormat: "JSON"
+      Environment:
+        Variables:
+          DEFAULT_CLOUD_PROFILE: !Ref DefaultCloudProfile
+
+  GC11CheckPolicyEventLoggingLambdaP3:
+    Condition: IsAuditAccountAndCreatePartition3
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub "${OrganizationName}gc11_check_policy_event_logging_p3"
       Code: "../../src/lambda/gc11_check_policy_event_logging/build/GC11CheckPolicyEventLoggingLambda/"
       Handler: app.lambda_handler
       Role: !Sub "arn:aws:iam::${AuditAccountID}:role/${RolePrefix}default_assessment_role"
@@ -114,11 +253,87 @@ Resources:
         Variables:
           DEFAULT_CLOUD_PROFILE: !Ref DefaultCloudProfile
 
+  GC11CheckTimezoneLambdaP2:
+    Condition: IsAuditAccountAndCreatePartition2
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub "${OrganizationName}gc11_check_timezone_p2"
+      Code: "../../src/lambda/gc11_check_timezone/build/GC11CheckTimezoneLambda/"
+      Handler: app.lambda_handler
+      Role: !Sub "arn:aws:iam::${AuditAccountID}:role/${RolePrefix}default_assessment_role"
+      Runtime: !Ref PythonRuntime
+      Timeout: 90
+      Layers:
+        - !Ref CloudGuardrailsCommonLayer
+      LoggingConfig:
+        LogGroup: !Sub "${OrganizationName}gc_guardrails"
+        LogFormat: "JSON"
+      Environment:
+        Variables:
+          DEFAULT_CLOUD_PROFILE: !Ref DefaultCloudProfile
+
+  GC11CheckTimezoneLambdaP3:
+    Condition: IsAuditAccountAndCreatePartition3
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub "${OrganizationName}gc11_check_timezone_p3"
+      Code: "../../src/lambda/gc11_check_timezone/build/GC11CheckTimezoneLambda/"
+      Handler: app.lambda_handler
+      Role: !Sub "arn:aws:iam::${AuditAccountID}:role/${RolePrefix}default_assessment_role"
+      Runtime: !Ref PythonRuntime
+      Timeout: 90
+      Layers:
+        - !Ref CloudGuardrailsCommonLayer
+      LoggingConfig:
+        LogGroup: !Sub "${OrganizationName}gc_guardrails"
+        LogFormat: "JSON"
+      Environment:
+        Variables:
+          DEFAULT_CLOUD_PROFILE: !Ref DefaultCloudProfile
+
   GC11CheckTrailLoggingLambda:
     Condition: IsAuditAccount
     Type: AWS::Lambda::Function
     Properties:
       FunctionName: !Sub "${OrganizationName}gc11_check_trail_logging"
+      Code: "../../src/lambda/gc11_check_trail_logging/build/GC11CheckTrailLoggingLambda/"
+      Handler: app.lambda_handler
+      Role: !Sub "arn:aws:iam::${AuditAccountID}:role/${RolePrefix}default_assessment_role"
+      Runtime: !Ref PythonRuntime
+      Timeout: 90
+      Layers:
+        - !Ref CloudGuardrailsCommonLayer
+      LoggingConfig:
+        LogGroup: !Sub "${OrganizationName}gc_guardrails"
+        LogFormat: "JSON"
+      Environment:
+        Variables:
+          DEFAULT_CLOUD_PROFILE: !Ref DefaultCloudProfile
+
+  GC11CheckTrailLoggingLambdaP2:
+    Condition: IsAuditAccountAndCreatePartition2
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub "${OrganizationName}gc11_check_trail_logging_p2"
+      Code: "../../src/lambda/gc11_check_trail_logging/build/GC11CheckTrailLoggingLambda/"
+      Handler: app.lambda_handler
+      Role: !Sub "arn:aws:iam::${AuditAccountID}:role/${RolePrefix}default_assessment_role"
+      Runtime: !Ref PythonRuntime
+      Timeout: 90
+      Layers:
+        - !Ref CloudGuardrailsCommonLayer
+      LoggingConfig:
+        LogGroup: !Sub "${OrganizationName}gc_guardrails"
+        LogFormat: "JSON"
+      Environment:
+        Variables:
+          DEFAULT_CLOUD_PROFILE: !Ref DefaultCloudProfile
+
+  GC11CheckTrailLoggingLambdaP3:
+    Condition: IsAuditAccountAndCreatePartition3
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub "${OrganizationName}gc11_check_trail_logging_p3"
       Code: "../../src/lambda/gc11_check_trail_logging/build/GC11CheckTrailLoggingLambda/"
       Handler: app.lambda_handler
       Role: !Sub "arn:aws:iam::${AuditAccountID}:role/${RolePrefix}default_assessment_role"
@@ -153,12 +368,88 @@ Resources:
         Variables:
           DEFAULT_CLOUD_PROFILE: !Ref DefaultCloudProfile
 
+  GC12CheckPrivateMarketplacesLambdaP2:
+    Condition: IsAuditAccountAndCreatePartition2
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub "${OrganizationName}gc12_check_private_marketplace_p2"
+      Code: "../../src/lambda/gc12_check_private_marketplace/build/GC12CheckPrivateMarketplacesLambda/"
+      Handler: app.lambda_handler
+      Role: !Sub "arn:aws:iam::${AuditAccountID}:role/${RolePrefix}default_assessment_role"
+      Runtime: !Ref PythonRuntime
+      Timeout: 90
+      Layers:
+        - !Ref CloudGuardrailsCommonLayer
+      LoggingConfig:
+        LogGroup: !Sub "${OrganizationName}gc_guardrails"
+        LogFormat: "JSON"
+      Environment:
+        Variables:
+          DEFAULT_CLOUD_PROFILE: !Ref DefaultCloudProfile
+
+  GC12CheckPrivateMarketplacesLambdaP3:
+    Condition: IsAuditAccountAndCreatePartition3
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub "${OrganizationName}gc12_check_private_marketplace_p3"
+      Code: "../../src/lambda/gc12_check_private_marketplace/build/GC12CheckPrivateMarketplacesLambda/"
+      Handler: app.lambda_handler
+      Role: !Sub "arn:aws:iam::${AuditAccountID}:role/${RolePrefix}default_assessment_role"
+      Runtime: !Ref PythonRuntime
+      Timeout: 90
+      Layers:
+        - !Ref CloudGuardrailsCommonLayer
+      LoggingConfig:
+        LogGroup: !Sub "${OrganizationName}gc_guardrails"
+        LogFormat: "JSON"
+      Environment:
+        Variables:
+          DEFAULT_CLOUD_PROFILE: !Ref DefaultCloudProfile
+
   ## GC01
   GC01CheckRootAccountMFAEnabledLambda:
     Condition: IsAuditAccount
     Type: AWS::Lambda::Function
     Properties:
       FunctionName: !Sub "${OrganizationName}gc01_check_root_mfa"
+      Code: "../../src/lambda/gc01_check_root_mfa/build/GC01CheckRootAccountMFAEnabledLambda/"
+      Handler: app.lambda_handler
+      Role: !Sub "arn:aws:iam::${AuditAccountID}:role/${RolePrefix}default_assessment_role"
+      Runtime: !Ref PythonRuntime
+      Timeout: 90
+      Layers:
+        - !Ref CloudGuardrailsCommonLayer
+      LoggingConfig:
+        LogGroup: !Sub "${OrganizationName}gc_guardrails"
+        LogFormat: "JSON"
+      Environment:
+        Variables:
+          DEFAULT_CLOUD_PROFILE: !Ref DefaultCloudProfile
+
+  GC01CheckRootAccountMFAEnabledLambdaP2:
+    Condition: IsAuditAccountAndCreatePartition2
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub "${OrganizationName}gc01_check_root_mfa_p2"
+      Code: "../../src/lambda/gc01_check_root_mfa/build/GC01CheckRootAccountMFAEnabledLambda/"
+      Handler: app.lambda_handler
+      Role: !Sub "arn:aws:iam::${AuditAccountID}:role/${RolePrefix}default_assessment_role"
+      Runtime: !Ref PythonRuntime
+      Timeout: 90
+      Layers:
+        - !Ref CloudGuardrailsCommonLayer
+      LoggingConfig:
+        LogGroup: !Sub "${OrganizationName}gc_guardrails"
+        LogFormat: "JSON"
+      Environment:
+        Variables:
+          DEFAULT_CLOUD_PROFILE: !Ref DefaultCloudProfile
+
+  GC01CheckRootAccountMFAEnabledLambdaP3:
+    Condition: IsAuditAccountAndCreatePartition3
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub "${OrganizationName}gc01_check_root_mfa_p3"
       Code: "../../src/lambda/gc01_check_root_mfa/build/GC01CheckRootAccountMFAEnabledLambda/"
       Handler: app.lambda_handler
       Role: !Sub "arn:aws:iam::${AuditAccountID}:role/${RolePrefix}default_assessment_role"
@@ -192,11 +483,87 @@ Resources:
         Variables:
           DEFAULT_CLOUD_PROFILE: !Ref DefaultCloudProfile
 
+  GC01CheckFederatedUsersMFAP2:
+    Condition: IsAuditAccountAndCreatePartition2
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub "${OrganizationName}gc01_check_federated_users_mfa_p2"
+      Code: "../../src/lambda/gc01_check_federated_users_mfa/build/GC01CheckFederatedUsersMFA/"
+      Handler: app.lambda_handler
+      Role: !Sub "arn:aws:iam::${AuditAccountID}:role/${RolePrefix}default_assessment_role"
+      Runtime: !Ref PythonRuntime
+      Timeout: 90
+      Layers:
+        - !Ref CloudGuardrailsCommonLayer
+      LoggingConfig:
+        LogGroup: !Sub "${OrganizationName}gc_guardrails"
+        LogFormat: "JSON"
+      Environment:
+        Variables:
+          DEFAULT_CLOUD_PROFILE: !Ref DefaultCloudProfile
+
+  GC01CheckFederatedUsersMFAP3:
+    Condition: IsAuditAccountAndCreatePartition3
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub "${OrganizationName}gc01_check_federated_users_mfa_p3"
+      Code: "../../src/lambda/gc01_check_federated_users_mfa/build/GC01CheckFederatedUsersMFA/"
+      Handler: app.lambda_handler
+      Role: !Sub "arn:aws:iam::${AuditAccountID}:role/${RolePrefix}default_assessment_role"
+      Runtime: !Ref PythonRuntime
+      Timeout: 90
+      Layers:
+        - !Ref CloudGuardrailsCommonLayer
+      LoggingConfig:
+        LogGroup: !Sub "${OrganizationName}gc_guardrails"
+        LogFormat: "JSON"
+      Environment:
+        Variables:
+          DEFAULT_CLOUD_PROFILE: !Ref DefaultCloudProfile
+
   GC01CheckMonitoringAndLoggingLambda:
     Condition: IsAuditAccount
     Type: AWS::Lambda::Function
     Properties:
       FunctionName: !Sub "${OrganizationName}gc01_check_monitoring_and_logging"
+      Code: "../../src/lambda/gc01_check_monitoring_and_logging/build/GC01CheckMonitoringAndLoggingLambda/"
+      Handler: app.lambda_handler
+      Role: !Sub "arn:aws:iam::${AuditAccountID}:role/${RolePrefix}default_assessment_role"
+      Runtime: !Ref PythonRuntime
+      Timeout: 90
+      Layers:
+        - !Ref CloudGuardrailsCommonLayer
+      LoggingConfig:
+        LogGroup: !Sub "${OrganizationName}gc_guardrails"
+        LogFormat: "JSON"
+      Environment:
+        Variables:
+          DEFAULT_CLOUD_PROFILE: !Ref DefaultCloudProfile
+
+  GC01CheckMonitoringAndLoggingLambdaP2:
+    Condition: IsAuditAccountAndCreatePartition2
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub "${OrganizationName}gc01_check_monitoring_and_logging_p2"
+      Code: "../../src/lambda/gc01_check_monitoring_and_logging/build/GC01CheckMonitoringAndLoggingLambda/"
+      Handler: app.lambda_handler
+      Role: !Sub "arn:aws:iam::${AuditAccountID}:role/${RolePrefix}default_assessment_role"
+      Runtime: !Ref PythonRuntime
+      Timeout: 90
+      Layers:
+        - !Ref CloudGuardrailsCommonLayer
+      LoggingConfig:
+        LogGroup: !Sub "${OrganizationName}gc_guardrails"
+        LogFormat: "JSON"
+      Environment:
+        Variables:
+          DEFAULT_CLOUD_PROFILE: !Ref DefaultCloudProfile
+
+  GC01CheckMonitoringAndLoggingLambdaP3:
+    Condition: IsAuditAccountAndCreatePartition3
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub "${OrganizationName}gc01_check_monitoring_and_logging_p3"
       Code: "../../src/lambda/gc01_check_monitoring_and_logging/build/GC01CheckMonitoringAndLoggingLambda/"
       Handler: app.lambda_handler
       Role: !Sub "arn:aws:iam::${AuditAccountID}:role/${RolePrefix}default_assessment_role"
@@ -230,11 +597,87 @@ Resources:
         Variables:
           DEFAULT_CLOUD_PROFILE: !Ref DefaultCloudProfile
 
+  GC01CheckAlertsFlagMisuseLambdaP2:
+    Condition: IsAuditAccountAndCreatePartition2
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub "${OrganizationName}gc01_check_alerts_flag_misuse_p2"
+      Code: "../../src/lambda/gc01_check_alerts_flag_misuse/build/GC01CheckAlertsFlagMisuseLambda/"
+      Handler: app.lambda_handler
+      Role: !Sub "arn:aws:iam::${AuditAccountID}:role/${RolePrefix}default_assessment_role"
+      Runtime: !Ref PythonRuntime
+      Timeout: 90
+      Layers:
+        - !Ref CloudGuardrailsCommonLayer
+      LoggingConfig:
+        LogGroup: !Sub "${OrganizationName}gc_guardrails"
+        LogFormat: "JSON"
+      Environment:
+        Variables:
+          DEFAULT_CLOUD_PROFILE: !Ref DefaultCloudProfile
+
+  GC01CheckAlertsFlagMisuseLambdaP3:
+    Condition: IsAuditAccountAndCreatePartition3
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub "${OrganizationName}gc01_check_alerts_flag_misuse_p3"
+      Code: "../../src/lambda/gc01_check_alerts_flag_misuse/build/GC01CheckAlertsFlagMisuseLambda/"
+      Handler: app.lambda_handler
+      Role: !Sub "arn:aws:iam::${AuditAccountID}:role/${RolePrefix}default_assessment_role"
+      Runtime: !Ref PythonRuntime
+      Timeout: 90
+      Layers:
+        - !Ref CloudGuardrailsCommonLayer
+      LoggingConfig:
+        LogGroup: !Sub "${OrganizationName}gc_guardrails"
+        LogFormat: "JSON"
+      Environment:
+        Variables:
+          DEFAULT_CLOUD_PROFILE: !Ref DefaultCloudProfile
+
   GC01CheckMFADigitalPolicy:
     Condition: IsAuditAccount
     Type: AWS::Lambda::Function
     Properties:
       FunctionName: !Sub "${OrganizationName}gc01_check_mfa_digital_policy"
+      Code: "../../src/lambda/gc01_check_mfa_digital_policy/build/GC01CheckMFADigitalPolicy/"
+      Handler: app.lambda_handler
+      Role: !Sub "arn:aws:iam::${AuditAccountID}:role/${RolePrefix}default_assessment_role"
+      Runtime: !Ref PythonRuntime
+      Timeout: 90
+      Layers:
+        - !Ref CloudGuardrailsCommonLayer
+      LoggingConfig:
+        LogGroup: !Sub "${OrganizationName}gc_guardrails"
+        LogFormat: "JSON"
+      Environment:
+        Variables:
+          DEFAULT_CLOUD_PROFILE: !Ref DefaultCloudProfile
+
+  GC01CheckMFADigitalPolicyP2:
+    Condition: IsAuditAccountAndCreatePartition2
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub "${OrganizationName}gc01_check_mfa_digital_policy_p2"
+      Code: "../../src/lambda/gc01_check_mfa_digital_policy/build/GC01CheckMFADigitalPolicy/"
+      Handler: app.lambda_handler
+      Role: !Sub "arn:aws:iam::${AuditAccountID}:role/${RolePrefix}default_assessment_role"
+      Runtime: !Ref PythonRuntime
+      Timeout: 90
+      Layers:
+        - !Ref CloudGuardrailsCommonLayer
+      LoggingConfig:
+        LogGroup: !Sub "${OrganizationName}gc_guardrails"
+        LogFormat: "JSON"
+      Environment:
+        Variables:
+          DEFAULT_CLOUD_PROFILE: !Ref DefaultCloudProfile
+
+  GC01CheckMFADigitalPolicyP3:
+    Condition: IsAuditAccountAndCreatePartition3
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub "${OrganizationName}gc01_check_mfa_digital_policy_p3"
       Code: "../../src/lambda/gc01_check_mfa_digital_policy/build/GC01CheckMFADigitalPolicy/"
       Handler: app.lambda_handler
       Role: !Sub "arn:aws:iam::${AuditAccountID}:role/${RolePrefix}default_assessment_role"
@@ -269,12 +712,88 @@ Resources:
         Variables:
           DEFAULT_CLOUD_PROFILE: !Ref DefaultCloudProfile
 
+  GC03CheckEndpointAccessConfigLambdaP2:
+    Condition: IsAuditAccountAndCreatePartition2
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub "${OrganizationName}gc03_check_endpoint_access_config_p2"
+      Code: "../../src/lambda/gc03_check_endpoint_access_config/build/GC03CheckEndpointAccessConfigLambda/"
+      Handler: app.lambda_handler
+      Role: !Sub "arn:aws:iam::${AuditAccountID}:role/${RolePrefix}default_assessment_role"
+      Runtime: !Ref PythonRuntime
+      Timeout: 180
+      Layers:
+        - !Ref CloudGuardrailsCommonLayer
+      LoggingConfig:
+        LogGroup: !Sub "${OrganizationName}gc_guardrails"
+        LogFormat: "JSON"
+      Environment:
+        Variables:
+          DEFAULT_CLOUD_PROFILE: !Ref DefaultCloudProfile
+
+  GC03CheckEndpointAccessConfigLambdaP3:
+    Condition: IsAuditAccountAndCreatePartition3
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub "${OrganizationName}gc03_check_endpoint_access_config_p3"
+      Code: "../../src/lambda/gc03_check_endpoint_access_config/build/GC03CheckEndpointAccessConfigLambda/"
+      Handler: app.lambda_handler
+      Role: !Sub "arn:aws:iam::${AuditAccountID}:role/${RolePrefix}default_assessment_role"
+      Runtime: !Ref PythonRuntime
+      Timeout: 180
+      Layers:
+        - !Ref CloudGuardrailsCommonLayer
+      LoggingConfig:
+        LogGroup: !Sub "${OrganizationName}gc_guardrails"
+        LogFormat: "JSON"
+      Environment:
+        Variables:
+          DEFAULT_CLOUD_PROFILE: !Ref DefaultCloudProfile
+
 
   GC03CheckTrustedDevicesAdminAccessLambda:
     Condition: IsAuditAccount
     Type: AWS::Lambda::Function
     Properties:
       FunctionName: !Sub "${OrganizationName}gc03_check_trusted_devices_admin_access"
+      Code: "../../src/lambda/gc03_check_trusted_devices_admin_access/build/GC03CheckTrustedDevicesAdminAccessLambda/"
+      Handler: app.lambda_handler
+      Role: !Sub "arn:aws:iam::${AuditAccountID}:role/${RolePrefix}default_assessment_role"
+      Runtime: !Ref PythonRuntime
+      Timeout: 180
+      Layers:
+        - !Ref CloudGuardrailsCommonLayer
+      LoggingConfig:
+        LogGroup: !Sub "${OrganizationName}gc_guardrails"
+        LogFormat: "JSON"
+      Environment:
+        Variables:
+          DEFAULT_CLOUD_PROFILE: !Ref DefaultCloudProfile
+
+  GC03CheckTrustedDevicesAdminAccessLambdaP2:
+    Condition: IsAuditAccountAndCreatePartition2
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub "${OrganizationName}gc03_check_trusted_devices_admin_access_p2"
+      Code: "../../src/lambda/gc03_check_trusted_devices_admin_access/build/GC03CheckTrustedDevicesAdminAccessLambda/"
+      Handler: app.lambda_handler
+      Role: !Sub "arn:aws:iam::${AuditAccountID}:role/${RolePrefix}default_assessment_role"
+      Runtime: !Ref PythonRuntime
+      Timeout: 180
+      Layers:
+        - !Ref CloudGuardrailsCommonLayer
+      LoggingConfig:
+        LogGroup: !Sub "${OrganizationName}gc_guardrails"
+        LogFormat: "JSON"
+      Environment:
+        Variables:
+          DEFAULT_CLOUD_PROFILE: !Ref DefaultCloudProfile
+
+  GC03CheckTrustedDevicesAdminAccessLambdaP3:
+    Condition: IsAuditAccountAndCreatePartition3
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub "${OrganizationName}gc03_check_trusted_devices_admin_access_p3"
       Code: "../../src/lambda/gc03_check_trusted_devices_admin_access/build/GC03CheckTrustedDevicesAdminAccessLambda/"
       Handler: app.lambda_handler
       Role: !Sub "arn:aws:iam::${AuditAccountID}:role/${RolePrefix}default_assessment_role"
@@ -309,11 +828,87 @@ Resources:
         Variables:
           DEFAULT_CLOUD_PROFILE: !Ref DefaultCloudProfile
 
+  GC13CheckEmergencyAccountManagementLambdaP2:
+    Condition: IsAuditAccountAndCreatePartition2
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub "${OrganizationName}gc13_check_emergency_account_management_p2"
+      Code: "../../src/lambda/gc13_check_emergency_account_management/build/GC13CheckEmergencyAccountManagementLambda/"
+      Handler: app.lambda_handler
+      Role: !Sub "arn:aws:iam::${AuditAccountID}:role/${RolePrefix}default_assessment_role"
+      Runtime: !Ref PythonRuntime
+      Timeout: 90
+      Layers:
+        - !Ref CloudGuardrailsCommonLayer
+      LoggingConfig:
+        LogGroup: !Sub "${OrganizationName}gc_guardrails"
+        LogFormat: "JSON"
+      Environment:
+        Variables:
+          DEFAULT_CLOUD_PROFILE: !Ref DefaultCloudProfile
+
+  GC13CheckEmergencyAccountManagementLambdaP3:
+    Condition: IsAuditAccountAndCreatePartition3
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub "${OrganizationName}gc13_check_emergency_account_management_p3"
+      Code: "../../src/lambda/gc13_check_emergency_account_management/build/GC13CheckEmergencyAccountManagementLambda/"
+      Handler: app.lambda_handler
+      Role: !Sub "arn:aws:iam::${AuditAccountID}:role/${RolePrefix}default_assessment_role"
+      Runtime: !Ref PythonRuntime
+      Timeout: 90
+      Layers:
+        - !Ref CloudGuardrailsCommonLayer
+      LoggingConfig:
+        LogGroup: !Sub "${OrganizationName}gc_guardrails"
+        LogFormat: "JSON"
+      Environment:
+        Variables:
+          DEFAULT_CLOUD_PROFILE: !Ref DefaultCloudProfile
+
   GC13CheckEmergencyAccountMgmtApprovalsLambda:
     Condition: IsAuditAccount
     Type: AWS::Lambda::Function
     Properties:
       FunctionName: !Sub "${OrganizationName}gc13_check_emergency_account_mgmt_approvals"
+      Code: "../../src/lambda/gc13_check_emergency_account_mgmt_approvals/build/GC13CheckEmergencyAccountMgmtApprovalsLambda/"
+      Handler: app.lambda_handler
+      Role: !Sub "arn:aws:iam::${AuditAccountID}:role/${RolePrefix}default_assessment_role"
+      Runtime: !Ref PythonRuntime
+      Timeout: 90
+      Layers:
+        - !Ref CloudGuardrailsCommonLayer
+      LoggingConfig:
+        LogGroup: !Sub "${OrganizationName}gc_guardrails"
+        LogFormat: "JSON"
+      Environment:
+        Variables:
+          DEFAULT_CLOUD_PROFILE: !Ref DefaultCloudProfile
+
+  GC13CheckEmergencyAccountMgmtApprovalsLambdaP2:
+    Condition: IsAuditAccountAndCreatePartition2
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub "${OrganizationName}gc13_check_emergency_account_mgmt_approvals_p2"
+      Code: "../../src/lambda/gc13_check_emergency_account_mgmt_approvals/build/GC13CheckEmergencyAccountMgmtApprovalsLambda/"
+      Handler: app.lambda_handler
+      Role: !Sub "arn:aws:iam::${AuditAccountID}:role/${RolePrefix}default_assessment_role"
+      Runtime: !Ref PythonRuntime
+      Timeout: 90
+      Layers:
+        - !Ref CloudGuardrailsCommonLayer
+      LoggingConfig:
+        LogGroup: !Sub "${OrganizationName}gc_guardrails"
+        LogFormat: "JSON"
+      Environment:
+        Variables:
+          DEFAULT_CLOUD_PROFILE: !Ref DefaultCloudProfile
+
+  GC13CheckEmergencyAccountMgmtApprovalsLambdaP3:
+    Condition: IsAuditAccountAndCreatePartition3
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub "${OrganizationName}gc13_check_emergency_account_mgmt_approvals_p3"
       Code: "../../src/lambda/gc13_check_emergency_account_mgmt_approvals/build/GC13CheckEmergencyAccountMgmtApprovalsLambda/"
       Handler: app.lambda_handler
       Role: !Sub "arn:aws:iam::${AuditAccountID}:role/${RolePrefix}default_assessment_role"
@@ -347,11 +942,87 @@ Resources:
         Variables:
           DEFAULT_CLOUD_PROFILE: !Ref DefaultCloudProfile
 
+  GC13CheckEmergencyAccountAlertsLambdaP2:
+    Condition: IsAuditAccountAndCreatePartition2
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub "${OrganizationName}gc13_check_emergency_account_alerts_p2"
+      Code: "../../src/lambda/gc13_check_emergency_account_alerts/build/GC13CheckEmergencyAccountAlertsLambda/"
+      Handler: app.lambda_handler
+      Role: !Sub "arn:aws:iam::${AuditAccountID}:role/${RolePrefix}default_assessment_role"
+      Runtime: !Ref PythonRuntime
+      Timeout: 90
+      Layers:
+        - !Ref CloudGuardrailsCommonLayer
+      LoggingConfig:
+        LogGroup: !Sub "${OrganizationName}gc_guardrails"
+        LogFormat: "JSON"
+      Environment:
+        Variables:
+          DEFAULT_CLOUD_PROFILE: !Ref DefaultCloudProfile
+
+  GC13CheckEmergencyAccountAlertsLambdaP3:
+    Condition: IsAuditAccountAndCreatePartition3
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub "${OrganizationName}gc13_check_emergency_account_alerts_p3"
+      Code: "../../src/lambda/gc13_check_emergency_account_alerts/build/GC13CheckEmergencyAccountAlertsLambda/"
+      Handler: app.lambda_handler
+      Role: !Sub "arn:aws:iam::${AuditAccountID}:role/${RolePrefix}default_assessment_role"
+      Runtime: !Ref PythonRuntime
+      Timeout: 90
+      Layers:
+        - !Ref CloudGuardrailsCommonLayer
+      LoggingConfig:
+        LogGroup: !Sub "${OrganizationName}gc_guardrails"
+        LogFormat: "JSON"
+      Environment:
+        Variables:
+          DEFAULT_CLOUD_PROFILE: !Ref DefaultCloudProfile
+
   GC13CheckEmergencyAccountTestingLambda:
     Condition: IsAuditAccount
     Type: AWS::Lambda::Function
     Properties:
       FunctionName: !Sub "${OrganizationName}gc13_check_emergency_account_testing"
+      Code: "../../src/lambda/gc13_check_emergency_account_testing/build/GC13CheckEmergencyAccountTestingLambda/"
+      Handler: app.lambda_handler
+      Role: !Sub "arn:aws:iam::${AuditAccountID}:role/${RolePrefix}default_assessment_role"
+      Runtime: !Ref PythonRuntime
+      Timeout: 90
+      Layers:
+        - !Ref CloudGuardrailsCommonLayer
+      LoggingConfig:
+        LogGroup: !Sub "${OrganizationName}gc_guardrails"
+        LogFormat: "JSON"
+      Environment:
+        Variables:
+          DEFAULT_CLOUD_PROFILE: !Ref DefaultCloudProfile
+
+  GC13CheckEmergencyAccountTestingLambdaP2:
+    Condition: IsAuditAccountAndCreatePartition2
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub "${OrganizationName}gc13_check_emergency_account_testing_p2"
+      Code: "../../src/lambda/gc13_check_emergency_account_testing/build/GC13CheckEmergencyAccountTestingLambda/"
+      Handler: app.lambda_handler
+      Role: !Sub "arn:aws:iam::${AuditAccountID}:role/${RolePrefix}default_assessment_role"
+      Runtime: !Ref PythonRuntime
+      Timeout: 90
+      Layers:
+        - !Ref CloudGuardrailsCommonLayer
+      LoggingConfig:
+        LogGroup: !Sub "${OrganizationName}gc_guardrails"
+        LogFormat: "JSON"
+      Environment:
+        Variables:
+          DEFAULT_CLOUD_PROFILE: !Ref DefaultCloudProfile
+
+  GC13CheckEmergencyAccountTestingLambdaP3:
+    Condition: IsAuditAccountAndCreatePartition3
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub "${OrganizationName}gc13_check_emergency_account_testing_p3"
       Code: "../../src/lambda/gc13_check_emergency_account_testing/build/GC13CheckEmergencyAccountTestingLambda/"
       Handler: app.lambda_handler
       Role: !Sub "arn:aws:iam::${AuditAccountID}:role/${RolePrefix}default_assessment_role"

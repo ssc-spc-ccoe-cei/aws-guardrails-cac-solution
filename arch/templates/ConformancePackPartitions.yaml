@@ -1,0 +1,436 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: >-
+  GC Guardrails — Organization Conformance Pack(s), partitioned to keep each
+  guardrail Lambda's resource-based policy under the 20 KB IAM limit. Up
+  to three identical packs are deployed, one per non-empty partition,
+  each referencing ConformancePack.yaml in S3 with a different
+  ``PartitionSuffix`` (``""`` / ``"_p2"`` / ``"_p3"``) so its Config
+  rules invoke that partition's clone Lambda set. Each pack's
+  ``ExcludedAccounts`` ensures every org account receives exactly one
+  pack — the one it has been assigned to in the
+  ``gc-guardrails-partition-state`` DynamoDB table. Per-partition account
+  lists are passed in as comma-separated strings (``AccountsInP1/2/3``)
+  from the ``aws_account_partitioner`` Custom Resource; whether each
+  pack is created is driven by which of those lists are non-empty, so a
+  partition that has lost all its accounts cleanly retires its pack
+  without disturbing the others.
+
+Parameters:
+  # --- Partitioner inputs ----------------------------------------------------
+  AccountsInP1:
+    Type: String
+    Default: ""
+    Description: >-
+      Comma-separated list of 12-digit account IDs assigned to partition 1.
+      An empty string suppresses ``ConformancePackP1``; in normal
+      operation this is always non-empty (the only way to empty it is
+      to disable/remove every P1 account).
+  AccountsInP2:
+    Type: String
+    Default: ""
+    Description: >-
+      Comma-separated list of 12-digit account IDs assigned to partition 2.
+      Empty when the organization fits in a single partition, or when
+      every account previously in P2 has been disabled/removed. An empty
+      value suppresses ``ConformancePackP2`` and removes P2's
+      contribution to other packs' ``ExcludedAccounts`` lists.
+  AccountsInP3:
+    Type: String
+    Default: ""
+    Description: >-
+      Comma-separated list of 12-digit account IDs assigned to partition 3.
+      Empty unless the organization has grown into 3 partitions (or once
+      did and P3 has not been emptied). See ``AccountsInP2`` for the
+      empty-string semantics.
+
+  # --- Wiring / packaging ----------------------------------------------------
+  PipelineBucket:
+    Type: String
+    Description: S3 bucket holding the packaged ``ConformancePack.yaml`` template.
+  DeployVersion:
+    Type: String
+    Description: Version prefix under ``PipelineBucket`` for the packaged template.
+  InvokeUpdate:
+    Type: String
+    Description: Trigger value forwarded as ``UpdateTriggerVersion`` to each pack.
+
+  # --- Shared inputs forwarded to every conformance pack ---------------------
+  OrganizationName:
+    Type: String
+  AccelRolePrefix:
+    Type: String
+  AuditAccountID:
+    Type: String
+  BGA1:
+    Type: String
+  BGA2:
+    Type: String
+  BGA3:
+    Type: String
+    Default: ""
+  BGA4:
+    Type: String
+    Default: ""
+  LogArchiveAccountName:
+    Type: String
+  ClientEvidenceBucket:
+    Type: String
+    Description: >-
+      Name (not ARN) of the S3 bucket holding evidence documents
+      uploaded by the customer. Used to build the per-rule ``s3://...``
+      input parameters.
+  GC04EnterpriseMonitoringIAMRoleName:
+    Type: String
+    Default: "CloudBrokering"
+  GC04EnterpriseMonitoringIAMTrustedPrincipal:
+    Type: String
+    Default: "arn:aws:iam::939755092653:root"
+  GC03AlarmList:
+    Type: String
+    Default: "AWS-IAM-Authentication-From-Unapproved-IP,AWS-SSO-Authentication-From-Unapproved-IP,AWS-Console-SignIn-Without-MFA"
+    Description: >-
+      Comma-separated list of CloudWatch alarm names that the GC03 rules
+      look for. Forwarded verbatim to each conformance pack as the
+      ``GC03AlarmList`` input parameter.
+
+Conditions:
+  HasAccountsInP1: !Not [!Equals [!Ref AccountsInP1, ""]]
+  HasAccountsInP2: !Not [!Equals [!Ref AccountsInP2, ""]]
+  HasAccountsInP3: !Not [!Equals [!Ref AccountsInP3, ""]]
+  # Combinations used to pick the right ``ExcludedAccounts`` shape for
+  # each pack. ``ConformancePackP1``'s exclusions depend on whether P2,
+  # P3, or both are populated; analogous combinations apply to P2 and P3.
+  HasAccountsInP2AndP3: !And [!Condition HasAccountsInP2, !Condition HasAccountsInP3]
+  HasAccountsInP1AndP3: !And [!Condition HasAccountsInP1, !Condition HasAccountsInP3]
+  HasAccountsInP1AndP2: !And [!Condition HasAccountsInP1, !Condition HasAccountsInP2]
+
+Resources:
+  #############################################################################
+  # Partition 1 — always created. Receives every org account NOT in P2 or P3.
+  #############################################################################
+  ConformancePackP1:
+    Type: AWS::Config::OrganizationConformancePack
+    Condition: HasAccountsInP1
+    Properties:
+      OrganizationConformancePackName: !Sub "${OrganizationName}-GC-CP-Guardrails"
+      TemplateS3Uri: !Sub "s3://${PipelineBucket}/${DeployVersion}/ConformancePack.yaml"
+      # Exclude every account that belongs to a different partition.
+      # All four (HasAccountsInP2, HasAccountsInP3) combinations are
+      # handled explicitly so we never `!Split` a string that contains
+      # an empty element (which would fail Config's ``^\d{12}$`` check).
+      ExcludedAccounts: !If
+        - HasAccountsInP2AndP3
+        - !Split [",", !Join [",", [!Ref AccountsInP2, !Ref AccountsInP3]]]
+        - !If
+          - HasAccountsInP2
+          - !Split [",", !Ref AccountsInP2]
+          - !If
+            - HasAccountsInP3
+            - !Split [",", !Ref AccountsInP3]
+            - !Ref AWS::NoValue
+      ConformancePackInputParameters:
+        - ParameterName: PartitionSuffix
+          ParameterValue: ""
+        - ParameterName: UpdateTriggerVersion
+          ParameterValue: !Ref InvokeUpdate
+        - ParameterName: GCLambdaExecutionRoleName
+          ParameterValue: !Sub "${AccelRolePrefix}GCLambdaExecutionRole"
+        - ParameterName: GCLambdaExecutionRoleName2
+          ParameterValue: !Sub "${AccelRolePrefix}GCLambdaExecutionRole2"
+        - ParameterName: AuditAccountID
+          ParameterValue: !Ref AuditAccountID
+        - ParameterName: DeployVersion
+          ParameterValue: !Ref DeployVersion
+        - ParameterName: BGA1
+          ParameterValue: !Ref BGA1
+        - ParameterName: BGA2
+          ParameterValue: !Ref BGA2
+        - ParameterName: BGA3
+          ParameterValue: !Ref BGA3
+        - ParameterName: BGA4
+          ParameterValue: !Ref BGA4
+        - ParameterName: LogArchiveAccountName
+          ParameterValue: !Ref LogArchiveAccountName
+        - ParameterName: OrganizationName
+          ParameterValue: !Ref OrganizationName
+        - ParameterName: GC03AlarmList
+          ParameterValue: !Ref GC03AlarmList
+        - ParameterName: EnterpriseMonitoringIAMRoleName
+          ParameterValue: !Ref GC04EnterpriseMonitoringIAMRoleName
+        - ParameterName: EnterpriseMonitoringIAMTrustedPrincipal
+          ParameterValue: !Ref GC04EnterpriseMonitoringIAMTrustedPrincipal
+        - ParameterName: S3AttestationLetterPath
+          ParameterValue: !Sub "s3://${ClientEvidenceBucket}/gc-01/attestation_letter.pdf"
+        - ParameterName: RuleNamingConventionFilePath
+          ParameterValue: !Sub "s3://${ClientEvidenceBucket}/gc-01/rule_naming_convention.txt"
+        - ParameterName: PrivilegedUsersFilePath
+          ParameterValue: !Sub "s3://${ClientEvidenceBucket}/gc-01/privileged_users.txt"
+        - ParameterName: NonPrivilegedUsersFilePath
+          ParameterValue: !Sub "s3://${ClientEvidenceBucket}/gc-01/non_privileged_users.txt"
+        - ParameterName: LogSourceAttestationFilePath
+          ParameterValue: !Sub "s3://${ClientEvidenceBucket}/gc-01/logSource_attestation.pdf"
+        - ParameterName: ExternalAlertsAttestationFilePath
+          ParameterValue: !Sub "s3://${ClientEvidenceBucket}/gc-01/external_alerts_attestation.pdf"
+        - ParameterName: S3AccountManagementPlanPath
+          ParameterValue: !Sub "s3://${ClientEvidenceBucket}/gc-02/account_management_plan.pdf"
+        - ParameterName: S3RoleAssignmentReviewDocumentPath
+          ParameterValue: !Sub "s3://${ClientEvidenceBucket}/gc-02/access_reviews_privileged_roles.pdf"
+        - ParameterName: S3AccessManagementAttestationDocumentPath
+          ParameterValue: !Sub "s3://${ClientEvidenceBucket}/gc-02/access_management_attestation.pdf"
+        - ParameterName: S3AdminAccountListPath
+          ParameterValue: !Sub "s3://${ClientEvidenceBucket}/gc-02/admin_accounts.txt"
+        - ParameterName: S3VpnIpRangesPath
+          ParameterValue: !Sub "s3://${ClientEvidenceBucket}/gc-03/vpn_ip_ranges.txt"
+        - ParameterName: S3CasCurrentlyInUsePath
+          ParameterValue: !Sub "s3://${ClientEvidenceBucket}/gc-07/cas_currently_in_use.txt"
+        - ParameterName: S3NonComplianceOptoutFilePath
+          ParameterValue: !Sub "s3://${ClientEvidenceBucket}/gc-07/GR07_lb_attestation.pdf"
+        - ParameterName: S3SecureNetworkTransmissionPolicyPath
+          ParameterValue: !Sub "s3://${ClientEvidenceBucket}/gc-07/secure_network_transmission.pdf"
+        - ParameterName: S3TargetNetworkArchitecturePath
+          ParameterValue: !Sub "s3://${ClientEvidenceBucket}/gc-08/target_network_architecture.pdf"
+        - ParameterName: S3TargetCloudDeploymentGuideDocumentPath
+          ParameterValue: !Sub "s3://${ClientEvidenceBucket}/gc-08/cloud_deployment_guide.pdf"
+        - ParameterName: S3TargetCloudSegmentationDesignDocumentPath
+          ParameterValue: !Sub "s3://${ClientEvidenceBucket}/gc-08/cloud_segmentation_design.pdf"
+        - ParameterName: S3NetworkArchitectureDocumentPath
+          ParameterValue: !Sub "s3://${ClientEvidenceBucket}/gc-09/network_security_architecture.pdf"
+        - ParameterName: S3LogBucketsPath
+          ParameterValue: !Sub "s3://${ClientEvidenceBucket}/gc-10/log_buckets.txt"
+        - ParameterName: S3MonitoringUseCasesPath
+          ParameterValue: !Sub "s3://${ClientEvidenceBucket}/gc-11/monitoring_usecases.pdf"
+        - ParameterName: S3AccountManagementProcedurePath
+          ParameterValue: !Sub "s3://${ClientEvidenceBucket}/gc-13/emergency_account_management_procedures.pdf"
+        - ParameterName: S3AccountMgmtApprovalsPath
+          ParameterValue: !Sub "s3://${ClientEvidenceBucket}/gc-13/emergency_account_management_approvals.pdf"
+        - ParameterName: S3EmergencyAccountAlertsRuleNamesPath
+          ParameterValue: !Sub "s3://${ClientEvidenceBucket}/gc-13/rule_names.txt"
+        - ParameterName: LogSourceNonComplianceAttestationFilePath
+          ParameterValue: !Sub "s3://${ClientEvidenceBucket}/gc-13/logSource_attestation.pdf"
+        - ParameterName: ExternalAlertsNonComplianceAttestationFilePath
+          ParameterValue: !Sub "s3://${ClientEvidenceBucket}/gc-13/external_alerts_attestation.pdf"
+
+  #############################################################################
+  # Partition 2 — created when the org outgrows a single partition.
+  # Receives every org account NOT in P1 or P3 (so: only P2 accounts).
+  #############################################################################
+  ConformancePackP2:
+    Type: AWS::Config::OrganizationConformancePack
+    Condition: HasAccountsInP2
+    Properties:
+      OrganizationConformancePackName: !Sub "${OrganizationName}-GC-CP-Guardrails-P2"
+      TemplateS3Uri: !Sub "s3://${PipelineBucket}/${DeployVersion}/ConformancePack.yaml"
+      # See ConformancePackP1 for the rationale behind the nested If
+      # ladder. P1 is essentially always populated in practice, but the
+      # full set of (HasAccountsInP1, HasAccountsInP3) combinations is
+      # still handled defensively.
+      ExcludedAccounts: !If
+        - HasAccountsInP1AndP3
+        - !Split [",", !Join [",", [!Ref AccountsInP1, !Ref AccountsInP3]]]
+        - !If
+          - HasAccountsInP1
+          - !Split [",", !Ref AccountsInP1]
+          - !If
+            - HasAccountsInP3
+            - !Split [",", !Ref AccountsInP3]
+            - !Ref AWS::NoValue
+      ConformancePackInputParameters:
+        - ParameterName: PartitionSuffix
+          ParameterValue: "_p2"
+        - ParameterName: UpdateTriggerVersion
+          ParameterValue: !Ref InvokeUpdate
+        - ParameterName: GCLambdaExecutionRoleName
+          ParameterValue: !Sub "${AccelRolePrefix}GCLambdaExecutionRole"
+        - ParameterName: GCLambdaExecutionRoleName2
+          ParameterValue: !Sub "${AccelRolePrefix}GCLambdaExecutionRole2"
+        - ParameterName: AuditAccountID
+          ParameterValue: !Ref AuditAccountID
+        - ParameterName: DeployVersion
+          ParameterValue: !Ref DeployVersion
+        - ParameterName: BGA1
+          ParameterValue: !Ref BGA1
+        - ParameterName: BGA2
+          ParameterValue: !Ref BGA2
+        - ParameterName: BGA3
+          ParameterValue: !Ref BGA3
+        - ParameterName: BGA4
+          ParameterValue: !Ref BGA4
+        - ParameterName: LogArchiveAccountName
+          ParameterValue: !Ref LogArchiveAccountName
+        - ParameterName: OrganizationName
+          ParameterValue: !Ref OrganizationName
+        - ParameterName: GC03AlarmList
+          ParameterValue: !Ref GC03AlarmList
+        - ParameterName: EnterpriseMonitoringIAMRoleName
+          ParameterValue: !Ref GC04EnterpriseMonitoringIAMRoleName
+        - ParameterName: EnterpriseMonitoringIAMTrustedPrincipal
+          ParameterValue: !Ref GC04EnterpriseMonitoringIAMTrustedPrincipal
+        - ParameterName: S3AttestationLetterPath
+          ParameterValue: !Sub "s3://${ClientEvidenceBucket}/gc-01/attestation_letter.pdf"
+        - ParameterName: RuleNamingConventionFilePath
+          ParameterValue: !Sub "s3://${ClientEvidenceBucket}/gc-01/rule_naming_convention.txt"
+        - ParameterName: PrivilegedUsersFilePath
+          ParameterValue: !Sub "s3://${ClientEvidenceBucket}/gc-01/privileged_users.txt"
+        - ParameterName: NonPrivilegedUsersFilePath
+          ParameterValue: !Sub "s3://${ClientEvidenceBucket}/gc-01/non_privileged_users.txt"
+        - ParameterName: LogSourceAttestationFilePath
+          ParameterValue: !Sub "s3://${ClientEvidenceBucket}/gc-01/logSource_attestation.pdf"
+        - ParameterName: ExternalAlertsAttestationFilePath
+          ParameterValue: !Sub "s3://${ClientEvidenceBucket}/gc-01/external_alerts_attestation.pdf"
+        - ParameterName: S3AccountManagementPlanPath
+          ParameterValue: !Sub "s3://${ClientEvidenceBucket}/gc-02/account_management_plan.pdf"
+        - ParameterName: S3RoleAssignmentReviewDocumentPath
+          ParameterValue: !Sub "s3://${ClientEvidenceBucket}/gc-02/access_reviews_privileged_roles.pdf"
+        - ParameterName: S3AccessManagementAttestationDocumentPath
+          ParameterValue: !Sub "s3://${ClientEvidenceBucket}/gc-02/access_management_attestation.pdf"
+        - ParameterName: S3AdminAccountListPath
+          ParameterValue: !Sub "s3://${ClientEvidenceBucket}/gc-02/admin_accounts.txt"
+        - ParameterName: S3VpnIpRangesPath
+          ParameterValue: !Sub "s3://${ClientEvidenceBucket}/gc-03/vpn_ip_ranges.txt"
+        - ParameterName: S3CasCurrentlyInUsePath
+          ParameterValue: !Sub "s3://${ClientEvidenceBucket}/gc-07/cas_currently_in_use.txt"
+        - ParameterName: S3NonComplianceOptoutFilePath
+          ParameterValue: !Sub "s3://${ClientEvidenceBucket}/gc-07/GR07_lb_attestation.pdf"
+        - ParameterName: S3SecureNetworkTransmissionPolicyPath
+          ParameterValue: !Sub "s3://${ClientEvidenceBucket}/gc-07/secure_network_transmission.pdf"
+        - ParameterName: S3TargetNetworkArchitecturePath
+          ParameterValue: !Sub "s3://${ClientEvidenceBucket}/gc-08/target_network_architecture.pdf"
+        - ParameterName: S3TargetCloudDeploymentGuideDocumentPath
+          ParameterValue: !Sub "s3://${ClientEvidenceBucket}/gc-08/cloud_deployment_guide.pdf"
+        - ParameterName: S3TargetCloudSegmentationDesignDocumentPath
+          ParameterValue: !Sub "s3://${ClientEvidenceBucket}/gc-08/cloud_segmentation_design.pdf"
+        - ParameterName: S3NetworkArchitectureDocumentPath
+          ParameterValue: !Sub "s3://${ClientEvidenceBucket}/gc-09/network_security_architecture.pdf"
+        - ParameterName: S3LogBucketsPath
+          ParameterValue: !Sub "s3://${ClientEvidenceBucket}/gc-10/log_buckets.txt"
+        - ParameterName: S3MonitoringUseCasesPath
+          ParameterValue: !Sub "s3://${ClientEvidenceBucket}/gc-11/monitoring_usecases.pdf"
+        - ParameterName: S3AccountManagementProcedurePath
+          ParameterValue: !Sub "s3://${ClientEvidenceBucket}/gc-13/emergency_account_management_procedures.pdf"
+        - ParameterName: S3AccountMgmtApprovalsPath
+          ParameterValue: !Sub "s3://${ClientEvidenceBucket}/gc-13/emergency_account_management_approvals.pdf"
+        - ParameterName: S3EmergencyAccountAlertsRuleNamesPath
+          ParameterValue: !Sub "s3://${ClientEvidenceBucket}/gc-13/rule_names.txt"
+        - ParameterName: LogSourceNonComplianceAttestationFilePath
+          ParameterValue: !Sub "s3://${ClientEvidenceBucket}/gc-13/logSource_attestation.pdf"
+        - ParameterName: ExternalAlertsNonComplianceAttestationFilePath
+          ParameterValue: !Sub "s3://${ClientEvidenceBucket}/gc-13/external_alerts_attestation.pdf"
+
+  #############################################################################
+  # Partition 3 — created at maximum org size.
+  # Receives every org account NOT in P1 or P2 (so: only P3 accounts).
+  #############################################################################
+  ConformancePackP3:
+    Type: AWS::Config::OrganizationConformancePack
+    Condition: HasAccountsInP3
+    Properties:
+      OrganizationConformancePackName: !Sub "${OrganizationName}-GC-CP-Guardrails-P3"
+      TemplateS3Uri: !Sub "s3://${PipelineBucket}/${DeployVersion}/ConformancePack.yaml"
+      # See ConformancePackP1 for the rationale behind the nested If
+      # ladder. P3 only exists when its own account list is non-empty,
+      # so at least one of P1 or P2 must also be populated in practice.
+      ExcludedAccounts: !If
+        - HasAccountsInP1AndP2
+        - !Split [",", !Join [",", [!Ref AccountsInP1, !Ref AccountsInP2]]]
+        - !If
+          - HasAccountsInP1
+          - !Split [",", !Ref AccountsInP1]
+          - !If
+            - HasAccountsInP2
+            - !Split [",", !Ref AccountsInP2]
+            - !Ref AWS::NoValue
+      ConformancePackInputParameters:
+        - ParameterName: PartitionSuffix
+          ParameterValue: "_p3"
+        - ParameterName: UpdateTriggerVersion
+          ParameterValue: !Ref InvokeUpdate
+        - ParameterName: GCLambdaExecutionRoleName
+          ParameterValue: !Sub "${AccelRolePrefix}GCLambdaExecutionRole"
+        - ParameterName: GCLambdaExecutionRoleName2
+          ParameterValue: !Sub "${AccelRolePrefix}GCLambdaExecutionRole2"
+        - ParameterName: AuditAccountID
+          ParameterValue: !Ref AuditAccountID
+        - ParameterName: DeployVersion
+          ParameterValue: !Ref DeployVersion
+        - ParameterName: BGA1
+          ParameterValue: !Ref BGA1
+        - ParameterName: BGA2
+          ParameterValue: !Ref BGA2
+        - ParameterName: BGA3
+          ParameterValue: !Ref BGA3
+        - ParameterName: BGA4
+          ParameterValue: !Ref BGA4
+        - ParameterName: LogArchiveAccountName
+          ParameterValue: !Ref LogArchiveAccountName
+        - ParameterName: OrganizationName
+          ParameterValue: !Ref OrganizationName
+        - ParameterName: GC03AlarmList
+          ParameterValue: !Ref GC03AlarmList
+        - ParameterName: EnterpriseMonitoringIAMRoleName
+          ParameterValue: !Ref GC04EnterpriseMonitoringIAMRoleName
+        - ParameterName: EnterpriseMonitoringIAMTrustedPrincipal
+          ParameterValue: !Ref GC04EnterpriseMonitoringIAMTrustedPrincipal
+        - ParameterName: S3AttestationLetterPath
+          ParameterValue: !Sub "s3://${ClientEvidenceBucket}/gc-01/attestation_letter.pdf"
+        - ParameterName: RuleNamingConventionFilePath
+          ParameterValue: !Sub "s3://${ClientEvidenceBucket}/gc-01/rule_naming_convention.txt"
+        - ParameterName: PrivilegedUsersFilePath
+          ParameterValue: !Sub "s3://${ClientEvidenceBucket}/gc-01/privileged_users.txt"
+        - ParameterName: NonPrivilegedUsersFilePath
+          ParameterValue: !Sub "s3://${ClientEvidenceBucket}/gc-01/non_privileged_users.txt"
+        - ParameterName: LogSourceAttestationFilePath
+          ParameterValue: !Sub "s3://${ClientEvidenceBucket}/gc-01/logSource_attestation.pdf"
+        - ParameterName: ExternalAlertsAttestationFilePath
+          ParameterValue: !Sub "s3://${ClientEvidenceBucket}/gc-01/external_alerts_attestation.pdf"
+        - ParameterName: S3AccountManagementPlanPath
+          ParameterValue: !Sub "s3://${ClientEvidenceBucket}/gc-02/account_management_plan.pdf"
+        - ParameterName: S3RoleAssignmentReviewDocumentPath
+          ParameterValue: !Sub "s3://${ClientEvidenceBucket}/gc-02/access_reviews_privileged_roles.pdf"
+        - ParameterName: S3AccessManagementAttestationDocumentPath
+          ParameterValue: !Sub "s3://${ClientEvidenceBucket}/gc-02/access_management_attestation.pdf"
+        - ParameterName: S3AdminAccountListPath
+          ParameterValue: !Sub "s3://${ClientEvidenceBucket}/gc-02/admin_accounts.txt"
+        - ParameterName: S3VpnIpRangesPath
+          ParameterValue: !Sub "s3://${ClientEvidenceBucket}/gc-03/vpn_ip_ranges.txt"
+        - ParameterName: S3CasCurrentlyInUsePath
+          ParameterValue: !Sub "s3://${ClientEvidenceBucket}/gc-07/cas_currently_in_use.txt"
+        - ParameterName: S3NonComplianceOptoutFilePath
+          ParameterValue: !Sub "s3://${ClientEvidenceBucket}/gc-07/GR07_lb_attestation.pdf"
+        - ParameterName: S3SecureNetworkTransmissionPolicyPath
+          ParameterValue: !Sub "s3://${ClientEvidenceBucket}/gc-07/secure_network_transmission.pdf"
+        - ParameterName: S3TargetNetworkArchitecturePath
+          ParameterValue: !Sub "s3://${ClientEvidenceBucket}/gc-08/target_network_architecture.pdf"
+        - ParameterName: S3TargetCloudDeploymentGuideDocumentPath
+          ParameterValue: !Sub "s3://${ClientEvidenceBucket}/gc-08/cloud_deployment_guide.pdf"
+        - ParameterName: S3TargetCloudSegmentationDesignDocumentPath
+          ParameterValue: !Sub "s3://${ClientEvidenceBucket}/gc-08/cloud_segmentation_design.pdf"
+        - ParameterName: S3NetworkArchitectureDocumentPath
+          ParameterValue: !Sub "s3://${ClientEvidenceBucket}/gc-09/network_security_architecture.pdf"
+        - ParameterName: S3LogBucketsPath
+          ParameterValue: !Sub "s3://${ClientEvidenceBucket}/gc-10/log_buckets.txt"
+        - ParameterName: S3MonitoringUseCasesPath
+          ParameterValue: !Sub "s3://${ClientEvidenceBucket}/gc-11/monitoring_usecases.pdf"
+        - ParameterName: S3AccountManagementProcedurePath
+          ParameterValue: !Sub "s3://${ClientEvidenceBucket}/gc-13/emergency_account_management_procedures.pdf"
+        - ParameterName: S3AccountMgmtApprovalsPath
+          ParameterValue: !Sub "s3://${ClientEvidenceBucket}/gc-13/emergency_account_management_approvals.pdf"
+        - ParameterName: S3EmergencyAccountAlertsRuleNamesPath
+          ParameterValue: !Sub "s3://${ClientEvidenceBucket}/gc-13/rule_names.txt"
+        - ParameterName: LogSourceNonComplianceAttestationFilePath
+          ParameterValue: !Sub "s3://${ClientEvidenceBucket}/gc-13/logSource_attestation.pdf"
+        - ParameterName: ExternalAlertsNonComplianceAttestationFilePath
+          ParameterValue: !Sub "s3://${ClientEvidenceBucket}/gc-13/external_alerts_attestation.pdf"
+
+Outputs:
+  ConformancePackP1Name:
+    Condition: HasAccountsInP1
+    Description: Name of the partition-1 conformance pack (the always-on pack in normal operation).
+    Value: !Ref ConformancePackP1
+  ConformancePackP2Name:
+    Condition: HasAccountsInP2
+    Description: Name of the partition-2 conformance pack (when present).
+    Value: !Ref ConformancePackP2
+  ConformancePackP3Name:
+    Condition: HasAccountsInP3
+    Description: Name of the partition-3 conformance pack (when present).
+    Value: !Ref ConformancePackP3

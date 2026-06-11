@@ -90,6 +90,25 @@ Parameters:
   LogArchiveAccountName:
     Type: String
     Default: "LogArchive"
+  MaxAccountsPerPartition:
+    Type: Number
+    Default: 70
+    MinValue: 1
+    MaxValue: 70
+    Description: >-
+      Max accounts per partition for the Account Partitioner Lambda. Keeps
+      each guardrail Lambda's resource-based policy under the 20 KB IAM limit.
+  MaxPartitions:
+    Type: Number
+    Default: 3
+    MinValue: 1
+    MaxValue: 3
+    Description: >-
+      Max number of partitions the Account Partitioner Lambda can create.
+      Hard-capped at 3 because the AuditAccountPreRequisitesPart* templates
+      and ConformancePack only define conditional clones for partitions 1,
+      2, and 3. Total addressable accounts = MaxAccountsPerPartition x
+      MaxPartitions.
 
 Resources:
   GuardRailsStack:
@@ -119,6 +138,15 @@ Resources:
         BGA3: !Ref BGA3
         BGA4: !Ref BGA4
         LogArchiveAccountName: !Ref LogArchiveAccountName
+        MaxAccountsPerPartition: !Ref MaxAccountsPerPartition
+        MaxPartitions: !Ref MaxPartitions
+        # Forwarded so the partition-sync Step Function inside main.yaml
+        # knows which stack to call cloudformation:UpdateStack against.
+        # Nested stacks cannot be updated directly, so the state machine
+        # bumps InvokeUpdate on the root to cascade new
+        # AccountsInP1/P2/P3 values into the ConformancePack nested stack
+        # and the Part1-8 StackSets.
+        RootStackName: !Ref AWS::StackName
 
 
       Tags:

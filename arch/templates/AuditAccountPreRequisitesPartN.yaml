@@ -18,6 +18,13 @@ Parameters:
     Type: String
     Default: "python3.12"
     Description: The python runtime to use for the compliance dashboard
+  PartitionStateTableName:
+    Type: String
+    Default: "gc-guardrails-partition-state"
+    Description: >
+      DynamoDB table (written by aws_account_partitioner) mapping each active
+      AWS account to its partition. Consumed by aws_lambda_permissions_setup
+      to sync each guardrail Lambda clone's resource-based policy.
 
 Conditions:
   IsAuditAccount: !Equals
@@ -52,15 +59,18 @@ Resources:
           - Sid: AllowLambdaPermissions
             Action:
               - "lambda:AddPermission"
+              - "lambda:RemovePermission"
               - "lambda:GetPolicy"
+              - "lambda:GetFunction"
             Resource:
               - !Sub "arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:${OrganizationName}gc*"
             Effect: Allow
-          - Sid: AllowOrganizationsReadAccess
+          - Sid: AllowDynamoDBReadPartitionState
             Action:
-              - "organizations:Describe*"
-              - "organizations:List*"
-            Resource: "*"
+              - "dynamodb:Scan"
+              - "dynamodb:GetItem"
+            Resource:
+              - !Sub "arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${PartitionStateTableName}"
             Effect: Allow
       PolicyName: gc_setup_lambda_execution_role_policy
       Roles:
@@ -112,35 +122,4 @@ Resources:
         Variables:
           OrganizationName:
             Ref: OrganizationName
-
-  CronTriggerLambdaPermissions:
-    Condition: IsAuditAccount
-    Type: AWS::Events::Rule
-    Properties:
-      EventBusName: default
-      Name: update-lambda-permissions-every-6-hours
-      ScheduleExpression: cron(0 */6 * * ? *)
-      State: ENABLED
-      Targets:
-        - Id: !Sub ${OrganizationName}update-lambda-permissions
-          Arn: !GetAtt LambdaPermissionsLambda.Arn
-          Input: |-
-            {
-                "RequestType": "Cron"
-            }
-    DependsOn:
-      - LambdaPermissionsLambda
-
-  PermissionForEvent0ToInvokeLambda:
-    Condition: IsAuditAccount
-    Type: AWS::Lambda::Permission
-    Properties:
-      FunctionName: !Ref LambdaPermissionsLambda
-      Action: "lambda:InvokeFunction"
-      Principal: "events.amazonaws.com"
-      SourceArn:
-        Fn::GetAtt:
-          - "CronTriggerLambdaPermissions"
-          - "Arn"
-    DependsOn:
-      - LambdaPermissionsLambda
+          PARTITION_TABLE_NAME: !Ref PartitionStateTableName

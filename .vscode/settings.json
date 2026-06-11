@@ -59,5 +59,8 @@
   "python.analysis.extraPaths": [
     "./src/layer/cloud_guardrails/lib/python3.12/site-packages"
   ],
-  "cSpell.words": ["esdc"]
+  "cSpell.words": [
+    "esdc"
+  ],
+  "makefile.configureOnOpen": false
 }

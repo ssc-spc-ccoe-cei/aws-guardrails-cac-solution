@@ -70,5 +70,13 @@
   {
     "ParameterKey": "BGA4",
     "ParameterValue": ""
+  },
+  {
+    "ParameterKey": "MaxAccountsPerPartition",
+    "ParameterValue": "70"
+  },
+  {
+    "ParameterKey": "MaxPartitions",
+    "ParameterValue": "3"
   }
 ]
