@@ -791,9 +791,14 @@ Resources:
 
   PartitionStateTable:
     Type: AWS::DynamoDB::Table
+    DeletionPolicy: Retain          # survive a `cfn delete-stack` on the root
+    UpdateReplacePolicy: Retain     # survive a replacement update
     Properties:
       TableName: !Sub "${OrganizationName}-gc-guardrails-partition-state"
       BillingMode: PAY_PER_REQUEST
+      DeletionProtectionEnabled: true   # block accidental console / CLI deletes
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true   # 35-day continuous backup
       AttributeDefinitions:
         - AttributeName: AccountId
           AttributeType: S

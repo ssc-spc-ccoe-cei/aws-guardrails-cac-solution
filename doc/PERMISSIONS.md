@@ -1,35 +1,35 @@
 # Lambda Permissions
- 
+
 ## Role Information
 This page outlines the Lambda Execution Roles for the AWS CaC Solution, alongside the permissions assigned to each role. These permissions enable secure, read-oriented access to various AWS services. Each section describes the role's purpose, trust relationships, and the AWS actions it is authorized to perform.
- 
+
 ### Name
 `${AccelRolePrefix}GCLambdaExecutionRole2`
 
 ## Description
 This role is designed to provide comprehensive read access across various AWS services, allowing for compliance and monitoring capabilities.
- 
+
 ### TrustPrincipal
 `arn:${AWS::Partition}:iam::${AuditAccountID}:root`
- 
+
 ### SwitchRole
 `${AcceleratorRole}`
- 
+
 ## Policy Package
- 
+
 ### Version
 `2012-10-17`
- 
+
 ### Statement
 #### Effect
 `Allow`
- 
+
 #### Sid
 `GCComplianceAllowAccess2`
- 
+
 ### Actions
 The following actions are allowed across various AWS services:
- 
+
 - **ACM (AWS Certificate Manager)**: `Describe*`, `Get*`, `List*`
 - **API Gateway**: `GET`
 - **Backup**: `ListBackupVaults`, `ListRecoveryPointsByBackupVault`
@@ -57,41 +57,41 @@ The following actions are allowed across various AWS services:
 - **SNS (Simple Notification Service)**: `GetTopicAttributes`, `ListTopics`
 - **Tag**: `GetResources`
 - **Timestream**: `DescribeEndpoints`, `List*`
- 
+
 ### Resources
 `*`
- 
 
-  
- 
+
+
+
 ### Name
 `${AccelRolePrefix}GCLambdaExecutionRole`
 
 ## Description
-This role is designed to provide read access across various AWS services, allowing for compliance and monitoring capabilities. 
- 
+This role is designed to provide read access across various AWS services, allowing for compliance and monitoring capabilities.
+
 ### TrustPrincipal
 `arn:${AWS::Partition}:iam::${AuditAccountID}:root`
- 
+
 ### SwitchRole
 `${AcceleratorRole}`
- 
+
 ## Policy Package
- 
+
 ### Version
 `2012-10-17`
- 
+
 ### Statement
- 
+
 #### Effect
 `Allow`
- 
+
 #### Sid
 `GCComplianceAllowAccess`
- 
+
 ### Actions
 The following actions are allowed across various AWS services:
- 
+
 - **ACM (AWS Certificate Manager)**: `Describe*`, `Get*`, `List*`
 - **API Gateway**: `GET`
 - **AWS Marketplace**: `ListEntities`
@@ -119,12 +119,12 @@ The following actions are allowed across various AWS services:
 - **SNS (Simple Notification Service)**: `GetTopicAttributes`, `ListTopics`
 - **Tag**: `GetResources`
 - **Timestream**: `DescribeEndpoints`, `List*`
- 
+
 ### Resources
 `*`
- 
+
 #### Additional Statements
- 
+
 ##### Bucket Access
 - **Effect**: `Allow`
 - **Sid**: `GcComplianceAllowBucketAccess`
@@ -134,7 +134,7 @@ The following actions are allowed across various AWS services:
   - `arn:${AWS::Partition}:s3:::${AWSConfigConformsBucketName}/*`
   - `arn:${AWS::Partition}:s3:::${ClientEvidenceBucket}`
   - `arn:${AWS::Partition}:s3:::${ClientEvidenceBucket}/*`
- 
+
 ##### Account Info Access
 - **Effect**: `Allow`
 - **Sid**: `AllowReadAccountInfo`
@@ -142,16 +142,91 @@ The following actions are allowed across various AWS services:
 - **Resources**:
   - `arn:aws:account::*:account`
   - `arn:aws:account::*:account/o-*/*`
- 
+
 ##### List Bucket Access
 - **Effect**: `Allow`
 - **Sid**: `GcComplianceAllowListBucketAccess`
 - **Actions**: `s3:ListAllMyBuckets`
 - **Resources**: `*`
- 
 
+### Name
+`${RolePrefix}default_assessment_role` (logical id `GCDefaultLambdaExecutionRole`)
 
- 
- 
- 
- 
+## Description
+The **execute-as** role every guardrail Lambda runs as in the audit account, including all `_p2` / `_p3` partition clones. Defined in `arch/templates/AuditAccountPreRequisitesPart1.yaml`. Distinct from the two roles above, which are the **assume-into** identities created in each member account by `OrgRoleGenerator.yaml`; this role's only cross-account permission is `sts:AssumeRole` into those two roles.
+
+### TrustPrincipal
+- `arn:aws:iam::${AuditAccountID}:root`
+- `lambda.amazonaws.com` (service principal)
+
+### Managed Policies
+- `arn:aws:iam::aws:policy/service-role/AWSConfigRulesExecutionRole`
+- `arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole`
+
+## Policy Package
+
+### Version
+`2012-10-17`
+
+### Inline Policy: `AssumeRoleInWorkloadAccounts`
+Attached directly to the role definition.
+
+#### Effect
+`Allow`
+
+#### Actions
+- `sts:AssumeRole`
+
+#### Resources
+- `arn:aws:iam::*:role/${AccelRolePrefix}GCLambdaExecutionRole`
+- `arn:aws:iam::*:role/${AccelRolePrefix}GCLambdaExecutionRole2`
+- `arn:aws:iam::*:role/GCLambdaExecutionRole2` (un-prefixed legacy fallback)
+
+### Inline Policy: `${RolePrefix}default_lambda_execution_role_policy`
+Standalone `AWS::IAM::Policy` resource `GCDefaultLambdaExecutionRolePolicy` attached to the role.
+
+#### Effect
+`Allow`
+
+### Actions
+The following actions are allowed across various AWS services:
+
+- **Account**: `GetAlternateContact` (scoped to `arn:aws:account::*:account` and `arn:aws:account::*:account/o-*/*`)
+- **ACM (AWS Certificate Manager)**: `Describe*`, `Get*`, `List*`
+- **API Gateway**: `GET`
+- **AWS Marketplace**: `ListEntities`
+- **Backup**: `ListBackupVaults`, `ListRecoveryPointsByBackupVault`
+- **Cassandra**: `Select`
+- **CloudFront**: `Describe*`, `Get*`, `List*`
+- **CloudTrail**: `DescribeTrails`, `GetEventSelectors`, `GetTrail`, `GetTrailStatus`, `ListTrails`, `LookupEvents`
+- **CloudWatch**: `DescribeAlarms`
+- **CodeBuild**: `BatchGetProjects`, `ListProjects`
+- **Config**: `Describe*`, `Get*`, `PutEvaluations`
+- **DAX (DynamoDB Accelerator)**: `DescribeClusters`
+- **DocDB Elastic**: `ListClusters`, `ListClusterSnapshots`
+- **DynamoDB**: `DescribeTable`, `ListTables`
+- **EC2**: `DescribeRegions`, `DescribeVolumes`, `GetEbsEncryptionByDefault`
+- **EKS**: `DescribeCluster`, `ListClusters`
+- **ElastiCache**: `DescribeCacheClusters`, `DescribeSnapshots`
+- **EFS (Elastic File System)**: `DescribeFileSystems`
+- **ELB (Elastic Load Balancing)**: `Describe*`
+- **Elasticsearch**: `DescribeDomain`, `DescribeDomains`, `DescribeElasticsearchDomain`, `DescribeElasticsearchDomains`, `ListDomainNames`
+- **EventBridge / Events**: `List*`
+- **GuardDuty**: `List*`
+- **IAM (Identity and Access Management)**: `Generate*`, `Get*`, `List*`, `Simulate*`
+- **Kinesis**: `DescribeStream`, `ListStreams`
+- **Logs (CloudWatch Logs)**: `CreateLogGroup`, `CreateLogStream`, `PutLogEvents` (scoped to `/aws/lambda/${OrganizationName}gc*`)
+- **MemoryDB**: `DescribeClusters`, `DescribeSnapshots`
+- **Organizations**: `Describe*`, `List*`
+- **QLDB (Quantum Ledger Database)**: `DescribeLedger`, `ListLedgers`
+- **RDS (Relational Database Service)**: `DescribeDBClusters`, `DescribeDBClusterSnapshots`, `DescribeDBInstances`, `DescribeDBSnapshots`
+- **Redshift**: `DescribeClusterParameters`, `DescribeClusters`
+- **Resource Explorer 2**: `ListIndexes`, `Search`
+- **S3 (Simple Storage Service)**: `GetBucketLocation`, `GetBucketPolicy`, `GetEncryptionConfiguration`, `ListAllMyBuckets`, `ListBucket`
+- **SNS (Simple Notification Service)**: `Get*`, `List*`
+- **SSO**: `Describe*`, `List*`
+- **Tag**: `GetResources`
+- **Timestream**: `DescribeEndpoints`, `ListDatabases`, `ListTables`
+
+### Resources
+`*` (except where narrower scopes are noted above)

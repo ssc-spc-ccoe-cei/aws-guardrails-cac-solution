@@ -250,6 +250,11 @@ ConformancePackP3:
       # … same set of input parameters as P1
 ```
 
+#### `ExcludedAccounts` service-limit headroom
+
+The AWS Config API caps `ExcludedAccounts` at **1000 entries** per organization conformance pack, substantially more than required for this solution.
+([AWS Config API reference](https://docs.aws.amazon.com/config/latest/APIReference/API_PutOrganizationConformancePack.html#config-PutOrganizationConformancePack-request-ExcludedAccounts) — *"Array Members: Minimum number of 0 items. **Maximum number of 1000 items.** Pattern: `\d{12}`"*).
+
 ### 3. `main.yaml` — nested-stack invocation
 
 The existing inline `AWS::Config::OrganizationConformancePack` resource
