@@ -856,9 +856,7 @@ Resources:
       Timeout: 180
       MemorySize: 128
       Role: !GetAtt AccountPartitionerRole.Arn
-      Code:
-        S3Bucket: !Ref PipelineBucket
-        S3Key: !Sub "${DeployVersion}/aws_account_partitioner.zip"
+      Code: "../../src/lambda/aws_account_partitioner/build/AccountPartitionerLambda/"
       Environment:
         Variables:
           PARTITION_TABLE_NAME: !Ref PartitionStateTable
