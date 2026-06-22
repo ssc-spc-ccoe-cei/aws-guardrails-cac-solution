@@ -805,6 +805,20 @@ Resources:
       KeySchema:
         - AttributeName: AccountId
           KeyType: HASH
+      # Cross-account read access for the audit-account permissions Lambda `aws_lambda_permissions_setup`
+      ResourcePolicy:
+        PolicyDocument:
+          Version: "2012-10-17"
+          Statement:
+            - Sid: AllowAuditAccountPermissionsLambdaRead
+              Effect: Allow
+              Principal:
+                AWS:
+                  - !Sub "arn:${AWS::Partition}:iam::${AuditAccountID}:role/${RolePrefix}setup_lambda_permissions_role"
+              Action:
+                - "dynamodb:Scan"
+                - "dynamodb:GetItem"
+              Resource: "*"
 
   AccountPartitionerRole:
     Type: AWS::IAM::Role
@@ -1276,6 +1290,9 @@ Resources:
           ParameterValue: !Ref RolePrefix
         - ParameterKey: PartitionStateTableName
           ParameterValue: !Ref PartitionStateTable
+        # Added for permissions lambda to access Mgmt Acct DynamoDB partition-state table
+        - ParameterKey: PartitionStateTableAccountId
+          ParameterValue: !Ref AWS::AccountId
       PermissionModel: SERVICE_MANAGED
       StackInstancesGroup:
         - DeploymentTargets:
@@ -1986,6 +2003,8 @@ Resources:
       Parameters:
         OrganizationName: !Ref OrganizationName
         RootStackName: !Ref RootStackName
+        # Needed for State Machine to construct the cross-account ARN for the permissions Lambda's lambda:InvokeFunction.
+        AuditAccountID: !Ref AuditAccountID
 
 Outputs:
   ClientEvidenceBucket:

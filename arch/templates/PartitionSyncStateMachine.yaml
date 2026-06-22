@@ -29,6 +29,14 @@ Parameters:
       stacks cannot be updated directly, so the state machine has to
       target the root.
 
+  AuditAccountID:
+    Type: String
+    Description: >-
+      12-digit AWS account ID of the audit account. The permissions
+      Lambda (aws_lambda_permissions_setup) is deployed by the PartN
+      StackSet into the audit account, so the state machine must
+      invoke it across accounts. 
+
 Resources:
   PartitionSyncStateMachineLogGroup:
     Type: AWS::Logs::LogGroup
@@ -53,19 +61,18 @@ Resources:
           PolicyDocument:
             Version: "2012-10-17"
             Statement:
-              # Both Lambdas are referenced by deterministic name
-              # ("${OrganizationName}<suffix>"). The partitioner lives
-              # in main.yaml, the permissions Lambda in PartN's
-              # StackSet — both deployed to the same account as this
-              # state machine, so no cross-account assume-role is
-              # needed.
+              # The partitioner Lambda lives in the management account
+              # (main.yaml) — same account as this state machine, so
+              # ${AWS::AccountId} is correct. The permissions Lambda is
+              # created by PartN's StackSet in the audit account, so it
+              # is referenced by its full cross-account ARN. 
               - Sid: AllowInvokePartitionSyncLambdas
                 Effect: Allow
                 Action:
                   - "lambda:InvokeFunction"
                 Resource:
                   - !Sub "arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:${OrganizationName}aws_account_partitioner"
-                  - !Sub "arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:${OrganizationName}aws_lambda_permissions_setup"
+                  - !Sub "arn:aws:lambda:${AWS::Region}:${AuditAccountID}:function:${OrganizationName}aws_lambda_permissions_setup"
         - PolicyName: AllowRootStackUpdate
           PolicyDocument:
             Version: "2012-10-17"
@@ -116,7 +123,7 @@ Resources:
               LogGroupArn: !GetAtt PartitionSyncStateMachineLogGroup.Arn
       DefinitionSubstitutions:
         PartitionerFunctionName: !Sub "${OrganizationName}aws_account_partitioner"
-        PermissionsFunctionName: !Sub "${OrganizationName}aws_lambda_permissions_setup"
+        PermissionsFunctionName: !Sub "arn:aws:lambda:${AWS::Region}:${AuditAccountID}:function:${OrganizationName}aws_lambda_permissions_setup"
         RootStackName: !Ref RootStackName
       DefinitionString: |-
         {

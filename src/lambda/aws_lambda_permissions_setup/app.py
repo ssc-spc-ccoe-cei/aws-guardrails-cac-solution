@@ -59,6 +59,7 @@ logger.setLevel(logging.INFO)
 PARTITION_TABLE_NAME = os.environ.get(
     "PARTITION_TABLE_NAME", "gc-guardrails-partition-state"
 )
+PARTITION_TABLE_ACCOUNT_ID = os.environ.get("PARTITION_TABLE_ACCOUNT_ID", "")
 
 # Guardrail base function suffixes (one entry per guardrail). Each entry yields
 # one Lambda per partition: ``<org_name><suffix>`` for partition 1 and
@@ -108,27 +109,40 @@ GUARDRAIL_LAMBDA_SUFFIXES = [
 # DynamoDB partition state
 # ---------------------------------------------------------------------------
 
-def read_partition_state(table_name):
+def _partition_table_identifier():
+    """Returns the identifier (table name or full ARN) for the partition table.
+
+    Same-account deployments use the bare table name. Cross-account access
+    via the table's ``ResourcePolicy`` requires the full table ARN to be
+    passed where the SDK accepts a name — boto3 does not infer the target
+    account from the table name alone.
+    """
+    if not PARTITION_TABLE_ACCOUNT_ID:
+        return PARTITION_TABLE_NAME
+    region = os.environ.get("AWS_REGION") or "ca-central-1"
+    return (
+        f"arn:aws:dynamodb:{region}:"
+        f"{PARTITION_TABLE_ACCOUNT_ID}:table/{PARTITION_TABLE_NAME}"
+    )
+
+
+def read_partition_state(table_identifier):
     """Reads the partition state table and returns a partition -> accounts map.
 
-    :param table_name: DynamoDB table name.
+    :param table_identifier: DynamoDB table name (same-account) or full table
+        ARN (cross-account — required when the table lives in a different
+        account, since ``boto3.resource("dynamodb").Table(name)`` cannot
+        target a different account by table name alone).
     :return: dict mapping ``PartitionId`` (int) -> set of account-id strings.
     """
-    dynamodb = boto3.resource("dynamodb")
-    table = dynamodb.Table(table_name)
+    client = boto3.client("dynamodb")
     partitions = {}
-
-    response = table.scan()
-    for item in response.get("Items", []):
-        pid = int(item["PartitionId"])
-        partitions.setdefault(pid, set()).add(item["AccountId"])
-
-    while "LastEvaluatedKey" in response:
-        response = table.scan(ExclusiveStartKey=response["LastEvaluatedKey"])
-        for item in response.get("Items", []):
-            pid = int(item["PartitionId"])
-            partitions.setdefault(pid, set()).add(item["AccountId"])
-
+    paginator = client.get_paginator("scan")
+    for page in paginator.paginate(TableName=table_identifier):
+        for item in page.get("Items", []):
+            pid = int(item["PartitionId"]["N"])
+            account_id = item["AccountId"]["S"]
+            partitions.setdefault(pid, set()).add(account_id)
     return partitions
 
 
@@ -387,15 +401,16 @@ def apply_lambda_permissions():
     :return: 1 on success, -1 on error.
     """
     organization_name = os.environ.get("OrganizationName", "")
+    table_identifier = _partition_table_identifier()
     logger.info("Organization Name: %s", organization_name)
-    logger.info("Partition table:  %s", PARTITION_TABLE_NAME)
+    logger.info("Partition table:  %s", table_identifier)
 
     try:
-        partitions = read_partition_state(PARTITION_TABLE_NAME)
+        partitions = read_partition_state(table_identifier)
     except botocore.exceptions.ClientError as error:
         logger.error(
             "Failed to read partition state from %s: %s",
-            PARTITION_TABLE_NAME, error,
+            table_identifier, error,
         )
         return -1
 
@@ -403,7 +418,7 @@ def apply_lambda_permissions():
         logger.warning(
             "Partition state table %s is empty. The partitioner Lambda may "
             "not have run yet. Nothing to do.",
-            PARTITION_TABLE_NAME,
+            table_identifier,
         )
         # Treat as a successful no-op so the CFN Custom Resource doesn't fail
         # on a fresh deploy where the partitioner runs in the same stack.

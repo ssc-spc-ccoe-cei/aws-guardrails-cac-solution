@@ -25,11 +25,24 @@ Parameters:
       DynamoDB table (written by aws_account_partitioner) mapping each active
       AWS account to its partition. Consumed by aws_lambda_permissions_setup
       to sync each guardrail Lambda clone's resource-based policy.
+  PartitionStateTableAccountId:
+    Type: String
+    Default: ""
+    Description: >
+      12-digit AWS account ID that owns the PartitionStateTable. Leave empty for same-account deployments
+      (the Lambda will fall back to the bare table name).
 
 Conditions:
   IsAuditAccount: !Equals
     - !Ref AWS::AccountId
     - !Ref AuditAccountID
+  HasCrossAccountPartitionTable: !Not
+    - !Equals
+      - !Ref PartitionStateTableAccountId
+      - ""
+  IsAuditAccountAndCrossAccountTable: !And
+    - !Condition IsAuditAccount
+    - !Condition HasCrossAccountPartitionTable
 
 Resources:
   #############################################
@@ -70,7 +83,10 @@ Resources:
               - "dynamodb:Scan"
               - "dynamodb:GetItem"
             Resource:
-              - !Sub "arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${PartitionStateTableName}"
+              - !If
+                - HasCrossAccountPartitionTable
+                - !Sub "arn:aws:dynamodb:${AWS::Region}:${PartitionStateTableAccountId}:table/${PartitionStateTableName}"
+                - !Sub "arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${PartitionStateTableName}"
             Effect: Allow
       PolicyName: gc_setup_lambda_execution_role_policy
       Roles:
@@ -123,3 +139,15 @@ Resources:
           OrganizationName:
             Ref: OrganizationName
           PARTITION_TABLE_NAME: !Ref PartitionStateTableName
+          PARTITION_TABLE_ACCOUNT_ID: !Ref PartitionStateTableAccountId
+
+  # Cross-account invoke permission for the partition-sync Step Function.
+  # The state machine lives in the management account and invokes this
+  # Lambda by its full ARN as part of the 6-hour sync cron.
+  LambdaPermissionsLambdaInvokeByStateMachine:
+    Condition: IsAuditAccountAndCrossAccountTable
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: "lambda:InvokeFunction"
+      FunctionName: !Ref LambdaPermissionsLambda
+      Principal: !Sub "arn:aws:iam::${PartitionStateTableAccountId}:role/${OrganizationName}PartitionSyncStateMachineRole"

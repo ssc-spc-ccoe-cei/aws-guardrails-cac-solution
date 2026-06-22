@@ -230,3 +230,31 @@ The following actions are allowed across various AWS services:
 
 ### Resources
 `*` (except where narrower scopes are noted above)
+
+---
+
+## Cross-account resource policies
+
+### `PartitionStateTable` (DynamoDB, management account)
+
+The partition-state DynamoDB table is created by `main.yaml` in the **management account** but is consumed by `aws_lambda_permissions_setup` running in the **audit account**. The table carries a `ResourcePolicy` allowing the audit-account permissions-Lambda role to read it.
+
+#### Trusted Principal
+`arn:${AWS::Partition}:iam::${AuditAccountID}:role/${RolePrefix}setup_lambda_permissions_role`
+
+#### Allowed Actions
+- `dynamodb:Scan`
+- `dynamodb:GetItem`
+
+#### Resource
+`*` (scoped to the table itself by virtue of being a resource-based policy)
+
+### `LambdaPermissionsLambda` (Lambda, audit account)
+
+The permissions Lambda is invoked cross-account by the `PartitionSyncStateMachine` (which lives in the management account). An `AWS::Lambda::Permission` resource grants the state-machine role permission to invoke the Lambda.
+
+#### Trusted Principal
+`arn:aws:iam::${PartitionStateTableAccountId}:role/${OrganizationName}PartitionSyncStateMachineRole`
+
+#### Allowed Action
+`lambda:InvokeFunction`
