@@ -13,8 +13,8 @@ Parameters:
   SecurityOUID: "ou-ihvo-484xr2sf"
   # Can be left default
   RolePrefix: "gc-"
-  AccelRolePrefix: "AWSAccelerator-"
-  AcceleratorRole: "AWSAccelerator-PipelineRole"
+  AccelRolePrefix: "AWSA-"
+  AcceleratorRole: "OrganizationAccountAccessRole"
   DestBucketName: "ssc-audit-report-destination-830442031185"
   EvidenceBucketName: ""
   AWSConfigConformsBucketName: ""
