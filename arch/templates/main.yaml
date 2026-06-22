@@ -313,7 +313,13 @@ Resources:
       TrustPrincipal: !Sub arn:${AWS::Partition}:iam::${AuditAccountID}:root
       SwitchRole: !Ref AcceleratorRole
       RoleName: !Sub ${AccelRolePrefix}GCLambdaExecutionRole
-      PolicyPackage: !Sub
+      # YAML anchor: this block is the canonical source of truth for
+      # the GCLambdaExecutionRole policy package. It is aliased into
+      # ManagementAccountOrgRoleGenerator's Parameters below so the
+      # steady-state new-account path in OrgRoleGenerator.yaml uses the
+      # exact same policy (no drift between the bootstrap path here and
+      # the EventBridge target Input over there).
+      PolicyPackage: &gcLambdaExecutionRolePolicyPackage !Sub
         - |
           {
             "Docs": [{
@@ -461,7 +467,12 @@ Resources:
       TrustPrincipal: !Sub arn:${AWS::Partition}:iam::${AuditAccountID}:root
       SwitchRole: !Ref AcceleratorRole
       RoleName: !Sub ${AccelRolePrefix}GCLambdaExecutionRole2
-      PolicyPackage: |
+      # YAML anchor: canonical source of truth for the
+      # GCLambdaExecutionRole2 policy package. Aliased below into
+      # ManagementAccountOrgRoleGenerator's Parameters so the
+      # EventBridge new-account path in OrgRoleGenerator.yaml stays in
+      # lockstep with this bootstrap path. See InvokeCustomLambda above.
+      PolicyPackage: &gcLambdaExecutionRole2PolicyPackage |
         {
           "Docs": [{
             "Version": "2012-10-17",
@@ -805,7 +816,7 @@ Resources:
       KeySchema:
         - AttributeName: AccountId
           KeyType: HASH
-      # Cross-account read access for the audit-account permissions Lambda `aws_lambda_permissions_setup`
+      # Cross-account read access for the audit-account permissions Lambda `aws_lambda_permissions_setup`.
       ResourcePolicy:
         PolicyDocument:
           Version: "2012-10-17"
@@ -814,7 +825,7 @@ Resources:
               Effect: Allow
               Principal:
                 AWS:
-                  - !Sub "arn:${AWS::Partition}:iam::${AuditAccountID}:role/${RolePrefix}setup_lambda_permissions_role"
+                  - !Sub "arn:${AWS::Partition}:iam::${AuditAccountID}:root"
               Action:
                 - "dynamodb:Scan"
                 - "dynamodb:GetItem"
@@ -1947,26 +1958,26 @@ Resources:
           ParameterValue: !Ref OrganizationName
         - ParameterKey: AuditAccountID
           ParameterValue: !Ref AuditAccountID
-        - ParameterKey: ClientEvidenceBucket
-          ParameterValue:
-            !If [
-              GenerateEvidenceBucketName,
-              !GetAtt GenerateEvidenceBucketName.EvidenceBucketName,
-              !Ref EvidenceBucketName,
-            ]
-        - ParameterKey: AWSConfigConformsBucketName
-          ParameterValue:
-            !If [
-              GenerateAWSConfigConformsBucketName,
-              !GetAtt GenerateEvidenceBucketName.AWSConfigBucketName,
-              !Ref AWSConfigConformsBucketName,
-            ]
         - ParameterKey: AccelRolePrefix
           ParameterValue: !Ref AccelRolePrefix
         - ParameterKey: RolePrefix
           ParameterValue: !Ref RolePrefix
         - ParameterKey: AcceleratorRole
           ParameterValue: !Ref AcceleratorRole
+        # YAML-alias the SAME policy package values used by
+        # InvokeCustomLambda / InvokeCustomLambda2 above. The CFN engine
+        # resolves both the bootstrap (this stack) and steady-state
+        # (EventBridge target Input in OrgRoleGenerator.yaml) paths from
+        # one source — eliminating the drift that previously left newly
+        # onboarded accounts with a strictly weaker GCLambdaExecutionRole.
+        # Bucket-specific ARNs (${ClientEvidenceBucket} /
+        # ${AWSConfigConformsBucketName}) are already `!Sub`-resolved
+        # inside the anchored block, so OrgRoleGenerator.yaml no longer
+        # needs to receive the bucket names separately.
+        - ParameterKey: GCLambdaExecutionRolePolicyPackage
+          ParameterValue: *gcLambdaExecutionRolePolicyPackage
+        - ParameterKey: GCLambdaExecutionRole2PolicyPackage
+          ParameterValue: *gcLambdaExecutionRole2PolicyPackage
       PermissionModel: SELF_MANAGED # SERVICE_MANAGED
       StackInstancesGroup:
         - DeploymentTargets:
