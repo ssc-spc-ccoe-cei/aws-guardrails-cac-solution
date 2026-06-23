@@ -129,8 +129,6 @@ Resources:
             - !Split [",", !Ref AccountsInP3]
             - !Ref AWS::NoValue
       ConformancePackInputParameters:
-        - ParameterName: PartitionSuffix
-          ParameterValue: ""
         - ParameterName: UpdateTriggerVersion
           ParameterValue: !Ref InvokeUpdate
         - ParameterName: GCLambdaExecutionRoleName
