@@ -62,5 +62,6 @@
   "cSpell.words": [
     "esdc"
   ],
-  "makefile.configureOnOpen": false
+  "makefile.configureOnOpen": false,
+  "python-envs.pythonProjects": []
 }

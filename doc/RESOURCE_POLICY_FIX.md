@@ -397,16 +397,17 @@ flowchart TB
         main -->|"AccountsInP1/P2/P3"| nested
         nested --> packs
 
+        main --> psStack
+        psStack --> sfn
+        psStack --> cron
+
         main --> partN
+        psStack -.->|"DependsOn\n(role must exist before\nLambdaPermissionsLambda-\nInvokeByStateMachine\ncalls AddPermission)"| partN
         partN --> permLambda
         permLambda -->|"reads, then\nAddPermission per account"| ddb
 
         main --> am
         am -.->|"loads"| framework
-
-        main --> psStack
-        psStack --> sfn
-        psStack --> cron
     end
 
     classDef yaml fill:#fff,stroke:#e91e63,stroke-width:2px,color:#333;

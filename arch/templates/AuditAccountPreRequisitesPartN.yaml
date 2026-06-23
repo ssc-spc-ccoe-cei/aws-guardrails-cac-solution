@@ -4,33 +4,30 @@ Description: Configures AWS Config and AWS Audit Manager for multi-account manag
 Parameters:
   OrganizationName:
     Type: String
-    Default: ""
+    Default: ''
     Description: The name of the organization. Used as a prefix in resource names.
   AuditAccountID:
     Type: String
-    Default: ""
+    Default: ''
     Description: 12-digit AWS Account ID (e.g., '222222222222')
   RolePrefix:
     Type: String
-    Default: ""
+    Default: ''
     Description: Role name prefix
   PythonRuntime:
     Type: String
-    Default: "python3.12"
+    Default: python3.12
     Description: The python runtime to use for the compliance dashboard
   PartitionStateTableName:
     Type: String
-    Default: "gc-guardrails-partition-state"
-    Description: >
-      DynamoDB table (written by aws_account_partitioner) mapping each active
-      AWS account to its partition. Consumed by aws_lambda_permissions_setup
-      to sync each guardrail Lambda clone's resource-based policy.
+    Default: gc-guardrails-partition-state
+    Description: |
+      DynamoDB table (written by aws_account_partitioner) mapping each active AWS account to its partition. Consumed by aws_lambda_permissions_setup to sync each guardrail Lambda clone's resource-based policy.
   PartitionStateTableAccountId:
     Type: String
-    Default: ""
-    Description: >
-      12-digit AWS account ID that owns the PartitionStateTable. Leave empty for same-account deployments
-      (the Lambda will fall back to the bare table name).
+    Default: ''
+    Description: |
+      12-digit AWS account ID that owns the PartitionStateTable. Leave empty for same-account deployments (the Lambda will fall back to the bare table name).
 
 Conditions:
   IsAuditAccount: !Equals
@@ -39,7 +36,7 @@ Conditions:
   HasCrossAccountPartitionTable: !Not
     - !Equals
       - !Ref PartitionStateTableAccountId
-      - ""
+      - ''
   IsAuditAccountAndCrossAccountTable: !And
     - !Condition IsAuditAccount
     - !Condition HasCrossAccountPartitionTable
@@ -53,40 +50,40 @@ Resources:
     Type: AWS::IAM::Policy
     Properties:
       PolicyDocument:
-        Version: "2012-10-17"
+        Version: '2012-10-17'
         Statement:
           - Sid: AllowCreateLogGroup
             Action:
-              - "logs:CreateLogGroup"
+              - logs:CreateLogGroup
             Resource:
-              - !Sub "arn:aws:logs:${AWS::Region}:${AWS::AccountId}:*"
+              - !Sub arn:aws:logs:${AWS::Region}:${AWS::AccountId}:*
             Effect: Allow
           - Sid: AllowLogging
             Action:
-              - "logs:CreateLogGroup"
-              - "logs:CreateLogStream"
-              - "logs:PutLogEvents"
+              - logs:CreateLogGroup
+              - logs:CreateLogStream
+              - logs:PutLogEvents
             Resource:
-              - !Sub "arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/lambda/${OrganizationName}gc*"
+              - !Sub arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/lambda/${OrganizationName}gc*
             Effect: Allow
           - Sid: AllowLambdaPermissions
             Action:
-              - "lambda:AddPermission"
-              - "lambda:RemovePermission"
-              - "lambda:GetPolicy"
-              - "lambda:GetFunction"
+              - lambda:AddPermission
+              - lambda:RemovePermission
+              - lambda:GetPolicy
+              - lambda:GetFunction
             Resource:
-              - !Sub "arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:${OrganizationName}gc*"
+              - !Sub arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:${OrganizationName}gc*
             Effect: Allow
           - Sid: AllowDynamoDBReadPartitionState
             Action:
-              - "dynamodb:Scan"
-              - "dynamodb:GetItem"
+              - dynamodb:Scan
+              - dynamodb:GetItem
             Resource:
               - !If
                 - HasCrossAccountPartitionTable
-                - !Sub "arn:aws:dynamodb:${AWS::Region}:${PartitionStateTableAccountId}:table/${PartitionStateTableName}"
-                - !Sub "arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${PartitionStateTableName}"
+                - !Sub arn:aws:dynamodb:${AWS::Region}:${PartitionStateTableAccountId}:table/${PartitionStateTableName}
+                - !Sub arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${PartitionStateTableName}
             Effect: Allow
       PolicyName: gc_setup_lambda_execution_role_policy
       Roles:
@@ -97,28 +94,28 @@ Resources:
     Type: AWS::IAM::Role
     Properties:
       AssumeRolePolicyDocument:
-        Version: "2012-10-17"
+        Version: '2012-10-17'
         Statement:
-          - Effect: "Allow"
+          - Effect: Allow
             Principal:
               Service:
-                - "lambda.amazonaws.com"
+                - lambda.amazonaws.com
             Action:
-              - "sts:AssumeRole"
-      Description: "Setup Lambda Permissions"
+              - sts:AssumeRole
+      Description: Setup Lambda Permissions
       ManagedPolicyArns:
         - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
-      Path: "/"
+      Path: /
       RoleName: !Sub ${RolePrefix}setup_lambda_permissions_role
       Tags:
-        - Key: "Source"
-          Value: "Proserve Delivery Kit"
+        - Key: Source
+          Value: Proserve Delivery Kit
 
   LambdaPermissionsSetup:
     Condition: IsAuditAccount
     Type: Custom::LambdaPermissionsSetup
     Properties:
-      ServiceToken: !Sub "arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:${OrganizationName}aws_lambda_permissions_setup"
+      ServiceToken: !Sub arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:${OrganizationName}aws_lambda_permissions_setup
       UpdateVariable: QVdTb21lCg8
       TriggerProperty: 40
     DependsOn:
@@ -128,16 +125,15 @@ Resources:
     Condition: IsAuditAccount
     Type: AWS::Lambda::Function
     Properties:
-      FunctionName: !Sub "${OrganizationName}aws_lambda_permissions_setup"
-      Code: "../../src/lambda/aws_lambda_permissions_setup/build/LambdaPermissionsLambda/"
+      FunctionName: !Sub ${OrganizationName}aws_lambda_permissions_setup
+      Code: ../../src/lambda/aws_lambda_permissions_setup/build/LambdaPermissionsLambda/
       Handler: app.lambda_handler
       Role: !GetAtt LambdaPermissionsExecutionRole.Arn
       Runtime: !Ref PythonRuntime
       Timeout: 600
       Environment:
         Variables:
-          OrganizationName:
-            Ref: OrganizationName
+          OrganizationName: !Ref OrganizationName
           PARTITION_TABLE_NAME: !Ref PartitionStateTableName
           PARTITION_TABLE_ACCOUNT_ID: !Ref PartitionStateTableAccountId
 
@@ -148,6 +144,6 @@ Resources:
     Condition: IsAuditAccountAndCrossAccountTable
     Type: AWS::Lambda::Permission
     Properties:
-      Action: "lambda:InvokeFunction"
+      Action: lambda:InvokeFunction
       FunctionName: !Ref LambdaPermissionsLambda
-      Principal: !Sub "arn:aws:iam::${PartitionStateTableAccountId}:role/${OrganizationName}PartitionSyncStateMachineRole"
+      Principal: !Sub arn:aws:iam::${PartitionStateTableAccountId}:role/${OrganizationName}PartitionSyncStateMachineRole

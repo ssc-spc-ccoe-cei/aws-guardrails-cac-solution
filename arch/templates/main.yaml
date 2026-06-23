@@ -1277,6 +1277,7 @@ Resources:
       - AuditAccountPreRequisitesPart6
       - AuditAccountPreRequisitesPart7
       - AuditAccountPreRequisitesPart8
+      - PartitionSyncStack
     Properties:
       AutoDeployment:
         Enabled: true
@@ -1992,23 +1993,13 @@ Resources:
   #
   # Post-deployment, an EventBridge cron fires every 6 hours and starts
   # the gc-guardrails-partition-sync Step Function defined in
-  # PartitionSyncStateMachine.yaml. Pulling these ~290 lines out of
-  # main.yaml keeps the deployment-critical template focused on
-  # deployment-time resources. See PartitionSyncStateMachine.yaml and
+  # PartitionSyncStateMachine.yaml. See PartitionSyncStateMachine.yaml and
   # doc/RESOURCE_POLICY_FIX.md for the full state-machine design.
-  #
-  # DependsOn:
-  #   - AccountPartitionerLambda: partitioner Lambda must exist before
-  #     the state machine's IAM role grants Invoke against it.
-  #   - AuditAccountPreRequisitesPartN: the permissions Lambda lives
-  #     in this StackSet; gating on PartN ensures the Lambda is in
-  #     place by the time the first cron fires (6 h after deploy).
   #######################################################
   PartitionSyncStack:
     Type: AWS::CloudFormation::Stack
     DependsOn:
       - AccountPartitionerLambda
-      - AuditAccountPreRequisitesPartN
     Properties:
       TemplateURL: !Sub https://${PipelineBucket}.s3.${AWS::Region}.amazonaws.com/${DeployVersion}/PartitionSyncStateMachine.yaml
       Parameters:

@@ -45,7 +45,7 @@ psm = load("arch/templates/PartitionSyncStateMachine.yaml")
 psm_params = psm.get("Parameters", {})
 psm_ress = psm.get("Resources", {})
 
-expected_params = {"OrganizationName", "RootStackName"}
+expected_params = {"OrganizationName", "RootStackName", "AuditAccountID"}
 missing_params = expected_params - set(psm_params.keys())
 extra_params = set(psm_params.keys()) - expected_params
 if missing_params:
@@ -207,12 +207,46 @@ else:
         print(f"*** main.yaml PartitionSyncStack missing params {missing_fp}")
         ok = False
     deps = stack_res.get("DependsOn", [])
-    for required_dep in ("AccountPartitionerLambda", "AuditAccountPreRequisitesPartN"):
+    # PartitionSyncStack must depend on AccountPartitionerLambda. It must
+    # NOT depend on AuditAccountPreRequisitesPartN — that direction is
+    # exactly the chicken-and-egg that breaks the deploy: PartN creates
+    # an AWS::Lambda::Permission whose Principal is the
+    # PartitionSyncStateMachineRole created by THIS stack, and Lambda's
+    # AddPermission API rejects ("The provided principal was invalid")
+    # principals whose IAM role does not yet exist. So PartN must
+    # DependsOn PartitionSyncStack, not the reverse.
+    for required_dep in ("AccountPartitionerLambda",):
         if required_dep not in deps:
             print(f"*** main.yaml PartitionSyncStack missing DependsOn: {required_dep}")
             ok = False
+    for forbidden_dep in ("AuditAccountPreRequisitesPartN",):
+        if forbidden_dep in deps:
+            print(f"*** main.yaml PartitionSyncStack has forbidden DependsOn: "
+                  f"{forbidden_dep} (would reintroduce 'The provided principal "
+                  f"was invalid' deploy failure — PartN must depend on this "
+                  f"stack, not the reverse)")
+            ok = False
     print(f"main.yaml: PartitionSyncStack OK "
           f"(params={sorted(fp.keys())}, DependsOn={deps})")
+
+# AuditAccountPreRequisitesPartN must DependsOn PartitionSyncStack so
+# the PartitionSyncStateMachineRole exists when PartN's audit-account
+# StackSet tries to attach LambdaPermissionsLambdaInvokeByStateMachine
+# (an AWS::Lambda::Permission whose Principal is that role).
+partn_res = main_ress.get("AuditAccountPreRequisitesPartN")
+if not partn_res:
+    print("*** main.yaml: missing AuditAccountPreRequisitesPartN")
+    ok = False
+else:
+    partn_deps = partn_res.get("DependsOn", [])
+    if "PartitionSyncStack" not in partn_deps:
+        print("*** main.yaml AuditAccountPreRequisitesPartN missing "
+              "DependsOn: PartitionSyncStack (required so the "
+              "PartitionSyncStateMachineRole exists before PartN's "
+              "LambdaPermissionsLambdaInvokeByStateMachine calls "
+              "Lambda's AddPermission API)")
+        ok = False
+    print(f"main.yaml: AuditAccountPreRequisitesPartN DependsOn={partn_deps}")
 
 # Old inline resources must be GONE from main.yaml.
 for r in expected_resources:
