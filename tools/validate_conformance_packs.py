@@ -1,4 +1,5 @@
 """Structural validator for the partitioned ConformancePack rollout."""
+import re
 import sys
 import yaml
 
@@ -48,8 +49,17 @@ if ps.get("Default") != "" or set(ps.get("AllowedValues", [])) != {"", "_p2", "_
 else:
     print("ConformancePack: PartitionSuffix parameter OK")
 
-# 2. Every Config rule's ConfigRuleName and SourceIdentifier reference
-#    ${PartitionSuffix}.
+# 2. Every Config rule must have a literal-string ConfigRuleName (NO
+#    intrinsic functions), and a SourceIdentifier that still references
+#    ${PartitionSuffix} (Lambda ARNs are per-partition).
+#
+# Why literal: AWS Config's OrganizationConformancePack template engine
+# silently ignores ConfigRuleName values that contain intrinsic
+# functions like !Sub, falling back to the CFN logical ID as the
+# deployed rule name.  Audit Manager keywords (`Custom_<name>-
+# conformance-pack`) then fail to match.  Static literals are the only
+# reliable form.  Partition isolation for the rules is already
+# guaranteed by ExcludedAccounts in ConformancePackPartitions.yaml.
 rules = [(n, r) for n, r in ress.items() if r.get("Type") == "AWS::Config::ConfigRule"]
 print(f"ConformancePack: {len(rules)} Config rules found")
 bad = 0
@@ -57,13 +67,12 @@ for name, r in rules:
     props = r.get("Properties", {})
     rule_name = props.get("ConfigRuleName")
     sid = props.get("Source", {}).get("SourceIdentifier")
-    # ConfigRuleName must be !Sub "...${PartitionSuffix}"
-    if not (isinstance(rule_name, dict)
-            and "Fn::Sub" in rule_name
-            and "${PartitionSuffix}" in rule_name["Fn::Sub"]):
-        print(f"  *** {name}: ConfigRuleName missing PartitionSuffix: {rule_name}")
+    # ConfigRuleName must be a literal string (e.g. "gc01_check_root_mfa")
+    if not (isinstance(rule_name, str) and re.match(r"^[a-z0-9_]+$", rule_name)):
+        print(f"  *** {name}: ConfigRuleName must be a literal snake_case string, got: {rule_name!r}")
         bad += 1
-    # SourceIdentifier must contain ${PartitionSuffix} somewhere in its Fn::Join
+    # SourceIdentifier must STILL contain ${PartitionSuffix} so that
+    # each partition's pack targets its own Lambda clone.
     sid_str = repr(sid)
     if "${PartitionSuffix}" not in sid_str:
         print(f"  *** {name}: SourceIdentifier missing PartitionSuffix")
@@ -71,7 +80,7 @@ for name, r in rules:
 if bad:
     ok = False
 else:
-    print(f"ConformancePack: all {len(rules)} rules suffix-aware")
+    print(f"ConformancePack: all {len(rules)} rules have literal ConfigRuleName + partition-aware SourceIdentifier")
 
 # ---------- ConformancePackPartitions.yaml (the new nested stack) ----------
 cpp = load("arch/templates/ConformancePackPartitions.yaml")
@@ -102,8 +111,10 @@ for r_name, expected_cond in expected_resource_conds.items():
         ok = False
 
 # Each pack must carry the correct PartitionSuffix input parameter.
+# P1 deliberately omits it and relies on the template's "" default
+# (commit 4ec1404 "removed empty partition suffix") — passing an empty
+# string explicitly is a no-op and just adds noise.
 for r_name, expected_suffix in [
-    ("ConformancePackP1", ""),
     ("ConformancePackP2", "_p2"),
     ("ConformancePackP3", "_p3"),
 ]:
@@ -118,6 +129,12 @@ for r_name, expected_suffix in [
     elif suffix_param.get("ParameterValue") != expected_suffix:
         print(f"*** {r_name}: PartitionSuffix={suffix_param.get('ParameterValue')!r} (expected {expected_suffix!r})")
         ok = False
+# P1 must NOT pass PartitionSuffix (relies on template default "").
+p1 = cpp_ress.get("ConformancePackP1", {})
+p1_inputs = p1.get("Properties", {}).get("ConformancePackInputParameters", [])
+if any(p.get("ParameterName") == "PartitionSuffix" for p in p1_inputs):
+    print("*** ConformancePackP1: PartitionSuffix input should be omitted (template default is \"\")")
+    ok = False
 print("ConformancePackPartitions: 3 packs wired with correct PartitionSuffix and HasAccountsInP* condition")
 
 # Required empty-string conditions on each partition's account list, plus
@@ -228,7 +245,7 @@ for cs in frameworks[0]["controlSets"]:
 
 print(f"Audit Manager framework: {len(controls)} controls")
 SKIP = {"gc01_check_attestation_letter"}
-expanded = 0
+matched = 0
 skipped = 0
 bad = 0
 for c in controls:
@@ -241,32 +258,24 @@ for c in controls:
         else:
             skipped += 1
         continue
-    if len(sources) != 3:
-        print(f"  *** {name}: expected 3 partition mappings, got {len(sources)}")
+    # Every other control maps to a single deployed Config rule named
+    # exactly after the control (the partition suffix lives on the
+    # Lambda, not the rule), so one keyword covers all 3 packs.
+    if len(sources) != 1:
+        print(f"  *** {name}: expected 1 mapping, got {len(sources)}")
         bad += 1
         continue
-    # Verify the 3 keywordValues
-    kvs = [s["sourceKeyword"]["keywordValue"] for s in sources]
-    expected = [
-        f"Custom_{name}-conformance-pack",
-        f"Custom_{name}_p2-conformance-pack",
-        f"Custom_{name}_p3-conformance-pack",
-    ]
-    if kvs != expected:
-        print(f"  *** {name}: keywordValues {kvs}, expected {expected}")
+    kv = sources[0]["sourceKeyword"]["keywordValue"]
+    expected = f"Custom_{name}-conformance-pack"
+    if kv != expected:
+        print(f"  *** {name}: keywordValue {kv!r}, expected {expected!r}")
         bad += 1
         continue
-    # Verify the 3 sourceNames are distinct
-    snames = [s["sourceName"] for s in sources]
-    if len(set(snames)) != 3:
-        print(f"  *** {name}: sourceNames not unique: {snames}")
-        bad += 1
-        continue
-    expanded += 1
+    matched += 1
 if bad:
     ok = False
 
-print(f"Audit Manager: {expanded} controls expanded to 3 mappings each, "
+print(f"Audit Manager: {matched} controls map to 1 keyword each, "
       f"{skipped} skipped (no Config rule)")
 
 print()

@@ -29,25 +29,7 @@ frameworks_data = [
                                     "keywordInputType": "SELECT_FROM_LIST",
                                     "keywordValue": "Custom_gc01_check_alerts_flag_misuse-conformance-pack",
                                 },
-                            },
-                            {
-                                "sourceName": "AlertsFlagMisuse-check-p2",
-                                "sourceSetUpOption": "System_Controls_Mapping",
-                                "sourceType": "AWS_Config",
-                                "sourceKeyword": {
-                                    "keywordInputType": "SELECT_FROM_LIST",
-                                    "keywordValue": "Custom_gc01_check_alerts_flag_misuse_p2-conformance-pack",
-                                },
-                            },
-                            {
-                                "sourceName": "AlertsFlagMisuse-check-p3",
-                                "sourceSetUpOption": "System_Controls_Mapping",
-                                "sourceType": "AWS_Config",
-                                "sourceKeyword": {
-                                    "keywordInputType": "SELECT_FROM_LIST",
-                                    "keywordValue": "Custom_gc01_check_alerts_flag_misuse_p3-conformance-pack",
-                                },
-                            },
+                            }
                         ],
                         "tags": {},
                     },
@@ -68,7 +50,7 @@ frameworks_data = [
                                     "keywordInputType": "SELECT_FROM_LIST",
                                     "keywordValue": "Custom_gc01_check_attestation_letter-conformance-pack",
                                 },
-                            },
+                            }
                         ],
                         "tags": {},
                     },
@@ -89,25 +71,7 @@ frameworks_data = [
                                     "keywordInputType": "SELECT_FROM_LIST",
                                     "keywordValue": "Custom_gc01_check_dedicated_admin_account-conformance-pack",
                                 },
-                            },
-                            {
-                                "sourceName": "DedicatedAdminAccount-check-p2",
-                                "sourceSetUpOption": "System_Controls_Mapping",
-                                "sourceType": "AWS_Config",
-                                "sourceKeyword": {
-                                    "keywordInputType": "SELECT_FROM_LIST",
-                                    "keywordValue": "Custom_gc01_check_dedicated_admin_account_p2-conformance-pack",
-                                },
-                            },
-                            {
-                                "sourceName": "DedicatedAdminAccount-check-p3",
-                                "sourceSetUpOption": "System_Controls_Mapping",
-                                "sourceType": "AWS_Config",
-                                "sourceKeyword": {
-                                    "keywordInputType": "SELECT_FROM_LIST",
-                                    "keywordValue": "Custom_gc01_check_dedicated_admin_account_p3-conformance-pack",
-                                },
-                            },
+                            }
                         ],
                         "tags": {},
                     },
@@ -128,25 +92,7 @@ frameworks_data = [
                                     "keywordInputType": "SELECT_FROM_LIST",
                                     "keywordValue": "Custom_gc01_check_federated_users_mfa-conformance-pack",
                                 },
-                            },
-                            {
-                                "sourceName": "FederatedUsersMFA-check-p2",
-                                "sourceSetUpOption": "System_Controls_Mapping",
-                                "sourceType": "AWS_Config",
-                                "sourceKeyword": {
-                                    "keywordInputType": "SELECT_FROM_LIST",
-                                    "keywordValue": "Custom_gc01_check_federated_users_mfa_p2-conformance-pack",
-                                },
-                            },
-                            {
-                                "sourceName": "FederatedUsersMFA-check-p3",
-                                "sourceSetUpOption": "System_Controls_Mapping",
-                                "sourceType": "AWS_Config",
-                                "sourceKeyword": {
-                                    "keywordInputType": "SELECT_FROM_LIST",
-                                    "keywordValue": "Custom_gc01_check_federated_users_mfa_p3-conformance-pack",
-                                },
-                            },
+                            }
                         ],
                         "tags": {},
                     },
@@ -167,25 +113,7 @@ frameworks_data = [
                                     "keywordInputType": "SELECT_FROM_LIST",
                                     "keywordValue": "Custom_gc01_check_iam_users_mfa-conformance-pack",
                                 },
-                            },
-                            {
-                                "sourceName": "IAMUsersMFA-check-p2",
-                                "sourceSetUpOption": "System_Controls_Mapping",
-                                "sourceType": "AWS_Config",
-                                "sourceKeyword": {
-                                    "keywordInputType": "SELECT_FROM_LIST",
-                                    "keywordValue": "Custom_gc01_check_iam_users_mfa_p2-conformance-pack",
-                                },
-                            },
-                            {
-                                "sourceName": "IAMUsersMFA-check-p3",
-                                "sourceSetUpOption": "System_Controls_Mapping",
-                                "sourceType": "AWS_Config",
-                                "sourceKeyword": {
-                                    "keywordInputType": "SELECT_FROM_LIST",
-                                    "keywordValue": "Custom_gc01_check_iam_users_mfa_p3-conformance-pack",
-                                },
-                            },
+                            }
                         ],
                         "tags": {},
                     },
@@ -206,25 +134,7 @@ frameworks_data = [
                                     "keywordInputType": "SELECT_FROM_LIST",
                                     "keywordValue": "Custom_gc01_check_mfa_digital_policy-conformance-pack",
                                 },
-                            },
-                            {
-                                "sourceName": "MFADigitalPolicy-check-p2",
-                                "sourceSetUpOption": "System_Controls_Mapping",
-                                "sourceType": "AWS_Config",
-                                "sourceKeyword": {
-                                    "keywordInputType": "SELECT_FROM_LIST",
-                                    "keywordValue": "Custom_gc01_check_mfa_digital_policy_p2-conformance-pack",
-                                },
-                            },
-                            {
-                                "sourceName": "MFADigitalPolicy-check-p3",
-                                "sourceSetUpOption": "System_Controls_Mapping",
-                                "sourceType": "AWS_Config",
-                                "sourceKeyword": {
-                                    "keywordInputType": "SELECT_FROM_LIST",
-                                    "keywordValue": "Custom_gc01_check_mfa_digital_policy_p3-conformance-pack",
-                                },
-                            },
+                            }
                         ],
                         "tags": {},
                     },
@@ -245,25 +155,7 @@ frameworks_data = [
                                     "keywordInputType": "SELECT_FROM_LIST",
                                     "keywordValue": "Custom_gc01_check_monitoring_and_logging-conformance-pack",
                                 },
-                            },
-                            {
-                                "sourceName": "MonitoringAndLogging-check-p2",
-                                "sourceSetUpOption": "System_Controls_Mapping",
-                                "sourceType": "AWS_Config",
-                                "sourceKeyword": {
-                                    "keywordInputType": "SELECT_FROM_LIST",
-                                    "keywordValue": "Custom_gc01_check_monitoring_and_logging_p2-conformance-pack",
-                                },
-                            },
-                            {
-                                "sourceName": "MonitoringAndLogging-check-p3",
-                                "sourceSetUpOption": "System_Controls_Mapping",
-                                "sourceType": "AWS_Config",
-                                "sourceKeyword": {
-                                    "keywordInputType": "SELECT_FROM_LIST",
-                                    "keywordValue": "Custom_gc01_check_monitoring_and_logging_p3-conformance-pack",
-                                },
-                            },
+                            }
                         ],
                         "tags": {},
                     },
@@ -284,25 +176,7 @@ frameworks_data = [
                                     "keywordInputType": "SELECT_FROM_LIST",
                                     "keywordValue": "Custom_gc01_check_root_mfa-conformance-pack",
                                 },
-                            },
-                            {
-                                "sourceName": "RootMFA-check-p2",
-                                "sourceSetUpOption": "System_Controls_Mapping",
-                                "sourceType": "AWS_Config",
-                                "sourceKeyword": {
-                                    "keywordInputType": "SELECT_FROM_LIST",
-                                    "keywordValue": "Custom_gc01_check_root_mfa_p2-conformance-pack",
-                                },
-                            },
-                            {
-                                "sourceName": "RootMFA-check-p3",
-                                "sourceSetUpOption": "System_Controls_Mapping",
-                                "sourceType": "AWS_Config",
-                                "sourceKeyword": {
-                                    "keywordInputType": "SELECT_FROM_LIST",
-                                    "keywordValue": "Custom_gc01_check_root_mfa_p3-conformance-pack",
-                                },
-                            },
+                            }
                         ],
                         "tags": {},
                     },
@@ -329,25 +203,7 @@ frameworks_data = [
                                     "keywordInputType": "SELECT_FROM_LIST",
                                     "keywordValue": "Custom_gc02_check_group_access_configuration-conformance-pack",
                                 },
-                            },
-                            {
-                                "sourceName": "GroupAccessConfiguration-check-p2",
-                                "sourceSetUpOption": "System_Controls_Mapping",
-                                "sourceType": "AWS_Config",
-                                "sourceKeyword": {
-                                    "keywordInputType": "SELECT_FROM_LIST",
-                                    "keywordValue": "Custom_gc02_check_group_access_configuration_p2-conformance-pack",
-                                },
-                            },
-                            {
-                                "sourceName": "GroupAccessConfiguration-check-p3",
-                                "sourceSetUpOption": "System_Controls_Mapping",
-                                "sourceType": "AWS_Config",
-                                "sourceKeyword": {
-                                    "keywordInputType": "SELECT_FROM_LIST",
-                                    "keywordValue": "Custom_gc02_check_group_access_configuration_p3-conformance-pack",
-                                },
-                            },
+                            }
                         ],
                         "tags": {},
                     },
@@ -368,25 +224,7 @@ frameworks_data = [
                                     "keywordInputType": "SELECT_FROM_LIST",
                                     "keywordValue": "Custom_gc02_check_iam_password_policy-conformance-pack",
                                 },
-                            },
-                            {
-                                "sourceName": "IAMPasswordPolicy-check-p2",
-                                "sourceSetUpOption": "System_Controls_Mapping",
-                                "sourceType": "AWS_Config",
-                                "sourceKeyword": {
-                                    "keywordInputType": "SELECT_FROM_LIST",
-                                    "keywordValue": "Custom_gc02_check_iam_password_policy_p2-conformance-pack",
-                                },
-                            },
-                            {
-                                "sourceName": "IAMPasswordPolicy-check-p3",
-                                "sourceSetUpOption": "System_Controls_Mapping",
-                                "sourceType": "AWS_Config",
-                                "sourceKeyword": {
-                                    "keywordInputType": "SELECT_FROM_LIST",
-                                    "keywordValue": "Custom_gc02_check_iam_password_policy_p3-conformance-pack",
-                                },
-                            },
+                            }
                         ],
                         "tags": {},
                     },
@@ -407,25 +245,7 @@ frameworks_data = [
                                     "keywordInputType": "SELECT_FROM_LIST",
                                     "keywordValue": "Custom_gc02_check_password_protection_mechanisms-conformance-pack",
                                 },
-                            },
-                            {
-                                "sourceName": "IAMPasswordPolicy-check-p2",
-                                "sourceSetUpOption": "System_Controls_Mapping",
-                                "sourceType": "AWS_Config",
-                                "sourceKeyword": {
-                                    "keywordInputType": "SELECT_FROM_LIST",
-                                    "keywordValue": "Custom_gc02_check_password_protection_mechanisms_p2-conformance-pack",
-                                },
-                            },
-                            {
-                                "sourceName": "IAMPasswordPolicy-check-p3",
-                                "sourceSetUpOption": "System_Controls_Mapping",
-                                "sourceType": "AWS_Config",
-                                "sourceKeyword": {
-                                    "keywordInputType": "SELECT_FROM_LIST",
-                                    "keywordValue": "Custom_gc02_check_password_protection_mechanisms_p3-conformance-pack",
-                                },
-                            },
+                            }
                         ],
                         "tags": {},
                     },
@@ -446,25 +266,7 @@ frameworks_data = [
                                     "keywordInputType": "SELECT_FROM_LIST",
                                     "keywordValue": "Custom_gc02_check_privileged_roles_review-conformance-pack",
                                 },
-                            },
-                            {
-                                "sourceName": "IAMPrivilegedRolesReview-check-p2",
-                                "sourceSetUpOption": "System_Controls_Mapping",
-                                "sourceType": "AWS_Config",
-                                "sourceKeyword": {
-                                    "keywordInputType": "SELECT_FROM_LIST",
-                                    "keywordValue": "Custom_gc02_check_privileged_roles_review_p2-conformance-pack",
-                                },
-                            },
-                            {
-                                "sourceName": "IAMPrivilegedRolesReview-check-p3",
-                                "sourceSetUpOption": "System_Controls_Mapping",
-                                "sourceType": "AWS_Config",
-                                "sourceKeyword": {
-                                    "keywordInputType": "SELECT_FROM_LIST",
-                                    "keywordValue": "Custom_gc02_check_privileged_roles_review_p3-conformance-pack",
-                                },
-                            },
+                            }
                         ],
                         "tags": {},
                     },
@@ -490,25 +292,7 @@ frameworks_data = [
                                     "keywordInputType": "SELECT_FROM_LIST",
                                     "keywordValue": "Custom_gc03_check_endpoint_access_config-conformance-pack",
                                 },
-                            },
-                            {
-                                "sourceName": "EndpointAccessConfig-check-p2",
-                                "sourceSetUpOption": "System_Controls_Mapping",
-                                "sourceType": "AWS_Config",
-                                "sourceKeyword": {
-                                    "keywordInputType": "SELECT_FROM_LIST",
-                                    "keywordValue": "Custom_gc03_check_endpoint_access_config_p2-conformance-pack",
-                                },
-                            },
-                            {
-                                "sourceName": "EndpointAccessConfig-check-p3",
-                                "sourceSetUpOption": "System_Controls_Mapping",
-                                "sourceType": "AWS_Config",
-                                "sourceKeyword": {
-                                    "keywordInputType": "SELECT_FROM_LIST",
-                                    "keywordValue": "Custom_gc03_check_endpoint_access_config_p3-conformance-pack",
-                                },
-                            },
+                            }
                         ],
                         "tags": {},
                     },
@@ -529,25 +313,7 @@ frameworks_data = [
                                     "keywordInputType": "SELECT_FROM_LIST",
                                     "keywordValue": "Custom_gc03_check_trusted_devices_admin_access-conformance-pack",
                                 },
-                            },
-                            {
-                                "sourceName": "CW-check-p2",
-                                "sourceSetUpOption": "System_Controls_Mapping",
-                                "sourceType": "AWS_Config",
-                                "sourceKeyword": {
-                                    "keywordInputType": "SELECT_FROM_LIST",
-                                    "keywordValue": "Custom_gc03_check_trusted_devices_admin_access_p2-conformance-pack",
-                                },
-                            },
-                            {
-                                "sourceName": "CW-check-p3",
-                                "sourceSetUpOption": "System_Controls_Mapping",
-                                "sourceType": "AWS_Config",
-                                "sourceKeyword": {
-                                    "keywordInputType": "SELECT_FROM_LIST",
-                                    "keywordValue": "Custom_gc03_check_trusted_devices_admin_access_p3-conformance-pack",
-                                },
-                            },
+                            }
                         ],
                         "tags": {},
                     },
@@ -573,25 +339,7 @@ frameworks_data = [
                                     "keywordInputType": "SELECT_FROM_LIST",
                                     "keywordValue": "Custom_gc04_check_alerts_flag_misuse-conformance-pack",
                                 },
-                            },
-                            {
-                                "sourceName": "Rules-check-p2",
-                                "sourceSetUpOption": "System_Controls_Mapping",
-                                "sourceType": "AWS_Config",
-                                "sourceKeyword": {
-                                    "keywordInputType": "SELECT_FROM_LIST",
-                                    "keywordValue": "Custom_gc04_check_alerts_flag_misuse_p2-conformance-pack",
-                                },
-                            },
-                            {
-                                "sourceName": "Rules-check-p3",
-                                "sourceSetUpOption": "System_Controls_Mapping",
-                                "sourceType": "AWS_Config",
-                                "sourceKeyword": {
-                                    "keywordInputType": "SELECT_FROM_LIST",
-                                    "keywordValue": "Custom_gc04_check_alerts_flag_misuse_p3-conformance-pack",
-                                },
-                            },
+                            }
                         ],
                         "tags": {},
                     },
@@ -612,25 +360,7 @@ frameworks_data = [
                                     "keywordInputType": "SELECT_FROM_LIST",
                                     "keywordValue": "Custom_gc04_check_enterprise_monitoring-conformance-pack",
                                 },
-                            },
-                            {
-                                "sourceName": "IAM-check-p2",
-                                "sourceSetUpOption": "System_Controls_Mapping",
-                                "sourceType": "AWS_Config",
-                                "sourceKeyword": {
-                                    "keywordInputType": "SELECT_FROM_LIST",
-                                    "keywordValue": "Custom_gc04_check_enterprise_monitoring_p2-conformance-pack",
-                                },
-                            },
-                            {
-                                "sourceName": "IAM-check-p3",
-                                "sourceSetUpOption": "System_Controls_Mapping",
-                                "sourceType": "AWS_Config",
-                                "sourceKeyword": {
-                                    "keywordInputType": "SELECT_FROM_LIST",
-                                    "keywordValue": "Custom_gc04_check_enterprise_monitoring_p3-conformance-pack",
-                                },
-                            },
+                            }
                         ],
                         "tags": {},
                     },
@@ -656,25 +386,7 @@ frameworks_data = [
                                     "keywordInputType": "SELECT_FROM_LIST",
                                     "keywordValue": "Custom_gc05_check_data_location-conformance-pack",
                                 },
-                            },
-                            {
-                                "sourceName": "Resource Check-p2",
-                                "sourceSetUpOption": "System_Controls_Mapping",
-                                "sourceType": "AWS_Config",
-                                "sourceKeyword": {
-                                    "keywordInputType": "SELECT_FROM_LIST",
-                                    "keywordValue": "Custom_gc05_check_data_location_p2-conformance-pack",
-                                },
-                            },
-                            {
-                                "sourceName": "Resource Check-p3",
-                                "sourceSetUpOption": "System_Controls_Mapping",
-                                "sourceType": "AWS_Config",
-                                "sourceKeyword": {
-                                    "keywordInputType": "SELECT_FROM_LIST",
-                                    "keywordValue": "Custom_gc05_check_data_location_p3-conformance-pack",
-                                },
-                            },
+                            }
                         ],
                         "tags": {},
                     }
@@ -700,25 +412,7 @@ frameworks_data = [
                                     "keywordInputType": "SELECT_FROM_LIST",
                                     "keywordValue": "Custom_gc06_check_encryption_at_rest_part1-conformance-pack",
                                 },
-                            },
-                            {
-                                "sourceName": "ResourceCheck-p2",
-                                "sourceSetUpOption": "System_Controls_Mapping",
-                                "sourceType": "AWS_Config",
-                                "sourceKeyword": {
-                                    "keywordInputType": "SELECT_FROM_LIST",
-                                    "keywordValue": "Custom_gc06_check_encryption_at_rest_part1_p2-conformance-pack",
-                                },
-                            },
-                            {
-                                "sourceName": "ResourceCheck-p3",
-                                "sourceSetUpOption": "System_Controls_Mapping",
-                                "sourceType": "AWS_Config",
-                                "sourceKeyword": {
-                                    "keywordInputType": "SELECT_FROM_LIST",
-                                    "keywordValue": "Custom_gc06_check_encryption_at_rest_part1_p3-conformance-pack",
-                                },
-                            },
+                            }
                         ],
                         "tags": {},
                     },
@@ -739,25 +433,7 @@ frameworks_data = [
                                     "keywordInputType": "SELECT_FROM_LIST",
                                     "keywordValue": "Custom_gc06_check_encryption_at_rest_part2-conformance-pack",
                                 },
-                            },
-                            {
-                                "sourceName": "ResourceCheck-p2",
-                                "sourceSetUpOption": "System_Controls_Mapping",
-                                "sourceType": "AWS_Config",
-                                "sourceKeyword": {
-                                    "keywordInputType": "SELECT_FROM_LIST",
-                                    "keywordValue": "Custom_gc06_check_encryption_at_rest_part2_p2-conformance-pack",
-                                },
-                            },
-                            {
-                                "sourceName": "ResourceCheck-p3",
-                                "sourceSetUpOption": "System_Controls_Mapping",
-                                "sourceType": "AWS_Config",
-                                "sourceKeyword": {
-                                    "keywordInputType": "SELECT_FROM_LIST",
-                                    "keywordValue": "Custom_gc06_check_encryption_at_rest_part2_p3-conformance-pack",
-                                },
-                            },
+                            }
                         ],
                         "tags": {},
                     },
@@ -783,25 +459,7 @@ frameworks_data = [
                                     "keywordInputType": "SELECT_FROM_LIST",
                                     "keywordValue": "Custom_gc07_check_certificate_authorities-conformance-pack",
                                 },
-                            },
-                            {
-                                "sourceName": "CertificateAuthoritiesCheck-p2",
-                                "sourceSetUpOption": "System_Controls_Mapping",
-                                "sourceType": "AWS_Config",
-                                "sourceKeyword": {
-                                    "keywordInputType": "SELECT_FROM_LIST",
-                                    "keywordValue": "Custom_gc07_check_certificate_authorities_p2-conformance-pack",
-                                },
-                            },
-                            {
-                                "sourceName": "CertificateAuthoritiesCheck-p3",
-                                "sourceSetUpOption": "System_Controls_Mapping",
-                                "sourceType": "AWS_Config",
-                                "sourceKeyword": {
-                                    "keywordInputType": "SELECT_FROM_LIST",
-                                    "keywordValue": "Custom_gc07_check_certificate_authorities_p3-conformance-pack",
-                                },
-                            },
+                            }
                         ],
                         "tags": {},
                     },
@@ -822,25 +480,7 @@ frameworks_data = [
                                     "keywordInputType": "SELECT_FROM_LIST",
                                     "keywordValue": "Custom_gc07_check_cryptographic_algorithms-conformance-pack",
                                 },
-                            },
-                            {
-                                "sourceName": "CryptographicAlgorithmsCheck-p2",
-                                "sourceSetUpOption": "System_Controls_Mapping",
-                                "sourceType": "AWS_Config",
-                                "sourceKeyword": {
-                                    "keywordInputType": "SELECT_FROM_LIST",
-                                    "keywordValue": "Custom_gc07_check_cryptographic_algorithms_p2-conformance-pack",
-                                },
-                            },
-                            {
-                                "sourceName": "CryptographicAlgorithmsCheck-p3",
-                                "sourceSetUpOption": "System_Controls_Mapping",
-                                "sourceType": "AWS_Config",
-                                "sourceKeyword": {
-                                    "keywordInputType": "SELECT_FROM_LIST",
-                                    "keywordValue": "Custom_gc07_check_cryptographic_algorithms_p3-conformance-pack",
-                                },
-                            },
+                            }
                         ],
                         "tags": {},
                     },
@@ -861,25 +501,7 @@ frameworks_data = [
                                     "keywordInputType": "SELECT_FROM_LIST",
                                     "keywordValue": "Custom_gc07_check_encryption_in_transit-conformance-pack",
                                 },
-                            },
-                            {
-                                "sourceName": "ResourceCheck-p2",
-                                "sourceSetUpOption": "System_Controls_Mapping",
-                                "sourceType": "AWS_Config",
-                                "sourceKeyword": {
-                                    "keywordInputType": "SELECT_FROM_LIST",
-                                    "keywordValue": "Custom_gc07_check_encryption_in_transit_p2-conformance-pack",
-                                },
-                            },
-                            {
-                                "sourceName": "ResourceCheck-p3",
-                                "sourceSetUpOption": "System_Controls_Mapping",
-                                "sourceType": "AWS_Config",
-                                "sourceKeyword": {
-                                    "keywordInputType": "SELECT_FROM_LIST",
-                                    "keywordValue": "Custom_gc07_check_encryption_in_transit_p3-conformance-pack",
-                                },
-                            },
+                            }
                         ],
                         "tags": {},
                     },
@@ -906,25 +528,7 @@ frameworks_data = [
                                     "keywordInputType": "SELECT_FROM_LIST",
                                     "keywordValue": "Custom_gc08_check_cloud_deployment_guide-conformance-pack",
                                 },
-                            },
-                            {
-                                "sourceName": "CloudDeploymentGuide-check-p2",
-                                "sourceSetUpOption": "System_Controls_Mapping",
-                                "sourceType": "AWS_Config",
-                                "sourceKeyword": {
-                                    "keywordInputType": "SELECT_FROM_LIST",
-                                    "keywordValue": "Custom_gc08_check_cloud_deployment_guide_p2-conformance-pack",
-                                },
-                            },
-                            {
-                                "sourceName": "CloudDeploymentGuide-check-p3",
-                                "sourceSetUpOption": "System_Controls_Mapping",
-                                "sourceType": "AWS_Config",
-                                "sourceKeyword": {
-                                    "keywordInputType": "SELECT_FROM_LIST",
-                                    "keywordValue": "Custom_gc08_check_cloud_deployment_guide_p3-conformance-pack",
-                                },
-                            },
+                            }
                         ],
                         "tags": {},
                     },
@@ -945,25 +549,7 @@ frameworks_data = [
                                     "keywordInputType": "SELECT_FROM_LIST",
                                     "keywordValue": "Custom_gc08_check_cloud_segmentation_design-conformance-pack",
                                 },
-                            },
-                            {
-                                "sourceName": "CloudSegmentationDesign-check-p2",
-                                "sourceSetUpOption": "System_Controls_Mapping",
-                                "sourceType": "AWS_Config",
-                                "sourceKeyword": {
-                                    "keywordInputType": "SELECT_FROM_LIST",
-                                    "keywordValue": "Custom_gc08_check_cloud_segmentation_design_p2-conformance-pack",
-                                },
-                            },
-                            {
-                                "sourceName": "CloudSegmentationDesign-check-p3",
-                                "sourceSetUpOption": "System_Controls_Mapping",
-                                "sourceType": "AWS_Config",
-                                "sourceKeyword": {
-                                    "keywordInputType": "SELECT_FROM_LIST",
-                                    "keywordValue": "Custom_gc08_check_cloud_segmentation_design_p3-conformance-pack",
-                                },
-                            },
+                            }
                         ],
                         "tags": {},
                     },
@@ -984,25 +570,7 @@ frameworks_data = [
                                     "keywordInputType": "SELECT_FROM_LIST",
                                     "keywordValue": "Custom_gc08_check_target_network_architecture-conformance-pack",
                                 },
-                            },
-                            {
-                                "sourceName": "TargetNetworkArchitectureDoc-check-p2",
-                                "sourceSetUpOption": "System_Controls_Mapping",
-                                "sourceType": "AWS_Config",
-                                "sourceKeyword": {
-                                    "keywordInputType": "SELECT_FROM_LIST",
-                                    "keywordValue": "Custom_gc08_check_target_network_architecture_p2-conformance-pack",
-                                },
-                            },
-                            {
-                                "sourceName": "TargetNetworkArchitectureDoc-check-p3",
-                                "sourceSetUpOption": "System_Controls_Mapping",
-                                "sourceType": "AWS_Config",
-                                "sourceKeyword": {
-                                    "keywordInputType": "SELECT_FROM_LIST",
-                                    "keywordValue": "Custom_gc08_check_target_network_architecture_p3-conformance-pack",
-                                },
-                            },
+                            }
                         ],
                         "tags": {},
                     },
@@ -1029,25 +597,7 @@ frameworks_data = [
                                     "keywordInputType": "SELECT_FROM_LIST",
                                     "keywordValue": "Custom_gc09_check_non_public_storage_accounts-conformance-pack",
                                 },
-                            },
-                            {
-                                "sourceName": "NonPublicStorageAccounts-check-p2",
-                                "sourceSetUpOption": "System_Controls_Mapping",
-                                "sourceType": "AWS_Config",
-                                "sourceKeyword": {
-                                    "keywordInputType": "SELECT_FROM_LIST",
-                                    "keywordValue": "Custom_gc09_check_non_public_storage_accounts_p2-conformance-pack",
-                                },
-                            },
-                            {
-                                "sourceName": "NonPublicStorageAccounts-check-p3",
-                                "sourceSetUpOption": "System_Controls_Mapping",
-                                "sourceType": "AWS_Config",
-                                "sourceKeyword": {
-                                    "keywordInputType": "SELECT_FROM_LIST",
-                                    "keywordValue": "Custom_gc09_check_non_public_storage_accounts_p3-conformance-pack",
-                                },
-                            },
+                            }
                         ],
                         "tags": {},
                     },
@@ -1073,25 +623,7 @@ frameworks_data = [
                                     "keywordInputType": "SELECT_FROM_LIST",
                                     "keywordValue": "Custom_gc10_check_cyber_center_sensors-conformance-pack",
                                 },
-                            },
-                            {
-                                "sourceName": "CyberCenterSensors-check-p2",
-                                "sourceSetUpOption": "System_Controls_Mapping",
-                                "sourceType": "AWS_Config",
-                                "sourceKeyword": {
-                                    "keywordInputType": "SELECT_FROM_LIST",
-                                    "keywordValue": "Custom_gc10_check_cyber_center_sensors_p2-conformance-pack",
-                                },
-                            },
-                            {
-                                "sourceName": "CyberCenterSensors-check-p3",
-                                "sourceSetUpOption": "System_Controls_Mapping",
-                                "sourceType": "AWS_Config",
-                                "sourceKeyword": {
-                                    "keywordInputType": "SELECT_FROM_LIST",
-                                    "keywordValue": "Custom_gc10_check_cyber_center_sensors_p3-conformance-pack",
-                                },
-                            },
+                            }
                         ],
                         "tags": {},
                     },
@@ -1117,25 +649,7 @@ frameworks_data = [
                                     "keywordInputType": "SELECT_FROM_LIST",
                                     "keywordValue": "Custom_gc11_check_monitoring_all_users-conformance-pack",
                                 },
-                            },
-                            {
-                                "sourceName": "MonitoringAllUsers-check-p2",
-                                "sourceSetUpOption": "System_Controls_Mapping",
-                                "sourceType": "AWS_Config",
-                                "sourceKeyword": {
-                                    "keywordInputType": "SELECT_FROM_LIST",
-                                    "keywordValue": "Custom_gc11_check_monitoring_all_users_p2-conformance-pack",
-                                },
-                            },
-                            {
-                                "sourceName": "MonitoringAllUsers-check-p3",
-                                "sourceSetUpOption": "System_Controls_Mapping",
-                                "sourceType": "AWS_Config",
-                                "sourceKeyword": {
-                                    "keywordInputType": "SELECT_FROM_LIST",
-                                    "keywordValue": "Custom_gc11_check_monitoring_all_users_p3-conformance-pack",
-                                },
-                            },
+                            }
                         ],
                         "tags": {},
                     },
@@ -1156,25 +670,7 @@ frameworks_data = [
                                     "keywordInputType": "SELECT_FROM_LIST",
                                     "keywordValue": "Custom_gc11_check_monitoring_use_cases-conformance-pack",
                                 },
-                            },
-                            {
-                                "sourceName": "MonitoringUseCases-check-p2",
-                                "sourceSetUpOption": "System_Controls_Mapping",
-                                "sourceType": "AWS_Config",
-                                "sourceKeyword": {
-                                    "keywordInputType": "SELECT_FROM_LIST",
-                                    "keywordValue": "Custom_gc11_check_monitoring_use_cases_p2-conformance-pack",
-                                },
-                            },
-                            {
-                                "sourceName": "MonitoringUseCases-check-p3",
-                                "sourceSetUpOption": "System_Controls_Mapping",
-                                "sourceType": "AWS_Config",
-                                "sourceKeyword": {
-                                    "keywordInputType": "SELECT_FROM_LIST",
-                                    "keywordValue": "Custom_gc11_check_monitoring_use_cases_p3-conformance-pack",
-                                },
-                            },
+                            }
                         ],
                         "tags": {},
                     },
@@ -1195,25 +691,9 @@ frameworks_data = [
                                     "keywordInputType": "SELECT_FROM_LIST",
                                     "keywordValue": "Custom_gc11_check_policy_event_logging-conformance-pack",
                                 },
-                            },
-                            {
-                                "sourceName": "AWS Account - Check Policy Event Logging-p2",
-                                "sourceSetUpOption": "System_Controls_Mapping",
-                                "sourceType": "AWS_Config",
-                                "sourceKeyword": {
-                                    "keywordInputType": "SELECT_FROM_LIST",
-                                    "keywordValue": "Custom_gc11_check_policy_event_logging_p2-conformance-pack",
-                                },
-                            },
-                            {
-                                "sourceName": "AWS Account - Check Policy Event Logging-p3",
-                                "sourceSetUpOption": "System_Controls_Mapping",
-                                "sourceType": "AWS_Config",
-                                "sourceKeyword": {
-                                    "keywordInputType": "SELECT_FROM_LIST",
-                                    "keywordValue": "Custom_gc11_check_policy_event_logging_p3-conformance-pack",
-                                },
-                            },
+                            }
+
+                            
                         ],
                         "tags": {},
                     },
@@ -1234,25 +714,7 @@ frameworks_data = [
                                     "keywordInputType": "SELECT_FROM_LIST",
                                     "keywordValue": "Custom_gc11_check_security_contact-conformance-pack",
                                 },
-                            },
-                            {
-                                "sourceName": "AWS Account - Alternate Contacts-p2",
-                                "sourceSetUpOption": "System_Controls_Mapping",
-                                "sourceType": "AWS_Config",
-                                "sourceKeyword": {
-                                    "keywordInputType": "SELECT_FROM_LIST",
-                                    "keywordValue": "Custom_gc11_check_security_contact_p2-conformance-pack",
-                                },
-                            },
-                            {
-                                "sourceName": "AWS Account - Alternate Contacts-p3",
-                                "sourceSetUpOption": "System_Controls_Mapping",
-                                "sourceType": "AWS_Config",
-                                "sourceKeyword": {
-                                    "keywordInputType": "SELECT_FROM_LIST",
-                                    "keywordValue": "Custom_gc11_check_security_contact_p3-conformance-pack",
-                                },
-                            },
+                            }
                         ],
                         "tags": {},
                     },
@@ -1271,25 +733,7 @@ frameworks_data = [
                                     "keywordInputType": "SELECT_FROM_LIST",
                                     "keywordValue": "Custom_gc11_check_timezone-conformance-pack",
                                 },
-                            },
-                            {
-                                "sourceName": "Timezone-check-p2",
-                                "sourceSetUpOption": "System_Controls_Mapping",
-                                "sourceType": "AWS_Config",
-                                "sourceKeyword": {
-                                    "keywordInputType": "SELECT_FROM_LIST",
-                                    "keywordValue": "Custom_gc11_check_timezone_p2-conformance-pack",
-                                },
-                            },
-                            {
-                                "sourceName": "Timezone-check-p3",
-                                "sourceSetUpOption": "System_Controls_Mapping",
-                                "sourceType": "AWS_Config",
-                                "sourceKeyword": {
-                                    "keywordInputType": "SELECT_FROM_LIST",
-                                    "keywordValue": "Custom_gc11_check_timezone_p3-conformance-pack",
-                                },
-                            },
+                            }
                         ],
                         "tags": {},
                     },
@@ -1310,25 +754,7 @@ frameworks_data = [
                                     "keywordInputType": "SELECT_FROM_LIST",
                                     "keywordValue": "Custom_gc11_check_trail_logging-conformance-pack",
                                 },
-                            },
-                            {
-                                "sourceName": "AWS Account - CloudTrail Status-p2",
-                                "sourceSetUpOption": "System_Controls_Mapping",
-                                "sourceType": "AWS_Config",
-                                "sourceKeyword": {
-                                    "keywordInputType": "SELECT_FROM_LIST",
-                                    "keywordValue": "Custom_gc11_check_trail_logging_p2-conformance-pack",
-                                },
-                            },
-                            {
-                                "sourceName": "AWS Account - CloudTrail Status-p3",
-                                "sourceSetUpOption": "System_Controls_Mapping",
-                                "sourceType": "AWS_Config",
-                                "sourceKeyword": {
-                                    "keywordInputType": "SELECT_FROM_LIST",
-                                    "keywordValue": "Custom_gc11_check_trail_logging_p3-conformance-pack",
-                                },
-                            },
+                            }
                         ],
                         "tags": {},
                     },
@@ -1354,25 +780,7 @@ frameworks_data = [
                                     "keywordInputType": "SELECT_FROM_LIST",
                                     "keywordValue": "Custom_gc12_check_private_marketplace-conformance-pack",
                                 },
-                            },
-                            {
-                                "sourceName": "AWS Marketplace Catalog Check-p2",
-                                "sourceSetUpOption": "System_Controls_Mapping",
-                                "sourceType": "AWS_Config",
-                                "sourceKeyword": {
-                                    "keywordInputType": "SELECT_FROM_LIST",
-                                    "keywordValue": "Custom_gc12_check_private_marketplace_p2-conformance-pack",
-                                },
-                            },
-                            {
-                                "sourceName": "AWS Marketplace Catalog Check-p3",
-                                "sourceSetUpOption": "System_Controls_Mapping",
-                                "sourceType": "AWS_Config",
-                                "sourceKeyword": {
-                                    "keywordInputType": "SELECT_FROM_LIST",
-                                    "keywordValue": "Custom_gc12_check_private_marketplace_p3-conformance-pack",
-                                },
-                            },
+                            }
                         ],
                         "tags": {},
                     }
@@ -1398,25 +806,7 @@ frameworks_data = [
                                     "keywordInputType": "SELECT_FROM_LIST",
                                     "keywordValue": "Custom_gc13_check_emergency_account_alerts-conformance-pack",
                                 },
-                            },
-                            {
-                                "sourceName": "EmergencyAccountAlerts-check-p2",
-                                "sourceSetUpOption": "System_Controls_Mapping",
-                                "sourceType": "AWS_Config",
-                                "sourceKeyword": {
-                                    "keywordInputType": "SELECT_FROM_LIST",
-                                    "keywordValue": "Custom_gc13_check_emergency_account_alerts_p2-conformance-pack",
-                                },
-                            },
-                            {
-                                "sourceName": "EmergencyAccountAlerts-check-p3",
-                                "sourceSetUpOption": "System_Controls_Mapping",
-                                "sourceType": "AWS_Config",
-                                "sourceKeyword": {
-                                    "keywordInputType": "SELECT_FROM_LIST",
-                                    "keywordValue": "Custom_gc13_check_emergency_account_alerts_p3-conformance-pack",
-                                },
-                            },
+                            }
                         ],
                         "tags": {},
                     },
@@ -1437,25 +827,7 @@ frameworks_data = [
                                     "keywordInputType": "SELECT_FROM_LIST",
                                     "keywordValue": "Custom_gc13_check_emergency_account_management-conformance-pack",
                                 },
-                            },
-                            {
-                                "sourceName": "EmergencyAccountManagement-check-p2",
-                                "sourceSetUpOption": "System_Controls_Mapping",
-                                "sourceType": "AWS_Config",
-                                "sourceKeyword": {
-                                    "keywordInputType": "SELECT_FROM_LIST",
-                                    "keywordValue": "Custom_gc13_check_emergency_account_management_p2-conformance-pack",
-                                },
-                            },
-                            {
-                                "sourceName": "EmergencyAccountManagement-check-p3",
-                                "sourceSetUpOption": "System_Controls_Mapping",
-                                "sourceType": "AWS_Config",
-                                "sourceKeyword": {
-                                    "keywordInputType": "SELECT_FROM_LIST",
-                                    "keywordValue": "Custom_gc13_check_emergency_account_management_p3-conformance-pack",
-                                },
-                            },
+                            }
                         ],
                         "tags": {},
                     },
@@ -1476,25 +848,7 @@ frameworks_data = [
                                     "keywordInputType": "SELECT_FROM_LIST",
                                     "keywordValue": "Custom_gc13_check_emergency_account_mgmt_approvals-conformance-pack",
                                 },
-                            },
-                            {
-                                "sourceName": "EmergencyAccountManagementApprovals-check-p2",
-                                "sourceSetUpOption": "System_Controls_Mapping",
-                                "sourceType": "AWS_Config",
-                                "sourceKeyword": {
-                                    "keywordInputType": "SELECT_FROM_LIST",
-                                    "keywordValue": "Custom_gc13_check_emergency_account_mgmt_approvals_p2-conformance-pack",
-                                },
-                            },
-                            {
-                                "sourceName": "EmergencyAccountManagementApprovals-check-p3",
-                                "sourceSetUpOption": "System_Controls_Mapping",
-                                "sourceType": "AWS_Config",
-                                "sourceKeyword": {
-                                    "keywordInputType": "SELECT_FROM_LIST",
-                                    "keywordValue": "Custom_gc13_check_emergency_account_mgmt_approvals_p3-conformance-pack",
-                                },
-                            },
+                            }
                         ],
                         "tags": {},
                     },
@@ -1513,25 +867,7 @@ frameworks_data = [
                                     "keywordInputType": "SELECT_FROM_LIST",
                                     "keywordValue": "Custom_gc13_check_emergency_account_testing-conformance-pack",
                                 },
-                            },
-                            {
-                                "sourceName": "EmergencyAccountTesting-check-p2",
-                                "sourceSetUpOption": "System_Controls_Mapping",
-                                "sourceType": "AWS_Config",
-                                "sourceKeyword": {
-                                    "keywordInputType": "SELECT_FROM_LIST",
-                                    "keywordValue": "Custom_gc13_check_emergency_account_testing_p2-conformance-pack",
-                                },
-                            },
-                            {
-                                "sourceName": "EmergencyAccountTesting-check-p3",
-                                "sourceSetUpOption": "System_Controls_Mapping",
-                                "sourceType": "AWS_Config",
-                                "sourceKeyword": {
-                                    "keywordInputType": "SELECT_FROM_LIST",
-                                    "keywordValue": "Custom_gc13_check_emergency_account_testing_p3-conformance-pack",
-                                },
-                            },
+                            }
                         ],
                         "tags": {},
                     },

@@ -160,8 +160,11 @@ PartitionSuffix:
   AllowedValues: ["", "_p2", "_p3"]
 ```
 
-…and appended to every `ConfigRuleName` and to the Lambda function name in every
-`SourceIdentifier` (37 rules × 2 substitutions). Example:
+…and appended to the Lambda function name in every `SourceIdentifier` (37
+rules). `ConfigRuleName` is left as a static literal — AWS Config's
+conformance-pack template engine silently ignores `!Sub` in `ConfigRuleName`
+(falling back to the CFN logical ID), so the suffix can only meaningfully
+flow into properties AWS Config actually evaluates. Example:
 
 ```yaml
 # Before
@@ -171,14 +174,16 @@ SourceIdentifier:
                   !Sub ":function:${OrganizationName}gc01_check_root_mfa"]]
 
 # After
-ConfigRuleName: !Sub "gc01_check_root_mfa${PartitionSuffix}"
+ConfigRuleName: gc01_check_root_mfa                                            # unchanged
 SourceIdentifier:
   Fn::Join: ["", ["arn:aws:lambda:ca-central-1:", !Ref AuditAccountID,
                   !Sub ":function:${OrganizationName}gc01_check_root_mfa${PartitionSuffix}"]]
 ```
 
-When the P2 pack passes `PartitionSuffix: "_p2"`, the deployed rule becomes
-`gc01_check_root_mfa_p2` and targets the `<org>gc01_check_root_mfa_p2` Lambda clone.
+When the P2 pack passes `PartitionSuffix: "_p2"`, the deployed rule stays named
+`gc01_check_root_mfa` (identical across all 3 packs) and targets the
+`<org>gc01_check_root_mfa_p2` Lambda clone. Per-account uniqueness is guaranteed
+because `ExcludedAccounts` ensures each account ever sees exactly one pack.
 
 #### 4b. `ConformancePackPartitions.yaml` — new nested stack
 
@@ -213,34 +218,31 @@ base `<org>gc*` Lambdas only — the upgrade path requires no manual configurati
 
 ---
 
-### 5. Audit Manager custom framework — three `controlMappingSources` per control
+### 5. Audit Manager custom framework — one `controlMappingSources` entry per control
 
-Because Audit Manager controls reference Config rules by *name* (not ARN), each
-control's `controlMappingSources` list is expanded from one entry to three —
-one per partition variant (`…`, `…_p2`, `…_p3`) — so evidence is collected
-regardless of which partition's Config rule produced an evaluation.
+Because Audit Manager controls reference Config rules by *name* (not ARN), and
+the deployed Config rule name is identical across all three partitions
+(`PartitionSuffix` only flows into Lambda ARNs, not into `ConfigRuleName`),
+each control keeps a single `controlMappingSources` entry that covers every
+partition automatically.
 
 ```python
 "controlMappingSources": [
-    {"sourceName": "RootMFA-check",     ..., "keywordValue": "Custom_gc01_check_root_mfa-conformance-pack"},
-    {"sourceName": "RootMFA-check-p2",  ..., "keywordValue": "Custom_gc01_check_root_mfa_p2-conformance-pack"},
-    {"sourceName": "RootMFA-check-p3",  ..., "keywordValue": "Custom_gc01_check_root_mfa_p3-conformance-pack"},
+    {"sourceName": "RootMFA-check", ..., "keywordValue": "Custom_gc01_check_root_mfa-conformance-pack"},
 ],
 ```
 
 Key properties:
 
-- Audit Manager's `CreateControl` / `UpdateControl` does **not** validate that
-  the referenced Config rules exist — `keywordValue` is a soft string reference.
-  At ≤ 70 accounts the `_p2` / `_p3` sources simply return zero evidence and
-  contribute nothing to the merged control.
+- One keyword per control matches the (identically-named) deployed rule in
+  every account across all 3 partitions, so evidence aggregation is automatic.
 - Applies to **37 of 38 controls**; `gc01_check_attestation_letter` is documentation-only
   and stays at one mapping.
-- Audit Manager's per-control limit of 5 `controlMappingSources` is well above the 3 used.
+- Audit Manager's per-control limit of 5 `controlMappingSources` is well above the 1 used.
 - **Forward-compatible with growth:** when an org later crosses 70 (or 140)
-  accounts and `ConformancePackP2` (or `P3`) is deployed, the previously-empty
-  sources start returning real evaluations on the next collection cycle — no
-  framework redeploy, no control rename.
+  accounts and `ConformancePackP2` (or `P3`) is deployed, the existing keyword
+  starts picking up evaluations from the new partition's accounts on the next
+  collection cycle — no framework redeploy, no control rename.
 
 Control names themselves are unchanged, so `aws_compile_audit_report` (which
 groups evidence by control name) continues to produce the same 38 CSV rows
@@ -683,8 +685,8 @@ pre-fix deployment".**
   `PartitionCount=1`, `AccountsInP1=<CSV of all active account IDs>`,
   `AccountsInP2=""`, `AccountsInP3=""`.
 - Audit Manager custom framework deployed; each of the 37 controls
-  has 3 `controlMappingSources` (`gc01_check_root_mfa`,
-  `…_p2`, `…_p3`); `gc01_check_attestation_letter` has 1.
+  has 1 `controlMappingSources` entry keying `Custom_<gc..>-conformance-pack`;
+  `gc01_check_attestation_letter` also has 1.
 - `PartitionSyncStateMachine` exists and the
   `PartitionSyncScheduleRule` EventBridge rule is `Enabled`.
 

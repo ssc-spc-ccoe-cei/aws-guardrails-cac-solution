@@ -146,7 +146,7 @@ Resources:
   GC01CheckRootAccountMFAEnabled:
     Type: "AWS::Config::ConfigRule"
     Properties:
-      ConfigRuleName: !Sub "gc01_check_root_mfa${PartitionSuffix}"
+      ConfigRuleName: gc01_check_root_mfa
       Description: Checks Root account to ensure MFA is enabled
       InputParameters:
         ExecutionRoleName:
@@ -178,7 +178,7 @@ Resources:
   GC01CheckFederatedUsersMfaConfigRule:
     Type: "AWS::Config::ConfigRule"
     Properties:
-      ConfigRuleName: !Sub "gc01_check_federated_users_mfa${PartitionSuffix}"
+      ConfigRuleName: gc01_check_federated_users_mfa
       Description: Checks federated users to ensure that MFA is setup.
       InputParameters:
         ExecutionRoleName:
@@ -210,7 +210,7 @@ Resources:
   GC01CheckMonitoringAndLoggingConfigRule:
     Type: "AWS::Config::ConfigRule"
     Properties:
-      ConfigRuleName: !Sub "gc01_check_monitoring_and_logging${PartitionSuffix}"
+      ConfigRuleName: gc01_check_monitoring_and_logging
       Description: Checks that monitoring and auditing is implemented for all user accounts.
       InputParameters:
         ExecutionRoleName:
@@ -243,7 +243,7 @@ Resources:
   GC01CheckAlertsFlagMisuseConfigRule:
     Type: "AWS::Config::ConfigRule"
     Properties:
-      ConfigRuleName: !Sub "gc01_check_alerts_flag_misuse${PartitionSuffix}"
+      ConfigRuleName: gc01_check_alerts_flag_misuse
       Description: Checks that alerts are setup to notify authorized personnel of suspicious activities.
       InputParameters:
         RuleNamingConventionFilePath:
@@ -291,7 +291,7 @@ Resources:
   GC01CheckMFADigitalPolicy:
     Type: "AWS::Config::ConfigRule"
     Properties:
-      ConfigRuleName: !Sub "gc01_check_mfa_digital_policy${PartitionSuffix}"
+      ConfigRuleName: gc01_check_mfa_digital_policy
       Description: Checks that an mfa digital policy is in place to ensure that MFA configurations are enforced.
       InputParameters:
         ExecutionRoleName:
@@ -323,7 +323,7 @@ Resources:
   GC01CheckDedicatedAdminAccount:
     Type: "AWS::Config::ConfigRule"
     Properties:
-      ConfigRuleName: !Sub "gc01_check_dedicated_admin_account${PartitionSuffix}"
+      ConfigRuleName: gc01_check_dedicated_admin_account
       Description: Checks that there are dedicated user accounts for administration.
       InputParameters:
         PrivilegedUsersFilePath:
@@ -365,7 +365,7 @@ Resources:
   GC01CheckIamUsersMfaConfigRule:
     Type: "AWS::Config::ConfigRule"
     Properties:
-      ConfigRuleName: !Sub "gc01_check_iam_users_mfa${PartitionSuffix}"
+      ConfigRuleName: gc01_check_iam_users_mfa
       Description: Checks IAM users to ensure MFA is enabled
       InputParameters:
         ExecutionRoleName:
@@ -418,7 +418,7 @@ Resources:
   GC02CheckPrivilegedRolesReviewConfigRule:
     Type: "AWS::Config::ConfigRule"
     Properties:
-      ConfigRuleName: !Sub "gc02_check_privileged_roles_review${PartitionSuffix}"
+      ConfigRuleName: gc02_check_privileged_roles_review
       Description: Checks S3 bucket for the role assignment review verification document.
       InputParameters:
         s3ObjectPath:
@@ -455,7 +455,7 @@ Resources:
   GC02CheckGroupAccessConfigurationConfigRule:
     Type: "AWS::Config::ConfigRule"
     Properties:
-      ConfigRuleName: !Sub "gc02_check_group_access_configuration${PartitionSuffix}"
+      ConfigRuleName: gc02_check_group_access_configuration
       Description: Checks that access configurations and policies are implemented for different classes of users.
       InputParameters:
         s3ObjectPath:
@@ -491,7 +491,7 @@ Resources:
   GC02CheckPasswordProtectionMechanismsConfigRule:
     Type: "AWS::Config::ConfigRule"
     Properties:
-      ConfigRuleName: !Sub "gc02_check_password_protection_mechanisms${PartitionSuffix}"
+      ConfigRuleName: gc02_check_password_protection_mechanisms
       Description: Checks S3 bucket for the account management plan document
       InputParameters:
         ExecutionRoleName:
@@ -522,7 +522,7 @@ Resources:
   GC02CheckIAMPasswordPolicyConfigRule:
     Type: "AWS::Config::ConfigRule"
     Properties:
-      ConfigRuleName: !Sub "gc02_check_iam_password_policy${PartitionSuffix}"
+      ConfigRuleName: gc02_check_iam_password_policy
       Description: Checks IAM Password Policy for Compliance
       InputParameters:
         ExecutionRoleName:
@@ -599,7 +599,7 @@ Resources:
   GC03CheckEndpointAccessConfigConfigRule:
     Type: "AWS::Config::ConfigRule"
     Properties:
-      ConfigRuleName: !Sub "gc03_check_endpoint_access_config${PartitionSuffix}"
+      ConfigRuleName: gc03_check_endpoint_access_config
       Description: Demonstrate that access configurations and policies are implemented for devices
       InputParameters:
         ExecutionRoleName:
@@ -630,7 +630,7 @@ Resources:
   GC03CheckTrustedDevicesAdminAccessConfigRule:
     Type: "AWS::Config::ConfigRule"
     Properties:
-      ConfigRuleName: !Sub "gc03_check_trusted_devices_admin_access${PartitionSuffix}"
+      ConfigRuleName: gc03_check_trusted_devices_admin_access
       Description: Confirm that administrative access to cloud environments is from approved and trusted locations and devices
       InputParameters:
         ExecutionRoleName:
@@ -687,7 +687,7 @@ Resources:
   GC04CheckEnterpriseMonitoringConfigRule:
     Type: "AWS::Config::ConfigRule"
     Properties:
-      ConfigRuleName: !Sub "gc04_check_enterprise_monitoring${PartitionSuffix}"
+      ConfigRuleName: gc04_check_enterprise_monitoring
       Description: Confirms if the AWS IAM Role and IAM Policy have been created for Enterprise Monitoring
       InputParameters:
         IAM_Role_Name:
@@ -728,7 +728,7 @@ Resources:
   GC04CheckAlertsFlagMisuseConfigRule:
     Type: "AWS::Config::ConfigRule"
     Properties:
-      ConfigRuleName: !Sub "gc04_check_alerts_flag_misuse${PartitionSuffix}"
+      ConfigRuleName: gc04_check_alerts_flag_misuse
       Description: Confirms that alerts to authorized personnel have been implemented to flag misuse, suspicious sign-in attempts, or when changes are made to the cloud broker account.
       InputParameters:
         IAM_Role_Name:
@@ -765,7 +765,7 @@ Resources:
   GC05CheckDataLocationConfigRule:
     Type: "AWS::Config::ConfigRule"
     Properties:
-      ConfigRuleName: !Sub "gc05_check_data_location${PartitionSuffix}"
+      ConfigRuleName: gc05_check_data_location
       Description: Confirms if the account has deployed resources to unauthorized regions.
       InputParameters:
         ExecutionRoleName:
@@ -797,7 +797,7 @@ Resources:
   GC06CheckEncryptionAtRestPart1ConfigRule:
     Type: "AWS::Config::ConfigRule"
     Properties:
-      ConfigRuleName: !Sub "gc06_check_encryption_at_rest_part1${PartitionSuffix}"
+      ConfigRuleName: gc06_check_encryption_at_rest_part1
       Description: Checks AWS resources for encryption at rest
       InputParameters:
         ExecutionRoleName:
@@ -838,7 +838,7 @@ Resources:
   GC06CheckEncryptionAtRestPart2ConfigRule:
     Type: "AWS::Config::ConfigRule"
     Properties:
-      ConfigRuleName: !Sub "gc06_check_encryption_at_rest_part2${PartitionSuffix}"
+      ConfigRuleName: gc06_check_encryption_at_rest_part2
       Description: Checks AWS resources for encryption at rest
       InputParameters:
         ExecutionRoleName:
@@ -882,7 +882,7 @@ Resources:
   GC07CheckCertificateAuthoritiesConfigRule:
     Type: "AWS::Config::ConfigRule"
     Properties:
-      ConfigRuleName: !Sub "gc07_check_certificate_authorities${PartitionSuffix}"
+      ConfigRuleName: gc07_check_certificate_authorities
       Description: Verify cryptographic algorithms and protocols are configured by the user in accordance with ITSP.40.111 and ITSP.40.062
       InputParameters:
         S3CasCurrentlyInUsePath:
@@ -918,7 +918,7 @@ Resources:
   GC07CheckCryptographicAlgorithmsConfigRule:
     Type: "AWS::Config::ConfigRule"
     Properties:
-      ConfigRuleName: !Sub "gc07_check_cryptographic_algorithms${PartitionSuffix}"
+      ConfigRuleName: gc07_check_cryptographic_algorithms
       Description: Verify cryptographic algorithms and protocols are configured by the user in accordance with ITSP.40.111 and ITSP.40.062
       InputParameters:
         ExecutionRoleName:
@@ -949,7 +949,7 @@ Resources:
   GC07CheckEncryptionInTransitConfigRule:
     Type: "AWS::Config::ConfigRule"
     Properties:
-      ConfigRuleName: !Sub "gc07_check_encryption_in_transit${PartitionSuffix}"
+      ConfigRuleName: gc07_check_encryption_in_transit
       Description: Checks AWS resources for SSL/TLS enforcement
       InputParameters:
         ExecutionRoleName:
@@ -991,7 +991,7 @@ Resources:
   GC08CheckTargetNetworkArchitectureConfigRule:
     Type: "AWS::Config::ConfigRule"
     Properties:
-      ConfigRuleName: !Sub "gc08_check_target_network_architecture${PartitionSuffix}"
+      ConfigRuleName: gc08_check_target_network_architecture
       Description: Checks S3 bucket for the target network architecture document
       InputParameters:
         s3ObjectPath:
@@ -1027,7 +1027,7 @@ Resources:
   GC08CheckCloudDeploymentGuideConfigRule:
     Type: "AWS::Config::ConfigRule"
     Properties:
-      ConfigRuleName: !Sub "gc08_check_cloud_deployment_guide${PartitionSuffix}"
+      ConfigRuleName: gc08_check_cloud_deployment_guide
       Description: Checks S3 bucket for the cloud deployment guide document
       InputParameters:
         s3ObjectPath:
@@ -1063,7 +1063,7 @@ Resources:
   GC08CheckCloudSegmentationDesignConfigRule:
     Type: "AWS::Config::ConfigRule"
     Properties:
-      ConfigRuleName: !Sub "gc08_check_cloud_segmentation_design${PartitionSuffix}"
+      ConfigRuleName: gc08_check_cloud_segmentation_design
       Description: Checks S3 bucket for the cloud segmentation guide document
       InputParameters:
         s3ObjectPath:
@@ -1101,7 +1101,7 @@ Resources:
   GC09CheckNonPublicStorageAccountsConfigRule:
     Type: "AWS::Config::ConfigRule"
     Properties:
-      ConfigRuleName: !Sub "gc09_check_non_public_storage_accounts${PartitionSuffix}"
+      ConfigRuleName: gc09_check_non_public_storage_accounts
       Description: Checks all s3 buckets to ensure they are not exposed to the public.
       InputParameters:
         ExecutionRoleName:
@@ -1133,7 +1133,7 @@ Resources:
   GC10CheckCyberCenterSensorsConfigRule:
     Type: "AWS::Config::ConfigRule"
     Properties:
-      ConfigRuleName: !Sub "gc10_check_cyber_center_sensors${PartitionSuffix}"
+      ConfigRuleName: gc10_check_cyber_center_sensors
       Description: Confirm that the Cyber Centre's sensors or other cyber defense services are implemented where available.
       InputParameters:
         S3LogBucketsPath:
@@ -1176,7 +1176,7 @@ Resources:
   GC11CheckSecurityContactConfigRule:
     Type: "AWS::Config::ConfigRule"
     Properties:
-      ConfigRuleName: !Sub "gc11_check_security_contact${PartitionSuffix}"
+      ConfigRuleName: gc11_check_security_contact
       Description: Confirms that the account valid alternate security contact configured
       InputParameters:
         ExecutionRoleName:
@@ -1208,7 +1208,7 @@ Resources:
   GC11CheckMonitoringUseCasesConfigRule:
     Type: "AWS::Config::ConfigRule"
     Properties:
-      ConfigRuleName: !Sub "gc11_check_monitoring_use_cases${PartitionSuffix}"
+      ConfigRuleName: gc11_check_monitoring_use_cases
       Description: Confirms whether monitoring and auditing is implemented for all users
       InputParameters:
         ExecutionRoleName:
@@ -1244,7 +1244,7 @@ Resources:
   GC11CheckMonitoringAllUsersConfigRule:
     Type: "AWS::Config::ConfigRule"
     Properties:
-      ConfigRuleName: !Sub "gc11_check_monitoring_all_users${PartitionSuffix}"
+      ConfigRuleName: gc11_check_monitoring_all_users
       Description: Confirms whether monitoring and auditing is implemented for all users
       InputParameters:
         ExecutionRoleName:
@@ -1275,7 +1275,7 @@ Resources:
   GC11CheckPolicyEventLoggingConfigRule:
     Type: "AWS::Config::ConfigRule"
     Properties:
-      ConfigRuleName: !Sub "gc11_check_policy_event_logging${PartitionSuffix}"
+      ConfigRuleName: gc11_check_policy_event_logging
       Description: Confirms that the policy for event logging is implemented
       InputParameters:
         ExecutionRoleName:
@@ -1306,7 +1306,7 @@ Resources:
   GC11CheckTimezoneConfigRule:
     Type: "AWS::Config::ConfigRule"
     Properties:
-      ConfigRuleName: !Sub "gc11_check_timezone${PartitionSuffix}"
+      ConfigRuleName: gc11_check_timezone
       Description: Confirms the appropriate timezone has been set
       InputParameters:
         ExecutionRoleName:
@@ -1337,7 +1337,7 @@ Resources:
   GC11CheckTrailLoggingConfigRule:
     Type: "AWS::Config::ConfigRule"
     Properties:
-      ConfigRuleName: !Sub "gc11_check_trail_logging${PartitionSuffix}"
+      ConfigRuleName: gc11_check_trail_logging
       Description: Confirms that the AWS CloudTrail trails are logging
       InputParameters:
         ExecutionRoleName:
@@ -1370,7 +1370,7 @@ Resources:
   GC12CheckPrivateMarketplaceConfigRule:
     Type: "AWS::Config::ConfigRule"
     Properties:
-      ConfigRuleName: !Sub "gc12_check_private_marketplace${PartitionSuffix}"
+      ConfigRuleName: gc12_check_private_marketplace
       Description: Confirms that the account has access to an AWS Private Marketplace
       InputParameters:
         ExecutionRoleName:
@@ -1403,7 +1403,7 @@ Resources:
   GC13CheckEmergencyAccountManagementConfigRule:
     Type: "AWS::Config::ConfigRule"
     Properties:
-      ConfigRuleName: !Sub "gc13_check_emergency_account_management${PartitionSuffix}"
+      ConfigRuleName: gc13_check_emergency_account_management
       Description: Checks S3 bucket for the account management procedure
       InputParameters:
         s3ObjectPath:
@@ -1440,7 +1440,7 @@ Resources:
   GC13CheckEmergencyAccountMgmtApprovalsConfigRule:
     Type: "AWS::Config::ConfigRule"
     Properties:
-      ConfigRuleName: !Sub "gc13_check_emergency_account_mgmt_approvals${PartitionSuffix}"
+      ConfigRuleName: gc13_check_emergency_account_mgmt_approvals
       Description: Checks S3 bucket for the account management procedure approvals
       InputParameters:
         s3ObjectPath:
@@ -1477,7 +1477,7 @@ Resources:
   GC13CheckEmergencyAccountAlertsConfigRule:
     Type: "AWS::Config::ConfigRule"
     Properties:
-      ConfigRuleName: !Sub "gc13_check_emergency_account_alerts${PartitionSuffix}"
+      ConfigRuleName: gc13_check_emergency_account_alerts
       Description: Checks for the existence of alerts that are in place to report any use of emergency accounts
       InputParameters:
         s3ObjectPath:
@@ -1524,7 +1524,7 @@ Resources:
   GC13CheckEmergencyAccountTestingConfigRule:
     Type: "AWS::Config::ConfigRule"
     Properties:
-      ConfigRuleName: !Sub "gc13_check_emergency_account_testing${PartitionSuffix}"
+      ConfigRuleName: gc13_check_emergency_account_testing
       Description: Verifies that testing of emergency accounts took place and that periodic testing is included
       InputParameters:
         ExecutionRoleName:

@@ -120,14 +120,16 @@ inside the Lambda.
 
 ## Step 3 — Add the Config rule to `ConformancePack.yaml`
 
-Add one `AWS::Config::ConfigRule` resource and append `${PartitionSuffix}`
-to **both** the `ConfigRuleName` and the Lambda `SourceIdentifier`.
+Add one `AWS::Config::ConfigRule` resource. Use a **literal string** for
+`ConfigRuleName` (AWS Config's conformance-pack template engine silently
+ignores `!Sub` in this field). Append `${PartitionSuffix}` only to the
+Lambda `SourceIdentifier` ARN.
 
 ```yaml
 GC02CheckNewThingConfigRule:
   Type: "AWS::Config::ConfigRule"
   Properties:
-    ConfigRuleName: !Sub "gc02_check_new_thing${PartitionSuffix}"
+    ConfigRuleName: gc02_check_new_thing
     Description: <one-line description>
     InputParameters:
       ExecutionRoleName:
@@ -157,14 +159,15 @@ GC02CheckNewThingConfigRule:
           MessageType: "ScheduledNotification"
 ```
 
-## Step 4 — Add the Audit Manager control (three mapping sources)
+## Step 4 — Add the Audit Manager control (one mapping source)
 
 Edit `src/lambda/aws_auditmanager_resources_config_setup/audit_manager_custom_framework.py`
 and append a new control entry under the relevant `controlSets` block
 (matched by guardrail family — `01-Protect User Accounts And Identities`,
-`02-Manage Access`, etc.). Each control must list **three**
-`controlMappingSources` — one per partition variant — using the
-`Custom_<rule_name>_<suffix>-conformance-pack` keyword format:
+`02-Manage Access`, etc.). Each control needs **one** `controlMappingSources`
+entry using the `Custom_<rule_name>-conformance-pack` keyword format. The
+same keyword matches the (identically-named) deployed Config rule in every
+partition, so one entry covers the whole org.
 
 ```python
 {
@@ -185,24 +188,6 @@ and append a new control entry under the relevant `controlSets` block
                 "keywordValue": "Custom_gc02_check_new_thing-conformance-pack",
             },
         },
-        {
-            "sourceName": "NewThing-check-p2",
-            "sourceSetUpOption": "System_Controls_Mapping",
-            "sourceType": "AWS_Config",
-            "sourceKeyword": {
-                "keywordInputType": "SELECT_FROM_LIST",
-                "keywordValue": "Custom_gc02_check_new_thing_p2-conformance-pack",
-            },
-        },
-        {
-            "sourceName": "NewThing-check-p3",
-            "sourceSetUpOption": "System_Controls_Mapping",
-            "sourceType": "AWS_Config",
-            "sourceKeyword": {
-                "keywordInputType": "SELECT_FROM_LIST",
-                "keywordValue": "Custom_gc02_check_new_thing_p3-conformance-pack",
-            },
-        },
     ],
     "tags": {},
 },
@@ -210,12 +195,8 @@ and append a new control entry under the relevant `controlSets` block
 
 Notes:
 
-- Audit Manager does **not** validate that the referenced Config rules
-  exist — the `_p2`/`_p3` entries are inert at ≤ 70 accounts and only
-  begin returning evidence once `ConformancePackP2`/`P3` is deployed.
-- The `sourceName` values must be **unique within a control** and
-  **≤ 100 characters**; the `<ShortName>-check`, `<ShortName>-check-p2`,
-  `<ShortName>-check-p3` pattern fits comfortably.
+- The `sourceName` must be **unique within a control** and **≤ 100
+  characters**.
 
 ## Step 5 — Update IAM execution role(s) if needed
 

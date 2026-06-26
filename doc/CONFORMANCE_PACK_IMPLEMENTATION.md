@@ -40,10 +40,14 @@ partition it has been assigned to in DynamoDB.
    create up to three `AWS::Config::OrganizationConformancePack`
    resources, each guarded by a `Condition` that checks whether its
    account list is non-empty.
-3. Each pack would set a different `PartitionSuffix` input parameter
-   on the same shared `ConformancePack.yaml` template in S3, so its 37
-   Config rules invoke the matching guardrail-Lambda clone set
-   (`<org>gcXX_…` / `<org>gcXX_…_p2` / `<org>gcXX_…_p3`).
+3. Each pack sets a different `PartitionSuffix` input parameter on the
+   shared `ConformancePack.yaml` template in S3, so its 37 Config
+   rules invoke the matching guardrail-Lambda clone set
+   (`<org>gcXX_…` / `<org>gcXX_…_p2` / `<org>gcXX_…_p3`). Note: the
+   suffix only flows into Lambda function ARNs, **not** into
+   `ConfigRuleName` — AWS Config's conformance-pack template engine
+   silently ignores `!Sub` in `ConfigRuleName`, so rule names are
+   static literals across all three packs.
 4. Each pack's `ExcludedAccounts` would list every account in the
    *other* partitions, so the org-wide deployment targets each account
    from exactly one pack.
@@ -60,9 +64,9 @@ flowchart TD
     N -->|Condition: HasAccountsInP2| C2[ConformancePackP2<br/>PartitionSuffix = _p2<br/>ExcludedAccounts = P1 ∪ P3]
     N -->|Condition: HasAccountsInP3| C3[ConformancePackP3<br/>PartitionSuffix = _p3<br/>ExcludedAccounts = P1 ∪ P2]
 
-    C1 -->|Deploys to P1 accounts| D1[Rules → gc01_check_root_mfa]
-    C2 -->|Deploys to P2 accounts| D2[Rules → gc01_check_root_mfa_p2]
-    C3 -->|Deploys to P3 accounts| D3[Rules → gc01_check_root_mfa_p3]
+    C1 -->|Deploys to P1 accounts| D1[Rule gc01_check_root_mfa<br/>→ Lambda gc01_check_root_mfa]
+    C2 -->|Deploys to P2 accounts| D2[Rule gc01_check_root_mfa<br/>→ Lambda gc01_check_root_mfa_p2]
+    C3 -->|Deploys to P3 accounts| D3[Rule gc01_check_root_mfa<br/>→ Lambda gc01_check_root_mfa_p3]
 
     style C1 fill:#e1f5fe
     style C2 fill:#fff3e0
@@ -84,9 +88,9 @@ PartitionSuffix:
   AllowedValues: ["", "_p2", "_p3"]
 ```
 
-and appended to **every** `ConfigRuleName` and to the Lambda
-function-name portion of every `SourceIdentifier`. There are 37
-substitutions of each. Example:
+and appended to the Lambda function-name portion of every
+`SourceIdentifier` (37 substitutions). `ConfigRuleName` is left as a
+static literal — see the note above. Example:
 
 ```yaml
 # Before
@@ -101,7 +105,7 @@ Source:
         - !Sub ":function:${OrganizationName}gc01_check_root_mfa"
 
 # After
-ConfigRuleName: !Sub "gc01_check_root_mfa${PartitionSuffix}"
+ConfigRuleName: gc01_check_root_mfa                              # unchanged
 Source:
   Owner: CUSTOM_LAMBDA
   SourceIdentifier:
@@ -113,8 +117,10 @@ Source:
 ```
 
 So when the P2 pack passes `PartitionSuffix: "_p2"`, the deployed rule
-name becomes `gc01_check_root_mfa_p2` and it targets the
-`<org>gc01_check_root_mfa_p2` Lambda clone.
+name stays `gc01_check_root_mfa` and it targets the
+`<org>gc01_check_root_mfa_p2` Lambda clone. Each account ever
+receives at most one pack (see `ExcludedAccounts`), so the identical
+rule names across packs never collide within an account.
 
 ### 2. `ConformancePackPartitions.yaml` — the nested stack
 
@@ -313,15 +319,16 @@ comfortably. Measured body sizes:
 | 200 | 3 | 3.2 KB |
 | 210 (max) | 3 | ~3.4 KB |
 
-### 5. `audit_manager_custom_framework.py` — 3 `controlMappingSources` per control
+### 5. `audit_manager_custom_framework.py` — one `controlMappingSources` entry per control
 
-Each Audit Manager custom control's `controlMappingSources` list would
-be expanded from one entry to three — one per partition variant — so
-Audit Manager finds evaluation results regardless of which partition's
-Config rule produced them. For example:
+Each Audit Manager custom control's `controlMappingSources` list keeps
+a single entry. The matching deployed Config rule has the same name
+in every account regardless of partition (`PartitionSuffix` only
+flows into Lambda ARNs), so one keyword aggregates evidence across
+the whole org. For example:
 
 ```python
-# Before
+# Before (unchanged)
 "controlMappingSources": [
     {
         "sourceName": "RootMFA-check",
@@ -334,55 +341,33 @@ Config rule produced them. For example:
     },
 ],
 
-# After
+# After (unchanged)
 "controlMappingSources": [
-    {  # partition 1 — base
+    {
         "sourceName": "RootMFA-check",
         ...
         "keywordValue": "Custom_gc01_check_root_mfa-conformance-pack",
     },
-    {  # partition 2
-        "sourceName": "RootMFA-check-p2",
-        ...
-        "keywordValue": "Custom_gc01_check_root_mfa_p2-conformance-pack",
-    },
-    {  # partition 3
-        "sourceName": "RootMFA-check-p3",
-        ...
-        "keywordValue": "Custom_gc01_check_root_mfa_p3-conformance-pack",
-    },
 ],
 ```
 
-`sourceName` values are suffixed to keep them unique (Audit Manager
-requires uniqueness within a control). The transformation applies to
-**37 of 38 controls**; `gc01_check_attestation_letter` is left at one
-mapping because no Config rule by that name exists in
-`ConformancePack.yaml` (this control is documentation-only and
-produces no Config evaluation evidence).
+`controlMappingSources` is left at one entry per control because the
+deployed Config rule name is identical across all three partitions
+(`PartitionSuffix` only flows into Lambda ARNs, not into
+`ConfigRuleName`). Audit Manager's keyword matches the same rule name
+across every account in scope and merges the evidence automatically.
 
 Audit Manager's limit of 5 `controlMappingSources` per control is well
-above the 3 we use.
+above the 1 we use.
 
-#### Behaviour when a referenced Config rule doesn't exist
+#### Forward-compatibility with org growth
 
-Audit Manager's `CreateControl` / `UpdateControl` API does not validate
-that referenced Config rules actually exist — the `keywordValue` is a
-soft string reference, not a foreign-key check. So in a 1-partition
-(≤ 70 account) deployment where only the base
-`gc01_check_root_mfa` Config rule is created, the control still ships
-with all three mapping sources; the `_p2` and `_p3` sources simply
-return zero evidence at collection time and contribute nothing to the
-merged control. This is exactly how `gc01_check_attestation_letter`
-has always behaved (it points at a non-existent rule and silently
-collects no AWS Config evidence).
-
-A welcome side-effect of this property is that the framework is
-**forward-compatible with org growth**: when the organisation later
-scales past 70 (or 140) accounts and `ConformancePackP2` (or `P3`)
-gets deployed, the previously-empty sources start returning real
-evaluations on the next collection cycle — no framework redeploy, no
-manual reconciliation, no control rename.
+When the organisation later scales past 70 (or 140) accounts and
+`ConformancePackP2` (or `P3`) gets deployed, the previously-non-existent
+P2/P3 accounts begin producing evaluations of the same
+`gc01_check_root_mfa` rule from the same single keyword on the next
+collection cycle — no framework redeploy, no manual reconciliation, no
+control rename.
 
 ---
 
@@ -404,19 +389,22 @@ the partitioner — only new accounts are placed.
 
 ## Audit Manager evidence routing
 
-Because the three partition variants of each rule share the same Audit
-Manager *control* (just with three `controlMappingSources` instead of
-one), evidence aggregation in the assessment is automatic:
+Each guardrail is one Audit Manager *control* with a single
+`controlMappingSources` entry. The same `Custom_<rule>-conformance-pack`
+keyword matches the (identically-named) deployed Config rule in every
+account across all three partitions, so evidence aggregation in the
+assessment is automatic:
 
 ```
 AWS Config (partition 1 accounts)  ──┐
    evaluating gc01_check_root_mfa    │
                                      ▼
 AWS Config (partition 2 accounts)  ──┤    Audit Manager
-   evaluating gc01_check_root_mfa_p2 ├──> control:
+   evaluating gc01_check_root_mfa    ├──> control:
                                      │    "gc01_check_root_mfa"
-AWS Config (partition 3 accounts)  ──┘    (single control, evidence
-   evaluating gc01_check_root_mfa_p3      from all 3 sources merged)
+AWS Config (partition 3 accounts)  ──┘    (single control, single
+   evaluating gc01_check_root_mfa         keyword, evidence merged
+                                          across all accounts)
 ```
 
 `aws_compile_audit_report` consumes Audit Manager evidence folders

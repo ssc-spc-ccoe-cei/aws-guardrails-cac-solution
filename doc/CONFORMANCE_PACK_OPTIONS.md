@@ -96,9 +96,9 @@ flowchart TD
     B --> C2[ConformancePackP2<br/>ExcludedAccounts = P1 + P3 accounts<br/>PartitionSuffix = _p2]
     B --> C3[ConformancePackP3<br/>ExcludedAccounts = P1 + P2 accounts<br/>PartitionSuffix = _p3]
 
-    C1 -->|Deploys to P1 accounts| D1[Account in P1<br/>Rules → gc01_check_root_mfa]
-    C2 -->|Deploys to P2 accounts| D2[Account in P2<br/>Rules → gc01_check_root_mfa_p2]
-    C3 -->|Deploys to P3 accounts| D3[Account in P3<br/>Rules → gc01_check_root_mfa_p3]
+    C1 -->|Deploys to P1 accounts| D1[Account in P1<br/>Rule gc01_check_root_mfa<br/>→ Lambda gc01_check_root_mfa]
+    C2 -->|Deploys to P2 accounts| D2[Account in P2<br/>Rule gc01_check_root_mfa<br/>→ Lambda gc01_check_root_mfa_p2]
+    C3 -->|Deploys to P3 accounts| D3[Account in P3<br/>Rule gc01_check_root_mfa<br/>→ Lambda gc01_check_root_mfa_p3]
 
     style C1 fill:#e1f5fe
     style C2 fill:#fff3e0
@@ -112,6 +112,7 @@ flowchart TD
 - ✅ **Simple template change** — just add `${PartitionSuffix}` to existing `SourceIdentifier` lines
 - ✅ **Same template reused** for all partitions via S3 URI
 - ✅ **Backward compatible** — orgs with ≤70 accounts just have one pack with empty suffix (no change)
+- ✅ **Audit Manager keywords stay simple** — `PartitionSuffix` only flows into Lambda ARNs, not into `ConfigRuleName` (AWS Config's conformance-pack engine silently ignores intrinsic functions in `ConfigRuleName` anyway), so rule names are identical across partitions and one keyword per control covers the whole org.
 
 ### Cons
 
@@ -119,7 +120,7 @@ flowchart TD
   - It truly suppresses rule deployment (not just evaluation)
   - It accepts a list from `aws_account_partitioner` successfully
 - ⚠️ **Multiple Conformance Pack resources in `main.yaml`** — up to 3 instead of 1
-- ⚠️ **Audit Manager impact** — the custom framework in `audit_manager_custom_framework.py` maps controls to Config rules via `keywordValue` (e.g., `Custom_gc01_check_root_mfa-conformance-pack`). Different conformance pack names produce different rule names per partition, so each Audit Manager control would need multiple `controlMappingSources` entries (one per partition). The `aws_compile_audit_report` Lambda, which pulls evidence from Audit Manager to generate CSV reports in S3, would have gaps for P2/P3 accounts unless the framework is updated. (Note: Audit Manager is entering maintenance mode, so a future rewrite to pull directly from Config Aggregator would eliminate this coupling entirely.)
+- ⚠️ **Audit Manager maintenance mode** — Audit Manager is entering maintenance mode (April 2026 no-new-setup cutoff), so a future rewrite of `aws_compile_audit_report` to pull directly from Config Aggregator would eliminate this coupling entirely.
 
 ---
 
@@ -193,9 +194,9 @@ flowchart TD
     
     D -->|Deploys to all accounts| E{Each account resolves<br/>FindInMap with own AccountId}
     
-    E -->|Suffix = empty| F1[Account in P1<br/>Rules → gc01_check_root_mfa]
-    E -->|Suffix = _p2| F2[Account in P2<br/>Rules → gc01_check_root_mfa_p2]
-    E -->|Suffix = _p3| F3[Account in P3<br/>Rules → gc01_check_root_mfa_p3]
+    E -->|Suffix = empty| F1[Account in P1<br/>Rule gc01_check_root_mfa<br/>→ Lambda gc01_check_root_mfa]
+    E -->|Suffix = _p2| F2[Account in P2<br/>Rule gc01_check_root_mfa<br/>→ Lambda gc01_check_root_mfa_p2]
+    E -->|Suffix = _p3| F3[Account in P3<br/>Rule gc01_check_root_mfa<br/>→ Lambda gc01_check_root_mfa_p3]
 
     style D fill:#e8f5e9
     style E fill:#fff9c4
