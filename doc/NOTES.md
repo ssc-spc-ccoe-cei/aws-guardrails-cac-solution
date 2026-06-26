@@ -416,9 +416,17 @@ Parameters:
 
 ### Audit Account Pre Requisites Part N
 
-- Hardcoded values (defaults) 🔥
+- ~~Hardcoded values (defaults) 🔥~~ Resolved ✅
 
-```yaml
-LambdaPermissionsSetup:
-  UpdateVariable: QVdTb21lCg8
-```
+  ```yaml
+  LambdaPermissionsSetup:
+    UpdateVariable: QVdTb21lCg8
+  ```
+
+  The dead `UpdateVariable` / `TriggerProperty` salt properties on the
+  `LambdaPermissionsSetup` Custom Resource have been replaced with
+  `InvokeUpdate: !Ref InvokeUpdate`, which is threaded down from
+  `root.yaml` → `main.yaml` and bumped on every `make deploy` (via
+  `$$UUID` in the makefile) and by the partition-sync Step Function.
+  The same fix was applied to `AWSAuditManagerSetup` in
+  `AuditAccountAuditManager.yaml`.

@@ -1305,6 +1305,11 @@ Resources:
         # Added for permissions lambda to access Mgmt Acct DynamoDB partition-state table
         - ParameterKey: PartitionStateTableAccountId
           ParameterValue: !Ref AWS::AccountId
+        # Forwarded so the LambdaPermissionsSetup Custom Resource is re-invoked
+        # with RequestType: Update on every deploy and on every partition-sync
+        # cascade (the root stack's InvokeUpdate UUID is bumped in both cases).
+        - ParameterKey: InvokeUpdate
+          ParameterValue: !Ref InvokeUpdate
       PermissionModel: SERVICE_MANAGED
       StackInstancesGroup:
         - DeploymentTargets:
@@ -1866,6 +1871,12 @@ Resources:
           ParameterValue: !Ref RolePrefix
         - ParameterKey: DeployVersion
           ParameterValue: !Ref DeployVersion
+        # Forwarded so the AWSAuditManagerSetup Custom Resource is re-invoked
+        # with RequestType: Update on every deploy (the root stack's
+        # InvokeUpdate UUID is bumped on each `make deploy` and on every
+        # partition-sync cascade).
+        - ParameterKey: InvokeUpdate
+          ParameterValue: !Ref InvokeUpdate
       PermissionModel: SERVICE_MANAGED
       StackInstancesGroup:
         - DeploymentTargets:

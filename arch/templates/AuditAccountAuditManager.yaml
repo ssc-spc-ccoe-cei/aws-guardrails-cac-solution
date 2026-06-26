@@ -32,6 +32,13 @@ Parameters:
   DeployVersion:
     Type: String
     Default: "1.0.0"
+  InvokeUpdate:
+    Type: String
+    Default: ""
+    Description: >-
+      UUID forwarded from the root/main stack. Wired onto the
+      AWSAuditManagerSetup Custom Resource so the backing Lambda is
+      re-invoked with RequestType: Update on every deploy.
 
 Conditions:
   IsAuditAccount: !Equals
@@ -143,7 +150,7 @@ Resources:
       EvidenceBucketName: !Ref EvidenceBucketName
       LambdaExecutionRoleARN: !GetAtt AuditManagerResourcesLambdaExecutionRole.Arn
       AdditionalAssessmentAdminRoleARN: !Ref AdditionalAssessmentAdminRoleARN
-      UpdateVariable: QVdTb21lCg9
+      InvokeUpdate: !Ref InvokeUpdate
       DeployVersion: !Ref DeployVersion
     DependsOn:
       - AuditManagerResourcesLambda

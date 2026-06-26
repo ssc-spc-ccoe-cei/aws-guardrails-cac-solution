@@ -28,6 +28,14 @@ Parameters:
     Default: ''
     Description: |
       12-digit AWS account ID that owns the PartitionStateTable. Leave empty for same-account deployments (the Lambda will fall back to the bare table name).
+  InvokeUpdate:
+    Type: String
+    Default: ''
+    Description: >-
+      UUID forwarded from the root/main stack. Wired onto the
+      LambdaPermissionsSetup Custom Resource so the backing Lambda is
+      re-invoked with RequestType: Update on every deploy and on every
+      partition-sync cascade.
 
 Conditions:
   IsAuditAccount: !Equals
@@ -116,8 +124,7 @@ Resources:
     Type: Custom::LambdaPermissionsSetup
     Properties:
       ServiceToken: !Sub arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:${OrganizationName}aws_lambda_permissions_setup
-      UpdateVariable: QVdTb21lCg8
-      TriggerProperty: 40
+      InvokeUpdate: !Ref InvokeUpdate
     DependsOn:
       - LambdaPermissionsLambda
 
