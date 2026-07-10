@@ -8,14 +8,14 @@
     "test": "node test-local.js"
   },
   "dependencies": {
-    "aws-sdk": "^2.1500.0",
     "csv-parse": "^5.5.0",
     "handlebars": "^4.7.7"
   },
   "devDependencies": {
+    "@aws-sdk/client-s3": "^3.600.0",
     "fs-extra": "^11.2.0"
   },
   "engines": {
-    "node": "20.x"
+    "node": "22.x"
   }
 }

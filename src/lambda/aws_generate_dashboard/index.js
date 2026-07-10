@@ -4,15 +4,29 @@
 * Outputs summary and detailed HTML to dashboard S3 bucket.
 */
 
-const AWS = require('aws-sdk');
 const fs = require('fs');
 const path = require('path');
 const { parse } = require('csv-parse/sync');
 const Handlebars = require('handlebars');
+const {
+  S3Client,
+  GetObjectCommand,
+  PutObjectCommand,
+  CopyObjectCommand,
+} = require('@aws-sdk/client-s3');
 const { DataProcessor } = require('./lib/dataProcessor');
 const { ChartGenerator } = require('./lib/chartGenerator');
 
-const s3 = new AWS.S3();
+const s3 = new S3Client({});
+
+// Helper: buffer a Node.js Readable stream (v3 returns streams for GetObject.Body)
+async function streamToString(stream) {
+  const chunks = [];
+  for await (const chunk of stream) {
+    chunks.push(typeof chunk === 'string' ? Buffer.from(chunk) : chunk);
+  }
+  return Buffer.concat(chunks).toString('utf-8');
+}
 
 const DASHBOARD_BUCKET = process.env.DASHBOARD_BUCKET || 'gc-fedclient-dashboard-local';
 const ORG_NAME = process.env.ORG_NAME || 'Unknown Org';
@@ -51,8 +65,10 @@ exports.lambda_handler = async (event, context) => {
     }
 
     // Fetch CSV from S3
-    const csvObject = await s3.getObject({ Bucket: sourceBucket, Key: key }).promise();
-    const csvContent = csvObject.Body.toString('utf-8');
+    const csvObject = await s3.send(
+      new GetObjectCommand({ Bucket: sourceBucket, Key: key })
+    );
+    const csvContent = await streamToString(csvObject.Body);
 
     // Parse CSV
     const rows = parse(csvContent, {
@@ -105,18 +121,18 @@ exports.lambda_handler = async (event, context) => {
 
     // Upload to dashboard bucket
     await Promise.all([
-      s3.putObject({
+      s3.send(new PutObjectCommand({
         Bucket: DASHBOARD_BUCKET,
         Key: summaryKey,
         Body: summaryHtml,
         ContentType: 'text/html',
-      }).promise(),
-      s3.putObject({
+      })),
+      s3.send(new PutObjectCommand({
         Bucket: DASHBOARD_BUCKET,
         Key: detailedKey,
         Body: detailedHtml,
         ContentType: 'text/html',
-      }).promise(),
+      })),
     ]);
 
     console.log(`Written s3://${DASHBOARD_BUCKET}/${summaryKey}`);
@@ -124,20 +140,20 @@ exports.lambda_handler = async (event, context) => {
 
     // Update "latest" symlinks
     await Promise.all([
-      s3.copyObject({
+      s3.send(new CopyObjectCommand({
         Bucket: DASHBOARD_BUCKET,
-        CopySource: { Bucket: DASHBOARD_BUCKET, Key: summaryKey },
+        CopySource: `/${DASHBOARD_BUCKET}/${encodeURIComponent(summaryKey)}`,
         Key: 'latest_summary.html',
         ContentType: 'text/html',
         MetadataDirective: 'REPLACE',
-      }).promise(),
-      s3.copyObject({
+      })),
+      s3.send(new CopyObjectCommand({
         Bucket: DASHBOARD_BUCKET,
-        CopySource: { Bucket: DASHBOARD_BUCKET, Key: detailedKey },
+        CopySource: `/${DASHBOARD_BUCKET}/${encodeURIComponent(detailedKey)}`,
         Key: 'latest_detailed.html',
         ContentType: 'text/html',
         MetadataDirective: 'REPLACE',
-      }).promise(),
+      })),
     ]);
 
     return {
