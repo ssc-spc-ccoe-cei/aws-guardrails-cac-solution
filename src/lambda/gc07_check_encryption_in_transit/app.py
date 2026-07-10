@@ -217,17 +217,66 @@ def assess_redshift_clusters_ssl_enforcement(redshift_client, event: dict):
     # logger.info("Redshift - reporting %s evaluations.", len(local_evaluations))
     return local_evaluations
 
-def is_target_group_alb(elb_v2_client, target_group_arn: str) -> bool:
+def get_target_group_details(elb_v2_client, target_group_arn: str) -> dict:
     """
-    Return True if the target group has TargetType = 'alb'.
+    Return target group details for a given target group ARN.
     """
     try:
         resp = elb_v2_client.describe_target_groups(TargetGroupArns=[target_group_arn])
-        tgs = resp.get("TargetGroups", [])
-        return bool(tgs and tgs[0].get("TargetType", "").lower() == "alb")
+        target_groups = resp.get("TargetGroups", [])
+        return target_groups[0] if target_groups else {}
     except botocore.exceptions.ClientError as ex:
-        logger.error("ELBv2 - Error checking target group type for %s: %s", target_group_arn, ex)
+        logger.error("ELBv2 - Error describing target group %s: %s", target_group_arn, ex)
+        return {}
+
+
+def is_nlb_tcp_443_passthrough_listener(elb_v2_client, load_balancer: dict, listener: dict) -> bool:
+    """
+    Return True for NLB TCP:443 listeners that appear to be TLS passthrough.
+    """
+    if load_balancer.get("Type", "").lower() != "network":
         return False
+
+    if listener.get("Protocol", "").upper() != "TCP" or listener.get("Port") != 443:
+        return False
+
+    target_group_arns = []
+    for action in listener.get("DefaultActions", []):
+        if action.get("Type") != "forward":
+            continue
+
+        target_group_arn = action.get("TargetGroupArn")
+        if target_group_arn:
+            target_group_arns.append(target_group_arn)
+
+        for target_group in action.get("ForwardConfig", {}).get("TargetGroups", []):
+            nested_target_group_arn = target_group.get("TargetGroupArn")
+            if nested_target_group_arn:
+                target_group_arns.append(nested_target_group_arn)
+
+    if not target_group_arns:
+        return False
+
+    for target_group_arn in target_group_arns:
+        target_group = get_target_group_details(elb_v2_client, target_group_arn)
+        if not target_group:
+            return False
+
+        target_type = target_group.get("TargetType", "").lower()
+        target_protocol = target_group.get("Protocol", "").upper()
+        target_port = target_group.get("Port", 0)
+
+        # Accept documented passthrough patterns to TLS-capable backends.
+        if target_type == "alb":
+            continue
+        if target_protocol == "TLS":
+            continue
+        if target_protocol == "TCP" and target_port == 443:
+            continue
+
+        return False
+
+    return True
 
 def assess_elb_v2_ssl_enforcement(elb_v2_client, event: dict):
     """
@@ -292,35 +341,15 @@ def assess_elb_v2_ssl_enforcement(elb_v2_client, event: dict):
 
                         listener_port = listener.get("Port")  # NEW
 
-                        # NEW: Detect the special case (NLB TCP:443 -> ALB target group)
-                        is_nlb_with_alb_target_tcp443 = False
-                        if (
-                            load_balancer.get("Type", "").lower() == "network"
-                            and listener_protocol.upper() == "TCP"
-                            and listener_port == 443
-                        ):
-                            for action in listener.get("DefaultActions", []):
-                                if action.get("Type") == "forward":
-                                    # Single target group form
-                                    tg_arn = action.get("TargetGroupArn")
-                                    if tg_arn and is_target_group_alb(elb_v2_client, tg_arn):
-                                        is_nlb_with_alb_target_tcp443 = True
-                                        break
-                                    # ForwardConfig (multiple TGs) form
-                                    for tg in action.get("ForwardConfig", {}).get("TargetGroups", []):
-                                        tg_arn2 = tg.get("TargetGroupArn")
-                                        if tg_arn2 and is_target_group_alb(elb_v2_client, tg_arn2):
-                                            is_nlb_with_alb_target_tcp443 = True
-                                            break
-                                if is_nlb_with_alb_target_tcp443:
-                                    break
+                        is_nlb_tcp_443_passthrough = is_nlb_tcp_443_passthrough_listener(
+                            elb_v2_client, load_balancer, listener
+                        )
 
                         if listener_protocol.lower() not in ["https", "tls"]:
-                            # Special case: NLB TCP:443 forwarding to ALB
-                            if is_nlb_with_alb_target_tcp443:
+                            if is_nlb_tcp_443_passthrough:
                                 listener_compliance = "COMPLIANT"
                                 listener_annotation = (
-                                    f"NLB TCP:443 listener forwarding to ALB target group - "
+                                    f"NLB TCP:443 listener using TLS passthrough to backend - "
                                     f"{listener.get('ListenerArn', '')}"
                                 )
                             else:
