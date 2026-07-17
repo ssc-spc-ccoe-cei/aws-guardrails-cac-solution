@@ -167,15 +167,80 @@ Resources:
                 {
                   "Variable": "$.partitioner.AccountsChanged",
                   "StringEquals": "True",
-                  "Next": "UpdateRootStack"
+                  "Next": "GetCurrentStackParams"
                 }
               ],
               "Default": "InvokePermissionsSync"
             },
+            "GetCurrentStackParams": {
+              "Type": "Task",
+              "Resource": "arn:aws:states:::aws-sdk:cloudformation:describeStacks",
+              "Comment": "Fetch the root stack's current effective parameter set so UpdateRootStack can re-assert every value. UpdateStack does NOT carry forward parameters that are omitted from its Parameters list: omitted parameters fall back to their template default, and parameters with no default fail the call with 'Parameters: [X] must have values'. UsePreviousTemplate only reuses the template body, not the parameter values.",
+              "Parameters": {
+                "StackName": "${RootStackName}"
+              },
+              "ResultSelector": {
+                "List.$": "$.Stacks[0].Parameters"
+              },
+              "ResultPath": "$.currentParams",
+              "Retry": [
+                {
+                  "ErrorEquals": [
+                    "CloudFormation.CloudFormationException"
+                  ],
+                  "IntervalSeconds": 5,
+                  "MaxAttempts": 3,
+                  "BackoffRate": 2.0
+                }
+              ],
+              "Next": "BuildUpdateParams"
+            },
+            "BuildUpdateParams": {
+              "Type": "Map",
+              "Comment": "Rebuild the UpdateStack Parameters array from the live stack: InvokeUpdate gets a fresh UUID so the Custom::AccountPartitioner re-runs, and every other parameter is pinned with UsePreviousValue=true. UsePreviousValue is asserted instead of replaying ParameterValue because DescribeStacks masks NoEcho values ('****') and returns pre-resolved values for SSM parameter types; UsePreviousValue sidesteps both. Because the list is read from the stack at runtime, this stays correct as main.yaml's parameter set evolves.",
+              "ItemsPath": "$.currentParams.List",
+              "ResultPath": "$.updateParams",
+              "ItemProcessor": {
+                "ProcessorConfig": {
+                  "Mode": "INLINE"
+                },
+                "StartAt": "IsInvokeUpdate?",
+                "States": {
+                  "IsInvokeUpdate?": {
+                    "Type": "Choice",
+                    "Choices": [
+                      {
+                        "Variable": "$.ParameterKey",
+                        "StringEquals": "InvokeUpdate",
+                        "Next": "SetNewInvokeUpdate"
+                      }
+                    ],
+                    "Default": "KeepPreviousValue"
+                  },
+                  "SetNewInvokeUpdate": {
+                    "Type": "Pass",
+                    "Parameters": {
+                      "ParameterKey": "InvokeUpdate",
+                      "ParameterValue.$": "States.UUID()"
+                    },
+                    "End": true
+                  },
+                  "KeepPreviousValue": {
+                    "Type": "Pass",
+                    "Parameters": {
+                      "ParameterKey.$": "$.ParameterKey",
+                      "UsePreviousValue": true
+                    },
+                    "End": true
+                  }
+                }
+              },
+              "Next": "UpdateRootStack"
+            },
             "UpdateRootStack": {
               "Type": "Task",
               "Resource": "arn:aws:states:::aws-sdk:cloudformation:updateStack",
-              "Comment": "Bumps InvokeUpdate on the root stack so the Custom::AccountPartitioner re-runs and refreshes !GetAtt AccountsInP1/P2/P3 (which feed the ConformancePack nested stack) and PartitionCount (which feeds the Part1-8 StackSets). UsePreviousTemplate=true keeps every other parameter at its prior value.",
+              "Comment": "Bumps InvokeUpdate on the root stack so the Custom::AccountPartitioner re-runs and refreshes !GetAtt AccountsInP1/P2/P3 (which feed the ConformancePack nested stack) and PartitionCount (which feeds the Part1-8 StackSets). UsePreviousTemplate=true reuses the previous template body; parameter values are pinned by the array built in BuildUpdateParams, since UpdateStack resets any omitted parameter to its template default.",
               "Parameters": {
                 "StackName": "${RootStackName}",
                 "UsePreviousTemplate": true,
@@ -184,12 +249,7 @@ Resources:
                   "CAPABILITY_NAMED_IAM",
                   "CAPABILITY_AUTO_EXPAND"
                 ],
-                "Parameters": [
-                  {
-                    "ParameterKey": "InvokeUpdate",
-                    "ParameterValue.$": "States.UUID()"
-                  }
-                ]
+                "Parameters.$": "$.updateParams"
               },
               "ResultPath": "$.stackUpdate",
               "Retry": [
