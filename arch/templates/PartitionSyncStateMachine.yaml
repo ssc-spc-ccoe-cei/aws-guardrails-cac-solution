@@ -35,7 +35,14 @@ Parameters:
       12-digit AWS account ID of the audit account. The permissions
       Lambda (aws_lambda_permissions_setup) is deployed by the PartN
       StackSet into the audit account, so the state machine must
-      invoke it across accounts. 
+      invoke it across accounts.
+
+  CloudFormationDeploymentRoleArn:
+    Type: String
+    Description: >-
+      ARN of the CloudFormation service role (created in main.yaml) that
+      the state machine passes as RoleARN on the UpdateStack call against
+      the root. 
 
 Resources:
   PartitionSyncStateMachineLogGroup:
@@ -88,6 +95,22 @@ Resources:
                   - "cloudformation:DescribeStacks"
                 Resource:
                   - !Sub "arn:aws:cloudformation:${AWS::Region}:${AWS::AccountId}:stack/${RootStackName}/*"
+        - PolicyName: AllowPassCloudFormationDeploymentRole
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              # iam:PassRole so the state machine can hand the CFN
+              # deployment role (created in main.yaml) to CloudFormation
+              # on the UpdateStack call.
+              - Sid: AllowPassRoleToCloudFormation
+                Effect: Allow
+                Action:
+                  - "iam:PassRole"
+                Resource:
+                  - !Ref CloudFormationDeploymentRoleArn
+                Condition:
+                  StringEquals:
+                    "iam:PassedToService": "cloudformation.amazonaws.com"
         - PolicyName: AllowStateMachineLogging
           PolicyDocument:
             Version: "2012-10-17"
@@ -125,6 +148,7 @@ Resources:
         PartitionerFunctionName: !Sub "${OrganizationName}aws_account_partitioner"
         PermissionsFunctionName: !Sub "arn:aws:lambda:${AWS::Region}:${AuditAccountID}:function:${OrganizationName}aws_lambda_permissions_setup"
         RootStackName: !Ref RootStackName
+        CloudFormationDeploymentRoleArn: !Ref CloudFormationDeploymentRoleArn
       DefinitionString: |-
         {
           "Comment": "Sync partition state, Lambda clones, and resource policies. Triggered on a 6-hour EventBridge schedule.",
@@ -244,6 +268,7 @@ Resources:
               "Parameters": {
                 "StackName": "${RootStackName}",
                 "UsePreviousTemplate": true,
+                "RoleARN": "${CloudFormationDeploymentRoleArn}",
                 "Capabilities": [
                   "CAPABILITY_IAM",
                   "CAPABILITY_NAMED_IAM",

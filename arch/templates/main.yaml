@@ -2007,6 +2007,233 @@ Resources:
   # PartitionSyncStateMachine.yaml. See PartitionSyncStateMachine.yaml and
   # doc/RESOURCE_POLICY_FIX.md for the full state-machine design.
   #######################################################
+
+  # CloudFormation service role handed to UpdateStack by the partition-sync Step Function. 
+  CloudFormationDeploymentRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub "${OrganizationName}CloudFormationDeploymentRole"
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: cloudformation.amazonaws.com
+            Action: sts:AssumeRole
+            Condition:
+              StringEquals:
+                aws:SourceAccount: !Ref AWS::AccountId
+      Path: "/"
+      Policies:
+        # ------------------------------------------------------------------
+        # 1) CloudFormation + S3 (nested stacks, StackSets, template fetch)
+        # ------------------------------------------------------------------
+        - PolicyName: StacksAndTemplates
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Sid: CfnRootAndNestedStacks
+                Effect: Allow
+                Action:
+                  - "cloudformation:*"
+                Resource:
+                  - !Sub "arn:${AWS::Partition}:cloudformation:${AWS::Region}:${AWS::AccountId}:stack/${RootStackName}/*"
+                  - !Sub "arn:${AWS::Partition}:cloudformation:${AWS::Region}:${AWS::AccountId}:stack/${RootStackName}-*/*"
+              - Sid: CfnStackSets
+                Effect: Allow
+                Action:
+                  - "cloudformation:*"
+                Resource:
+                  - !Sub "arn:${AWS::Partition}:cloudformation:*:${AWS::AccountId}:stackset/${OrganizationName}*"
+                  - !Sub "arn:${AWS::Partition}:cloudformation:*:${AWS::AccountId}:stackset-target/${OrganizationName}*"
+                  - !Sub "arn:${AWS::Partition}:cloudformation:*::type/resource/*"
+              - Sid: CfnListTypes
+                # StackSet operations internally list registered types; unavoidable * resource.
+                Effect: Allow
+                Action:
+                  - "cloudformation:ListStackSetAutoDeploymentTargets"
+                  - "cloudformation:DescribeType"
+                  - "cloudformation:ListTypes"
+                  - "cloudformation:ValidateTemplate"
+                Resource: "*"
+              - Sid: PipelineBucketRead
+                # CFN fetches nested stack templates and packaged Lambda code from the
+                # pipeline bucket using the caller's (this role's) credentials.
+                Effect: Allow
+                Action:
+                  - "s3:GetObject"
+                  - "s3:GetObjectVersion"
+                  - "s3:ListBucket"
+                Resource:
+                  - !Sub "arn:${AWS::Partition}:s3:::${PipelineBucket}"
+                  - !Sub "arn:${AWS::Partition}:s3:::${PipelineBucket}/*"
+        # ------------------------------------------------------------------
+        # 2) IAM (roles + attached inline/managed policies + PassRole)
+        # ------------------------------------------------------------------
+        - PolicyName: IamRolesAndPolicies
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Sid: ManageStackRoles
+                Effect: Allow
+                Action:
+                  - "iam:GetRole"
+                  - "iam:CreateRole"
+                  - "iam:DeleteRole"
+                  - "iam:UpdateRole"
+                  - "iam:UpdateAssumeRolePolicy"
+                  - "iam:PutRolePolicy"
+                  - "iam:GetRolePolicy"
+                  - "iam:DeleteRolePolicy"
+                  - "iam:ListRolePolicies"
+                  - "iam:AttachRolePolicy"
+                  - "iam:DetachRolePolicy"
+                  - "iam:ListAttachedRolePolicies"
+                  - "iam:TagRole"
+                  - "iam:UntagRole"
+                  - "iam:ListRoleTags"
+                  - "iam:PutRolePermissionsBoundary"
+                  - "iam:DeleteRolePermissionsBoundary"
+                Resource:
+                  - !Sub "arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${OrganizationName}*"
+                  - !Sub "arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${RolePrefix}*"
+                  - !Sub "arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${AccelRolePrefix}*"
+                  # Legacy unprefixed role names created by main.yaml today:
+                  - !Sub "arn:${AWS::Partition}:iam::${AWS::AccountId}:role/GCLambdaExecutionRoleAccountPolicy"
+              - Sid: ReadAwsManagedPolicies
+                Effect: Allow
+                Action:
+                  - "iam:GetPolicy"
+                  - "iam:GetPolicyVersion"
+                  - "iam:ListPolicyVersions"
+                Resource:
+                  - !Sub "arn:${AWS::Partition}:iam::aws:policy/*"
+                  - !Sub "arn:${AWS::Partition}:iam::aws:policy/service-role/*"
+              - Sid: PassRolesCreatedByThisStack
+                # PassRole is required for Lambda functions (Role property),
+                # Step Functions (RoleArn), EventBridge rules (RoleArn),
+                # and the state machine handing this very role back to CFN.
+                Effect: Allow
+                Action:
+                  - "iam:PassRole"
+                Resource:
+                  - !Sub "arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${OrganizationName}*"
+                  - !Sub "arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${RolePrefix}*"
+                  - !Sub "arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${AccelRolePrefix}*"
+                Condition:
+                  StringEquals:
+                    "iam:PassedToService":
+                      - lambda.amazonaws.com
+                      - states.amazonaws.com
+                      - events.amazonaws.com
+                      - cloudformation.amazonaws.com
+                      - config.amazonaws.com
+              - Sid: ServiceLinkedRolesForStackSets
+                # SERVICE_MANAGED StackSets rely on org-wide SLRs. CFN may
+                # need to create the AWSServiceRoleForCloudFormationStackSets
+                # variants on first use.
+                Effect: Allow
+                Action:
+                  - "iam:CreateServiceLinkedRole"
+                Resource: "*"
+                Condition:
+                  StringLike:
+                    "iam:AWSServiceName":
+                      - "stacksets.cloudformation.amazonaws.com"
+                      - "member.org.stacksets.cloudformation.amazonaws.com"
+                      - "config.amazonaws.com"
+                      - "config-multiaccountsetup.amazonaws.com"
+                      - "auditmanager.amazonaws.com"
+        # ------------------------------------------------------------------
+        # 3) Compute + data plane (Lambda, DynamoDB, Logs, StepFn, Events)
+        # ------------------------------------------------------------------
+        - PolicyName: ComputeAndData
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Sid: ManageStackLambdas
+                Effect: Allow
+                Action:
+                  - "lambda:*"
+                Resource:
+                  - !Sub "arn:${AWS::Partition}:lambda:*:${AWS::AccountId}:function:${OrganizationName}*"
+              - Sid: ManagePartitionStateTable
+                # DeletionPolicy: Retain means CreateTable/DeleteTable are not
+                # expected on updates — only Describe/Update/Tag/PITR ops.
+                Effect: Allow
+                Action:
+                  - "dynamodb:*"
+                Resource:
+                  - !Sub "arn:${AWS::Partition}:dynamodb:*:${AWS::AccountId}:table/${OrganizationName}-gc-guardrails-partition-state"
+              - Sid: ManageStackLogGroups
+                Effect: Allow
+                Action:
+                  - "logs:*"
+                Resource:
+                  - !Sub "arn:${AWS::Partition}:logs:*:${AWS::AccountId}:log-group:/aws/lambda/${OrganizationName}*"
+                  - !Sub "arn:${AWS::Partition}:logs:*:${AWS::AccountId}:log-group:/aws/lambda/${OrganizationName}*:*"
+                  - !Sub "arn:${AWS::Partition}:logs:*:${AWS::AccountId}:log-group:/aws/vendedlogs/states/${OrganizationName}*"
+                  - !Sub "arn:${AWS::Partition}:logs:*:${AWS::AccountId}:log-group:/aws/vendedlogs/states/${OrganizationName}*:*"
+              - Sid: ManageStepFunctions
+                Effect: Allow
+                Action:
+                  - "states:*"
+                Resource:
+                  - !Sub "arn:${AWS::Partition}:states:*:${AWS::AccountId}:stateMachine:${OrganizationName}*"
+              - Sid: ManageEventBridgeRules
+                Effect: Allow
+                Action:
+                  - "events:*"
+                Resource:
+                  - !Sub "arn:${AWS::Partition}:events:*:${AWS::AccountId}:rule/${OrganizationName}*"
+        # ------------------------------------------------------------------
+        # 4) Config + SSM + Organizations reads (needed by StackSet SERVICE_MANAGED)
+        # ------------------------------------------------------------------
+        - PolicyName: ConfigSsmAndOrgs
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Sid: ManageOrganizationConformancePacks
+                # Config doesn't support resource-level scoping for these APIs.
+                Effect: Allow
+                Action:
+                  - "config:DescribeOrganizationConformancePacks"
+                  - "config:DescribeOrganizationConformancePackStatuses"
+                  - "config:GetOrganizationConformancePackDetailedStatus"
+                  - "config:PutOrganizationConformancePack"
+                  - "config:DeleteOrganizationConformancePack"
+                Resource: "*"
+              - Sid: ManageStackSsmParams
+                Effect: Allow
+                Action:
+                  - "ssm:GetParameter"
+                  - "ssm:GetParameters"
+                  - "ssm:PutParameter"
+                  - "ssm:DeleteParameter"
+                  - "ssm:DescribeParameters"
+                  - "ssm:AddTagsToResource"
+                  - "ssm:RemoveTagsFromResource"
+                  - "ssm:ListTagsForResource"
+                Resource:
+                  - !Sub "arn:${AWS::Partition}:ssm:*:${AWS::AccountId}:parameter/gc_guardrails/*"
+              - Sid: OrganizationsReadForStackSets
+                # SERVICE_MANAGED StackSets and OrganizationConformancePacks
+                # both call these to enumerate target accounts and OUs.
+                Effect: Allow
+                Action:
+                  - "organizations:DescribeOrganization"
+                  - "organizations:ListAccounts"
+                  - "organizations:ListAccountsForParent"
+                  - "organizations:ListRoots"
+                  - "organizations:ListParents"
+                  - "organizations:ListChildren"
+                  - "organizations:ListOrganizationalUnitsForParent"
+                  - "organizations:DescribeAccount"
+                  - "organizations:DescribeOrganizationalUnit"
+                  - "organizations:ListDelegatedAdministrators"
+                  - "organizations:ListDelegatedServicesForAccount"
+                  - "organizations:ListAWSServiceAccessForOrganization"
+                Resource: "*"
   PartitionSyncStack:
     Type: AWS::CloudFormation::Stack
     DependsOn:
@@ -2018,6 +2245,9 @@ Resources:
         RootStackName: !Ref RootStackName
         # Needed for State Machine to construct the cross-account ARN for the permissions Lambda's lambda:InvokeFunction.
         AuditAccountID: !Ref AuditAccountID
+        # Passed to UpdateStack as RoleARN so CFN uses this admin-scoped
+        # service role for resource ops, not the narrow state machine role.
+        CloudFormationDeploymentRoleArn: !GetAtt CloudFormationDeploymentRole.Arn
 
 Outputs:
   ClientEvidenceBucket:
