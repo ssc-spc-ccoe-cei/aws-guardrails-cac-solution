@@ -2047,14 +2047,14 @@ Resources:
                   - !Sub "arn:${AWS::Partition}:cloudformation:*:${AWS::AccountId}:stackset/${OrganizationName}*"
                   - !Sub "arn:${AWS::Partition}:cloudformation:*:${AWS::AccountId}:stackset-target/${OrganizationName}*"
                   - !Sub "arn:${AWS::Partition}:cloudformation:*::type/resource/*"
-              - Sid: CfnListTypes
-                # StackSet operations internally list registered types; unavoidable * resource.
+              - Sid: CfnMisc
                 Effect: Allow
                 Action:
                   - "cloudformation:ListStackSetAutoDeploymentTargets"
                   - "cloudformation:DescribeType"
                   - "cloudformation:ListTypes"
                   - "cloudformation:ValidateTemplate"
+                  - "cloudformation:GetTemplateSummary"
                 Resource: "*"
               - Sid: PipelineBucketRead
                 # CFN fetches nested stack templates and packaged Lambda code from the
@@ -2095,6 +2095,7 @@ Resources:
                   - "iam:PutRolePermissionsBoundary"
                   - "iam:DeleteRolePermissionsBoundary"
                 Resource:
+                  - !Sub "arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${RootStackName}*"
                   - !Sub "arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${OrganizationName}*"
                   - !Sub "arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${RolePrefix}*"
                   - !Sub "arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${AccelRolePrefix}*"
@@ -2174,6 +2175,12 @@ Resources:
                   - !Sub "arn:${AWS::Partition}:logs:*:${AWS::AccountId}:log-group:/aws/lambda/${OrganizationName}*:*"
                   - !Sub "arn:${AWS::Partition}:logs:*:${AWS::AccountId}:log-group:/aws/vendedlogs/states/${OrganizationName}*"
                   - !Sub "arn:${AWS::Partition}:logs:*:${AWS::AccountId}:log-group:/aws/vendedlogs/states/${OrganizationName}*:*"
+              - Sid: DescribeLogs
+                Effect: Allow
+                Action:
+                  - "logs:DescribeLogGroups"
+                  - "logs:DescribeLogStreams"
+                Resource: "*"
               - Sid: ManageStepFunctions
                 Effect: Allow
                 Action:
