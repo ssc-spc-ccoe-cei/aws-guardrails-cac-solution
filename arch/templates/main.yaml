@@ -2145,6 +2145,17 @@ Resources:
                       - "config.amazonaws.com"
                       - "config-multiaccountsetup.amazonaws.com"
                       - "auditmanager.amazonaws.com"
+              - Sid: EnableTrustedAccessForConfig
+                Effect: Allow
+                Action:
+                  - "organizations:EnableAWSServiceAccess"
+                  - "organizations:ListAWSServiceAccessForOrganization"
+                Resource: "*"
+                Condition:
+                  StringEquals:
+                    "organizations:ServicePrincipal":
+                      - "config.amazonaws.com"
+                      - "config-multiaccountsetup.amazonaws.com"
         # ------------------------------------------------------------------
         # 3) Compute + data plane (Lambda, DynamoDB, Logs, StepFn, Events)
         # ------------------------------------------------------------------
