@@ -2220,6 +2220,9 @@ Resources:
                   - "config:GetOrganizationConformancePackDetailedStatus"
                   - "config:PutOrganizationConformancePack"
                   - "config:DeleteOrganizationConformancePack"
+                  - "config:TagResource"
+                  - "config:UntagResource"
+                  - "config:ListTagsForResource"
                 Resource: "*"
               - Sid: ManageStackSsmParams
                 Effect: Allow
