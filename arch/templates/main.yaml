@@ -1821,6 +1821,31 @@ Resources:
         # there if it ever needs to change.
 
   #######################################################
+  # Part 4b - AWS Config Organization Aggregator
+  #######################################################
+  # Deploys the org-wide AWS Config Aggregator in the Audit account so
+  # operators have a single-pane view of GC guardrail Config rule
+  # compliance and Config-recorded resource inventory across every
+  # account in the organization.
+  ConfigAggregator:
+    Type: AWS::CloudFormation::Stack
+    DependsOn:
+      # Aggregator requires Config trusted access + Audit as delegated
+      # admin, both of which are established by AWSAuditManagerOrganizationsSetup
+      # (see setup-organizations make target which also registers the
+      # config.amazonaws.com delegated admin).
+      - AWSAuditManagerOrganizationsSetup
+    Properties:
+      TemplateURL: !Sub https://${PipelineBucket}.s3.${AWS::Region}.amazonaws.com/${DeployVersion}/config-aggregator.yaml
+      Parameters:
+        OrganizationName: !Ref OrganizationName
+        # Comma-delimited list. Extend if visibility into additional
+        # regions is required — remember the guardrail rules themselves
+        # only exist in ca-central-1.
+        AggregatedRegions: "ca-central-1"
+        AggregatorName: !Sub "${OrganizationName}GC-Guardrails-Aggregator"
+
+  #######################################################
   # Part 5 - Audit Manager Components
   #######################################################
   AuditAccountAuditManager:

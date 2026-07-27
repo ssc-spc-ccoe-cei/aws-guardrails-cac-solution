@@ -1,32 +1,78 @@
 AWSTemplateFormatVersion: 2010-09-09
-Description: Deploys the Government of Canada Guardrails Assessment Package Configuration Aggregator
+Description: >-
+  Deploys the Government of Canada Guardrails Assessment Package
+  Organization-wide AWS Config Aggregator. Aggregates AWS Config data
+  (rule compliance + resource inventory) from every account in the AWS
+  Organization for the regions listed in AggregatedRegions. 
+
+Parameters:
+  OrganizationName:
+    Type: String
+    Default: ""
+    Description: >-
+      Organization name prefix, forwarded from the root/main stack.
+      Used only for consistent Name tagging with the rest of the solution.
+  AggregatedRegions:
+    Type: CommaDelimitedList
+    Default: "ca-central-1"
+    Description: >-
+      Comma-delimited list of AWS regions the aggregator should pull
+      AWS Config data from. Defaults to ca-central-1.
+  AggregatorName:
+    Type: String
+    Default: "GC-Guardrails-Aggregator"
+    Description: >-
+      Name of the aggregator as it appears in the AWS Config console.
 
 Resources:
-  ConfigurationAggregator:
-      Type: 'AWS::Config::ConfigurationAggregator'
-      Properties:
-        OrganizationAggregationSource:
-          RoleArn: !GetAtt ConfigurationAggregatorRole.Arn
-          AllAwsRegions: true
-        ConfigurationAggregatorName: GC-Guardrails-Aggregator
-        Tags:
-          - Key: "Source"
-            Value: "ProServe Delivery Kit"
   ConfigurationAggregatorRole:
     Type: AWS::IAM::Role
-    Properties: 
-        ManagedPolicyArns: 
-          - arn:aws:iam::aws:policy/service-role/AWSConfigRoleForOrganizations
-        Path: "/service-role/"
-        AssumeRolePolicyDocument:
-          Version: "2012-10-17"
-          Statement:
-            - Effect: Allow
-              Principal:
-                Service:
-                  - config.amazonaws.com
-              Action:
-                - 'sts:AssumeRole'
-        Tags:
-          - Key: "Source"
-            Value: "ProServe Delivery Kit"
+    Properties:
+      Description: >-
+        Service role assumed by AWS Config to pull configuration and
+        compliance data from every account in the AWS Organization on
+        behalf of the GC-Guardrails-Aggregator.
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSConfigRoleForOrganizations
+      Path: "/service-role/"
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - config.amazonaws.com
+            Action:
+              - 'sts:AssumeRole'
+      Tags:
+        - Key: "Source"
+          Value: "ProServe Delivery Kit"
+        - Key: "OrganizationName"
+          Value: !Ref OrganizationName
+
+  ConfigurationAggregator:
+    Type: 'AWS::Config::ConfigurationAggregator'
+    # Dependency on ConfigurationAggregatorRole is implicit via !GetAtt
+    # on RoleArn below (cfn-lint W3005).
+    Properties:
+      ConfigurationAggregatorName: !Ref AggregatorName
+      OrganizationAggregationSource:
+        RoleArn: !GetAtt ConfigurationAggregatorRole.Arn
+        AwsRegions: !Ref AggregatedRegions
+        AllAwsRegions: false
+      Tags:
+        - Key: "Source"
+          Value: "ProServe Delivery Kit"
+        - Key: "OrganizationName"
+          Value: !Ref OrganizationName
+
+Outputs:
+  ConfigurationAggregatorName:
+    Description: Name of the deployed AWS Config Organization Aggregator.
+    Value: !Ref ConfigurationAggregator
+  ConfigurationAggregatorArn:
+    Description: ARN of the deployed AWS Config Organization Aggregator.
+    Value: !GetAtt ConfigurationAggregator.ConfigurationAggregatorArn
+  ConfigurationAggregatorRoleArn:
+    Description: ARN of the IAM service role used by the aggregator.
+    Value: !GetAtt ConfigurationAggregatorRole.Arn
