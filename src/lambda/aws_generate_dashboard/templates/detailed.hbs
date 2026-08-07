@@ -1,39 +1,183 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Compliance Check - Detailed Report</title>
     <style>
-        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; margin: 40px; background-color: #f4f6f8; color: #333; }
-        .container { max-width: 1400px; margin: 0 auto; background-color: white; padding: 20px 40px; border-radius: 8px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
-        h1 { color: #2c3e50; border-bottom: 2px solid #ecf0f1; padding-bottom: 10px; }
-        .summary { margin: 20px 0; padding: 15px; background-color: #e8f4f8; border-left: 4px solid #3498db; border-radius: 4px; }
-        table { width: 100%; border-collapse: collapse; margin-top: 20px; }
-        th, td { padding: 12px 15px; border-bottom: 1px solid #ddd; text-align: left; vertical-align: middle; }
-        th { background-color: #f8f9fa; font-weight: 600; color: #2c3e50; }
-        tr:hover { background-color: #f5f7fa; }
-        .status-badge { display: inline-block; padding: 6px 12px; border-radius: 12px; font-size: 0.85em; font-weight: bold; text-align: center; min-width: 80px; }
-        .status-Compliant { color: #155724; background-color: #d4edda; border: 1px solid #c3e6cb; }
-        .status-NON-COMPLIANT { color: #721c24; background-color: #f8d7da; border: 1px solid #f5c6cb; }
-        .status-PENDING { color: #856404; background-color: #fff3cd; border: 1px solid #ffeeba; }
-        .asset-name { word-break: break-all; font-family: monospace; font-size: 0.9em; color: #555; }
-        .filter-label { font-weight: 600; color: #2c3e50; margin-right: 8px; display: inline-block; }
-        .filter-input { position: absolute; opacity: 0; pointer-events: none; }
-        .filter-pill { border: 1px solid #cbd5e1; padding: 6px 10px; border-radius: 999px; cursor: pointer; background: #f8fafc; font-size: 0.9em; margin: 4px 6px 4px 0; display: inline-block; }
-        .filter-input:checked + .filter-pill { background: #2563eb; color: white; border-color: #2563eb; }
-        .filter-select { border: 1px solid #cbd5e1; padding: 6px 10px; border-radius: 8px; background: #fff; color: #2c3e50; font-size: 0.9em; margin: 4px 6px 4px 0; min-width: 220px; }
-        .filter-break { display: block; height: 0; margin-bottom: 12px; }
-        #filter-all:checked ~ table tbody tr { display: table-row; }
-        #filter-compliant:checked ~ table tbody tr { display: none; }
-        #filter-compliant:checked ~ table tbody tr.status-overall-compliant { display: table-row; }
-        #filter-noncompliant:checked ~ table tbody tr { display: none; }
-        #filter-noncompliant:checked ~ table tbody tr.status-overall-noncompliant { display: table-row; }
-        #filter-pending:checked ~ table tbody tr { display: none; }
-        #filter-pending:checked ~ table tbody tr.status-overall-pending { display: table-row; }
-        {{filterCss}}
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            margin: 40px;
+            background-color: #f4f6f8;
+            color: #333;
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            background-color: white;
+            padding: 20px 40px;
+            border-radius: 8px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        }
+
+        h1 {
+            color: #2c3e50;
+            border-bottom: 2px solid #ecf0f1;
+            padding-bottom: 10px;
+        }
+
+        .summary {
+            margin: 20px 0;
+            padding: 15px;
+            background-color: #e8f4f8;
+            border-left: 4px solid #3498db;
+            border-radius: 4px;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 20px;
+        }
+
+        th,
+        td {
+            padding: 12px 15px;
+            border-bottom: 1px solid #ddd;
+            text-align: left;
+            vertical-align: middle;
+        }
+
+        th {
+            background-color: #f8f9fa;
+            font-weight: 600;
+            color: #2c3e50;
+        }
+
+        tr:hover {
+            background-color: #f5f7fa;
+        }
+
+        .status-badge {
+            display: inline-block;
+            padding: 6px 12px;
+            border-radius: 12px;
+            font-size: 0.85em;
+            font-weight: bold;
+            text-align: center;
+            min-width: 80px;
+        }
+
+        .status-Compliant {
+            color: #155724;
+            background-color: #d4edda;
+            border: 1px solid #c3e6cb;
+        }
+
+        .status-NON-COMPLIANT {
+            color: #721c24;
+            background-color: #f8d7da;
+            border: 1px solid #f5c6cb;
+        }
+
+        .status-PENDING {
+            color: #856404;
+            background-color: #fff3cd;
+            border: 1px solid #ffeeba;
+        }
+
+        .asset-name {
+            word-break: break-all;
+            font-family: monospace;
+            font-size: 0.9em;
+            color: #555;
+        }
+
+        .filter-label {
+            font-weight: 600;
+            color: #2c3e50;
+            margin-right: 8px;
+            display: inline-block;
+        }
+
+        .filter-input {
+            position: absolute;
+            opacity: 0;
+            pointer-events: none;
+        }
+
+        .filter-pill {
+            border: 1px solid #cbd5e1;
+            padding: 6px 10px;
+            border-radius: 999px;
+            cursor: pointer;
+            background: #f8fafc;
+            font-size: 0.9em;
+            margin: 4px 6px 4px 0;
+            display: inline-block;
+        }
+
+        .filter-input:checked+.filter-pill {
+            background: #2563eb;
+            color: white;
+            border-color: #2563eb;
+        }
+
+        .filter-select {
+            border: 1px solid #cbd5e1;
+            padding: 6px 10px;
+            border-radius: 8px;
+            background: #fff;
+            color: #2c3e50;
+            font-size: 0.9em;
+            margin: 4px 6px 4px 0;
+            min-width: 220px;
+        }
+
+        .filter-break {
+            display: block;
+            height: 0;
+            margin-bottom: 12px;
+        }
+
+        #filter-all:checked~table tbody tr {
+            display: table-row;
+        }
+
+        #filter-compliant:checked~table tbody tr {
+            display: none;
+        }
+
+        #filter-compliant:checked~table tbody tr.status-overall-compliant {
+            display: table-row;
+        }
+
+        #filter-noncompliant:checked~table tbody tr {
+            display: none;
+        }
+
+        #filter-noncompliant:checked~table tbody tr.status-overall-noncompliant {
+            display: table-row;
+        }
+
+        #filter-pending:checked~table tbody tr {
+            display: none;
+        }
+
+        #filter-pending:checked~table tbody tr.status-overall-pending {
+            display: table-row;
+        }
+
+            {
+                {
+                filterCss
+            }
+        }
     </style>
 </head>
+
 <body>
     <div class="container">
         <h1>Compliance Check - Detailed Report</h1>
@@ -48,16 +192,19 @@
         <label class="filter-pill" for="filter-all">All</label>
         <input class="filter-input" type="radio" name="status-filter" id="filter-compliant" data-status="compliant">
         <label class="filter-pill" for="filter-compliant">Compliant</label>
-        <input class="filter-input" type="radio" name="status-filter" id="filter-noncompliant" data-status="noncompliant">
+        <input class="filter-input" type="radio" name="status-filter" id="filter-noncompliant"
+            data-status="noncompliant">
         <label class="filter-pill" for="filter-noncompliant">Non-compliant</label>
         <input class="filter-input" type="radio" name="status-filter" id="filter-pending" data-status="pending">
         <label class="filter-pill" for="filter-pending">Pending</label>
         <div class="filter-break"></div>
         <span class="filter-label">Guardrail Filter:</span>
-        <input class="filter-input" type="radio" name="guardrail-filter" id="filter-guardrail-all" data-guardrail="all" checked>
+        <input class="filter-input" type="radio" name="guardrail-filter" id="filter-guardrail-all" data-guardrail="all"
+            checked>
         <label class="filter-pill" for="filter-guardrail-all">All</label>
         {{#each guardrailNumbers}}
-        <input class="filter-input" type="radio" name="guardrail-filter" id="filter-guardrail-{{this}}" data-guardrail="{{this}}">
+        <input class="filter-input" type="radio" name="guardrail-filter" id="filter-guardrail-{{this}}"
+            data-guardrail="{{this}}">
         <label class="filter-pill" for="filter-guardrail-{{this}}">{{this}}</label>
         {{/each}}
         <div class="filter-break"></div>
@@ -80,7 +227,7 @@
             </thead>
             <tbody>
                 {{#each findings}}
-                <tr class="guardrail-{{guardrailNum}} {{overallClass}}">
+                <tr class="guardrail-{{guardrailNum}} {{overallClass}}" data-account="{{accountId}}">
                     <td><span class="status-badge {{complianceClass}}">{{compliance}}</span></td>
                     <td>{{guardrailNum}}</td>
                     <td>{{controlName}}</td>
@@ -100,6 +247,8 @@
             const accountSelect = document.getElementById('filter-account');
 
             function extractAccount(row) {
+                const directAccount = (row.getAttribute('data-account') || '').trim();
+                if (directAccount) return directAccount;
                 const messageCell = row.cells[4];
                 if (!messageCell) return '';
                 const match = messageCell.textContent.match(/Account:\s*([^|\n]+)/i);
@@ -150,4 +299,5 @@
         })();
     </script>
 </body>
+
 </html>
