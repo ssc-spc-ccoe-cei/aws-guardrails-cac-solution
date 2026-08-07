@@ -327,41 +327,6 @@ Resources:
   # Dashboard Generation Components
   ##################################################
 
-  DashboardBucket:
-    Condition: IsAuditAccount
-    Type: AWS::S3::Bucket
-    Properties:
-      BucketName: !Sub "gc-fedclient-dashboard-${AWS::AccountId}-${AWS::Region}"
-      BucketEncryption:
-        ServerSideEncryptionConfiguration:
-          - ServerSideEncryptionByDefault:
-              SSEAlgorithm: aws:kms
-              KMSMasterKeyID: !GetAtt myKey.Arn
-      PublicAccessBlockConfiguration:
-        BlockPublicAcls: true
-        BlockPublicPolicy: true
-        IgnorePublicAcls: true
-        RestrictPublicBuckets: true
-
-  DashboardBucketPolicyEnforceSSL:
-    Condition: IsAuditAccount
-    Type: AWS::S3::BucketPolicy
-    Properties:
-      Bucket: !Ref DashboardBucket
-      PolicyDocument:
-        Version: "2012-10-17"
-        Statement:
-          - Sid: DenyInsecureTransport
-            Effect: Deny
-            Principal: "*"
-            Action: "s3:*"
-            Resource:
-              - !Sub "arn:aws:s3:::${DashboardBucket}"
-              - !Sub "arn:aws:s3:::${DashboardBucket}/*"
-            Condition:
-              Bool:
-                aws:SecureTransport: "false"
-
   DashboardLambdaPermission:
     Condition: IsAuditAccount
     Type: AWS::Lambda::Permission
@@ -386,7 +351,6 @@ Resources:
       Runtime: nodejs22.x
       Environment:
         Variables:
-          DASHBOARD_BUCKET: !Ref DashboardBucket
           ORG_NAME: !Ref OrganizationName
           CAC_VERSION: !Ref DeployVersion
 
@@ -424,4 +388,4 @@ Resources:
                 Action:
                   - "s3:GetObject"
                   - "s3:PutObject"
-                Resource: !Sub "arn:aws:s3:::${DashboardBucket}/*"
+                Resource: !Sub "arn:aws:s3:::gc-fedclient-${AWS::AccountId}-${AWS::Region}/*"
