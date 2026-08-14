@@ -29,7 +29,6 @@ Metadata:
       - Label:
           default: Optional Parameters
         Parameters:
-          - AdditionalAssessmentAdminRoleARN
           - AWSConfigConformsBucketName
           - DeployRoles
           - DeployVersion
@@ -78,8 +77,6 @@ Metadata:
         default: Name for the S3 Evidence bucket
       AWSConfigConformsBucketName:
         default: Name for the S3 AWS Config Conformance Pack assets bucket
-      AdditionalAssessmentAdminRoleARN:
-        default: Additional Audit Manager Assessment Admin Role ARN
       DestBucketName:
         default: Name of the S3 bucket (leave as is unless instructed otherwise)
       DeployRoles:
@@ -184,11 +181,6 @@ Parameters:
     Default: ""
     Description: >-
       Bucket will store AWS Config Conformance Pack assets. If not provided, a name will be generated. (name must start with awsconfigconforms- ).
-  AdditionalAssessmentAdminRoleARN:
-    Type: String
-    Default: ""
-    Description: >-
-      ARN of any additional role that should be configured as owners of the Assessment in Audit Manager
   DestBucketName:
     Type: String
     Default: "*GCDestBucketName*"
@@ -620,7 +612,6 @@ Resources:
 
   AWSConfigSetupLambda:
     DependsOn:
-      - SetupAWSAuditManagerLambdaExecutionRole
       - ConfigLambdaExecutionRolePolicy
     Type: AWS::Lambda::Function
     Properties:
@@ -639,81 +630,6 @@ Resources:
     DependsOn:
       - AWSConfigSetupLambda
 
-  # AWS Audit Manager setup requirements
-  AuditManagerLambdaExecutionRolePolicy:
-    Type: AWS::IAM::Policy
-    Properties:
-      PolicyDocument:
-        Version: "2012-10-17"
-        Statement:
-          - Sid: AllowCreateLogGroup
-            Action:
-              - "logs:CreateLogGroup"
-            Resource:
-              - !Sub "arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:*"
-            Effect: Allow
-          - Sid: AllowLogging
-            Action:
-              - "logs:CreateLogGroup"
-              - "logs:CreateLogStream"
-              - "logs:PutLogEvents"
-            Resource:
-              - !Sub "arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/lambda/${OrganizationName}gc*"
-            Effect: Allow
-          - Sid: AllowOrganizationsSetup
-            Action:
-              - "organizations:EnableAWSServiceAccess"
-              - "organizations:RegisterDelegatedAdministrator"
-              - "organizations:Describe*"
-              - "organizations:List*"
-              - "iam:Simulate*"
-              - "iam:GetContextKeysForPrincipalPolicy"
-            Resource: "*"
-            Effect: Allow
-      PolicyName: !Sub "${OrganizationName}setup_auditmanager_lambda_execution_role_policy"
-      Roles:
-        - !Ref SetupAWSAuditManagerLambdaExecutionRole
-
-  SetupAWSAuditManagerLambdaExecutionRole:
-    Type: AWS::IAM::Role
-    Properties:
-      AssumeRolePolicyDocument:
-        Version: "2012-10-17"
-        Statement:
-          - Effect: "Allow"
-            Principal:
-              Service:
-                - "lambda.amazonaws.com"
-            Action:
-              - "sts:AssumeRole"
-      Description: "Setup AWS Audit Manager"
-      ManagedPolicyArns:
-        - !Sub arn:${AWS::Partition}:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
-        - !Sub arn:${AWS::Partition}:iam::aws:policy/AWSAuditManagerAdministratorAccess
-      Path: "/"
-      RoleName: !Sub ${RolePrefix}setup_auditmanager_role
-      Tags:
-        - Key: "Source"
-          Value: "ProServe Delivery Kit"
-
-  AWSAuditManagerSetupLambda:
-    Type: AWS::Lambda::Function
-    Properties:
-      FunctionName: !Sub "${OrganizationName}aws_auditmanager_setup"
-      Code: "../../src/lambda/aws_auditmanager_setup/build/AWSAuditManagerSetupLambda/"
-      Handler: app.lambda_handler
-      Role: !GetAtt SetupAWSAuditManagerLambdaExecutionRole.Arn
-      Runtime: !Ref PythonRuntime
-      Timeout: 90
-
-  AWSAuditManagerOrganizationsSetup:
-    Type: Custom::AWSAuditManagerOrganizationsSetup
-    Properties:
-      ServiceToken: !Sub "arn:${AWS::Partition}:lambda:${AWS::Region}:${AWS::AccountId}:function:${OrganizationName}aws_auditmanager_setup"
-      AuditAccountId: !Ref AuditAccountID
-    DependsOn:
-      - AWSAuditManagerSetupLambda
-
   # Generate names for the evidence and AWS Config Conforms buckets
   GenerateEvidenceBucketNameLambda:
     Type: AWS::Lambda::Function
@@ -722,7 +638,7 @@ Resources:
       FunctionName: !Sub "${OrganizationName}aws_generate_bucket_name"
       Code: "../../src/lambda/aws_generate_bucket_name/build/GenerateEvidenceBucketNameLambda/"
       Handler: app.lambda_handler
-      Role: !GetAtt SetupAWSAuditManagerLambdaExecutionRole.Arn
+      Role: !GetAtt SetupAWSConfigLambdaExecutionRole.Arn
       Runtime: !Ref PythonRuntime
       Timeout: 90
 
@@ -1831,10 +1747,8 @@ Resources:
     Type: AWS::CloudFormation::Stack
     DependsOn:
       # Aggregator requires Config trusted access + Audit as delegated
-      # admin, both of which are established by AWSAuditManagerOrganizationsSetup
-      # (see setup-organizations make target which also registers the
-      # config.amazonaws.com delegated admin).
-      - AWSAuditManagerOrganizationsSetup
+      # admin, both of which are established by AWSConfigOrganizationsSetup.
+      - AWSConfigOrganizationsSetup
     Properties:
       TemplateURL: !Sub https://${PipelineBucket}.s3.${AWS::Region}.amazonaws.com/${DeployVersion}/config-aggregator.yaml
       Parameters:
@@ -1846,12 +1760,12 @@ Resources:
         AggregatorName: !Sub "${OrganizationName}GC-Guardrails-Aggregator"
 
   #######################################################
-  # Part 5 - Audit Manager Components
+  # Part 5 - Evidence Collection Components
   #######################################################
-  AuditAccountAuditManager:
+  EvidenceCollectionComponents:
     Type: AWS::CloudFormation::StackSet
     DependsOn:
-      - AWSAuditManagerOrganizationsSetup
+      - ConfigAggregator
       - ConformancePack
       - AuditAccountPreRequisitesPart1
       - AuditAccountPreRequisitesPart2
@@ -1862,66 +1776,6 @@ Resources:
       - AuditAccountPreRequisitesPart7
       - AuditAccountPreRequisitesPart8
       - AuditAccountPreRequisitesPartN
-      #- AllAccountPreRequisites
-    Properties:
-      AutoDeployment:
-        Enabled: true
-        RetainStacksOnAccountRemoval: false
-      Capabilities:
-        - CAPABILITY_IAM
-        - CAPABILITY_NAMED_IAM
-      Description: GC Guardrails Assessment - Audit Manager resources
-      ManagedExecution:
-        Active: true
-      OperationPreferences:
-        FailureToleranceCount: 0
-        MaxConcurrentCount: 1
-        RegionOrder:
-          - ca-central-1
-      Parameters:
-        - ParameterKey: OrganizationName
-          ParameterValue: !Ref OrganizationName
-        - ParameterKey: AuditAccountID
-          ParameterValue: !Ref AuditAccountID
-        - ParameterKey: EvidenceBucketName
-          ParameterValue:
-            !If [
-              GenerateEvidenceBucketName,
-              !GetAtt GenerateEvidenceBucketName.EvidenceBucketName,
-              !Ref EvidenceBucketName,
-            ]
-        - ParameterKey: AdditionalAssessmentAdminRoleARN
-          ParameterValue: !Ref AdditionalAssessmentAdminRoleARN
-        - ParameterKey: RolePrefix
-          ParameterValue: !Ref RolePrefix
-        - ParameterKey: DeployVersion
-          ParameterValue: !Ref DeployVersion
-        # Forwarded so the AWSAuditManagerSetup Custom Resource is re-invoked
-        # with RequestType: Update on every deploy (the root stack's
-        # InvokeUpdate UUID is bumped on each `make deploy` and on every
-        # partition-sync cascade).
-        - ParameterKey: InvokeUpdate
-          ParameterValue: !Ref InvokeUpdate
-      PermissionModel: SERVICE_MANAGED
-      StackInstancesGroup:
-        - DeploymentTargets:
-            OrganizationalUnitIds:
-              - !Ref SecurityOUID
-          Regions:
-            - ca-central-1
-      StackSetName: !Sub "${OrganizationName}-GC-AuditAccount-AuditManager"
-      Tags:
-        - Key: Source
-          Value: "ProServe Delivery Kit"
-      TemplateURL: !Sub https://${PipelineBucket}.s3.${AWS::Region}.amazonaws.com/${DeployVersion}/AuditAccountAuditManager.yaml
-
-  #######################################################
-  # Part 6 - Evidence Collection Components
-  #######################################################
-  EvidenceCollectionComponents:
-    Type: AWS::CloudFormation::StackSet
-    DependsOn:
-      - AuditAccountAuditManager
     Properties:
       AutoDeployment:
         Enabled: true
@@ -1969,7 +1823,7 @@ Resources:
           Value: "ProServe Delivery Kit"
       TemplateURL: !Sub https://${PipelineBucket}.s3.${AWS::Region}.amazonaws.com/${DeployVersion}/EvidenceCollectionComponents.yaml
   #######################################################
-  # Part 7 - Role creation components
+  # Part 6 - Role creation components
   #######################################################
   ManagementAccountOrgRoleGenerator:
     Type: AWS::CloudFormation::StackSet
@@ -2124,6 +1978,9 @@ Resources:
                   - !Sub "arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${OrganizationName}*"
                   - !Sub "arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${RolePrefix}*"
                   - !Sub "arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${AccelRolePrefix}*"
+                  # config-aggregator.yaml's ConfigurationAggregatorRole
+                  # has no explicit RoleName and Path: /service-role/
+                  - !Sub "arn:${AWS::Partition}:iam::${AWS::AccountId}:role/service-role/${RootStackName}*"
                   # Legacy unprefixed role names created by main.yaml today:
                   - !Sub "arn:${AWS::Partition}:iam::${AWS::AccountId}:role/GCLambdaExecutionRoleAccountPolicy"
               - Sid: ReadAwsManagedPolicies
@@ -2146,6 +2003,8 @@ Resources:
                   - !Sub "arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${OrganizationName}*"
                   - !Sub "arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${RolePrefix}*"
                   - !Sub "arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${AccelRolePrefix}*"
+                  # Aggregator service role 
+                  - !Sub "arn:${AWS::Partition}:iam::${AWS::AccountId}:role/service-role/${RootStackName}*"
                 Condition:
                   StringEquals:
                     "iam:PassedToService":
@@ -2169,7 +2028,6 @@ Resources:
                       - "member.org.stacksets.cloudformation.amazonaws.com"
                       - "config.amazonaws.com"
                       - "config-multiaccountsetup.amazonaws.com"
-                      - "auditmanager.amazonaws.com"
               - Sid: EnableTrustedAccessForConfig
                 Effect: Allow
                 Action:

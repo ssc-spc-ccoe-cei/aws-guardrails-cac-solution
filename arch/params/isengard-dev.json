@@ -50,9 +50,5 @@
   {
     "ParameterKey": "AWSConfigConformsBucketName",
     "ParameterValue": ""
-  },
-  {
-    "ParameterKey": "AdditionalAssessmentAdminRoleARN",
-    "ParameterValue": ""
   }
 ]

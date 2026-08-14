@@ -190,7 +190,7 @@ because `ExcludedAccounts` ensures each account ever sees exactly one pack.
 A new nested template replaces the single inline
 `AWS::Config::OrganizationConformancePack` in `main.yaml`. **The logical name
 `ConformancePack` is preserved** so the existing
-`AuditAccountAuditManager DependsOn: ConformancePack` reference still resolves.
+`EvidenceCollectionComponents DependsOn: ConformancePack` reference still resolves.
 
 Why a nested stack: the per-partition account lists arrive from the partitioner as
 `!GetAtt` values, which cannot be used in parent-stack `Conditions`. Passing them
@@ -379,8 +379,8 @@ flowchart TB
         nested["ConformancePackPartitions\n(nested stack)"]
         packs["1..3 OrganizationConformancePack\nresources, each loading\nConformancePack.yaml with a\ndifferent PartitionSuffix"]
 
-        am["AuditAccountAuditManager\n(StackSet)"]
-        framework["audit_manager_custom_framework.py\n(3 controlMappingSources / control)"]
+        am["ConfigAggregator + EvidenceCollectionComponents\n(nested stack + StackSet)"]
+        framework["aws_compile_audit_report\n(reads org Config Aggregator directly)"]
 
         psStack["PartitionSyncStack\n(nested stack)"]
         sfn["PartitionSyncStateMachine\n(defined — idle for first 6h)"]

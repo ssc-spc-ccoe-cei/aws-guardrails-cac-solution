@@ -1,5 +1,5 @@
 AWSTemplateFormatVersion: 2010-09-09
-Description: Configures AWS Config and AWS Audit Manager for multi-account management.
+Description: Configures AWS Config guardrail Lambdas for multi-account management.
 
 Parameters:
   OrganizationName:

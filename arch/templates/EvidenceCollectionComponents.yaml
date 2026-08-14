@@ -27,12 +27,18 @@ Parameters:
   DefaultCloudProfile:
     Type: String
     Description: The cloud profile to use when one is not provided by an account.
-  AssessmentName:
+  AggregatorName:
     Type: String
-    Default: "GC Guardrails Assessment"
-    Description: Name of assessment in auditmanager.
+    Default: ""
+    Description: >-
+      Name of the AWS Config Organization Aggregator (deployed by
+      config-aggregator.yaml) queried by the daily compile-audit-report
+      Lambda. Empty string uses the solution default (see !Sub below).
 
 Conditions:
+  UseDefaultAggregatorName: !Equals
+    - !Ref AggregatorName
+    - ""
   IsAuditAccount: !Equals
     - !Ref AWS::AccountId
     - !Ref AuditAccountID
@@ -212,7 +218,10 @@ Resources:
         Variables:
           source_target_bucket: !Sub "gc-fedclient-${AWS::AccountId}-${AWS::Region}"
           ORG_ID: !Ref OrganizationId
-          ASSESSMENT_NAME: !Ref AssessmentName
+          AGGREGATOR_NAME: !If
+            - UseDefaultAggregatorName
+            - !Sub "${OrganizationName}GC-Guardrails-Aggregator"
+            - !Ref AggregatorName
           ORG_NAME: !Ref OrganizationName
           TENANT_ID: !Ref TenantId
           CAC_VERSION: !Ref DeployVersion
@@ -272,10 +281,13 @@ Resources:
                 Resource: !GetAtt myKey.Arn
               - Effect: Allow
                 Action:
-                  - "auditmanager:GetEvidenceByEvidenceFolder"
-                  - "auditmanager:GetEvidenceFoldersByAssessment"
-                  - "auditmanager:ListAssessments"
-                Resource: !Sub "arn:aws:auditmanager:${AWS::Region}:${AWS::AccountId}:assessment/*"
+                  # Org Config Aggregator read APIs used to source guardrail
+                  # compliance data (replaces the retired Audit Manager path).
+                  - "config:SelectAggregateResourceConfig"
+                  - "config:DescribeConfigurationAggregators"
+                  - "config:DescribeAggregateComplianceByConfigRules"
+                  - "config:GetAggregateComplianceDetailsByConfigRule"
+                Resource: "*"
               - Sid: AllowCreateLogGroup
                 Action:
                   - "logs:CreateLogGroup"

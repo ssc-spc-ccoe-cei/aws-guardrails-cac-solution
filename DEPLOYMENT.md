@@ -31,7 +31,6 @@ Within `main.yaml`, the following resources are created directly in the **manage
 
 - **`aws_create_role` Lambda** — Assumes the Accelerator pipeline role into each member account and creates `GCLambdaExecutionRole` and `GCLambdaExecutionRole2` with the necessary IAM policies for guardrail assessments (Config rule execution, read access to IAM/S3/CloudTrail/Organizations/etc.).
 - **`aws_config_setup` Lambda** — Enables AWS Config as an Organization service and registers the Audit account as a delegated administrator.
-- **`aws_auditmanager_setup` Lambda** — Enables AWS Audit Manager as an Organization service and registers the Audit account as a delegated administrator.
 - **`aws_generate_bucket_name` Lambda** — Generates unique names for the evidence and AWS Config Conformance Pack S3 buckets.
 - **IAM Execution Roles & Policies** — Multiple fine-grained IAM policies are attached to `GCLambdaExecutionRole` and `GCLambdaExecutionRole2` covering S3, CloudWatch Logs, IAM, CloudTrail, Organizations, CloudFront, ACM, datastores, marketplace, and encryption-in-transit checks.
 
@@ -54,9 +53,15 @@ After all StackSets complete, an **`AWS::Config::OrganizationConformancePack`** 
 - Rules are parameterized with evidence file paths (S3 URIs to attestation documents, policy files, etc.) and organization-specific settings.
 - The Conformance Pack is deployed organization-wide, evaluating compliance in every member account.
 
-### 6. Audit Manager (Part 5)
+### 6. Config Aggregator + Evidence Collection (Part 5+)
 
-Finally, an `AuditAccountAuditManager` StackSet deploys Audit Manager resources (custom frameworks, assessments) into the Audit account, wiring up the Config rule results as automated evidence sources.
+After the conformance pack is in place, a `ConfigAggregator` nested stack
+provisions the org-wide AWS Config Aggregator in the Audit account, and
+the `EvidenceCollectionComponents` StackSet deploys the daily
+`aws_compile_audit_report` Lambda. That Lambda queries the aggregator
+directly for guardrail rule compliance and writes the daily CSV to the
+evidence bucket. (AWS Audit Manager has been deprecated by AWS and is no
+longer part of the solution.)
 
 ## How Guardrail Lambda Permissions Are Set Up
 
@@ -119,7 +124,6 @@ flowchart TD
         subgraph Part1["Part 1 — Mgmt Account Prerequisites"]
             CR["aws_create_role Lambda"]
             CS["aws_config_setup Lambda"]
-            AM["aws_auditmanager_setup Lambda"]
             GB["aws_generate_bucket_name Lambda"]
             ROLES["GCLambdaExecutionRole\n& GCLambdaExecutionRole2\n+ IAM Policies"]
         end
@@ -143,8 +147,9 @@ flowchart TD
             RULES["AWS Config Custom Rules\n(GC01–GC13)\neach backed by gc* Lambda"]
         end
 
-        subgraph Part5["Part 5 — Audit Manager"]
-            AMA["AuditAccountAuditManager\nStackSet"]
+        subgraph Part5["Part 5 — Config Aggregator + Evidence"]
+            AGG["ConfigAggregator\n(org-wide AWS Config)"]
+            ECC["EvidenceCollectionComponents\nStackSet\n(aws_compile_audit_report)"]
         end
     end
 
@@ -155,7 +160,6 @@ flowchart TD
     ROOT -->|"nested stack"| MAIN
     MAIN --> CR
     MAIN --> CS
-    MAIN --> AM
     MAIN --> GB
     CR -->|"assumes AcceleratorRole\ninto member accounts"| ROLES
 

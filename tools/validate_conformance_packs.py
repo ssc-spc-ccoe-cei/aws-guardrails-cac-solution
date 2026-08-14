@@ -207,14 +207,14 @@ if "PartitionCount" in cp_params:
     print("*** main.yaml ConformancePack still passes PartitionCount to nested stack (no longer consumed)")
     ok = False
 
-# Downstream AuditAccountAuditManager must still DependsOn ConformancePack
-aam = main_ress.get("AuditAccountAuditManager", {})
+# Downstream EvidenceCollectionComponents must still DependsOn ConformancePack
+aam = main_ress.get("EvidenceCollectionComponents", {})
 deps = aam.get("DependsOn", [])
 if "ConformancePack" not in deps:
-    print(f"*** main.yaml AuditAccountAuditManager no longer DependsOn ConformancePack: {deps}")
+    print(f"*** main.yaml EvidenceCollectionComponents no longer DependsOn ConformancePack: {deps}")
     ok = False
 else:
-    print("main.yaml: AuditAccountAuditManager still DependsOn ConformancePack")
+    print("main.yaml: EvidenceCollectionComponents still DependsOn ConformancePack")
 
 # Partitioner Lambda must NOT have AUDIT_ACCOUNT_ID env var — the
 # audit-account-first deterministic placement was reverted (the system
@@ -229,54 +229,10 @@ else:
     print("main.yaml: AccountPartitionerLambda has no AUDIT_ACCOUNT_ID env var (reverted, as intended)")
 
 # ---------- audit_manager_custom_framework.py ----------
-from importlib.util import spec_from_file_location, module_from_spec
-spec = spec_from_file_location(
-    "audit_manager_custom_framework",
-    "src/lambda/aws_auditmanager_resources_config_setup/audit_manager_custom_framework.py",
-)
-mod = module_from_spec(spec)
-spec.loader.exec_module(mod)
-
-frameworks = mod.frameworks_data
-assert len(frameworks) == 1
-controls = []
-for cs in frameworks[0]["controlSets"]:
-    controls.extend(cs["controls"])
-
-print(f"Audit Manager framework: {len(controls)} controls")
-SKIP = {"gc01_check_attestation_letter"}
-matched = 0
-skipped = 0
-bad = 0
-for c in controls:
-    name = c["name"]
-    sources = c.get("controlMappingSources", [])
-    if name in SKIP:
-        if len(sources) != 1:
-            print(f"  *** {name}: expected 1 mapping (no Config rule), got {len(sources)}")
-            bad += 1
-        else:
-            skipped += 1
-        continue
-    # Every other control maps to a single deployed Config rule named
-    # exactly after the control (the partition suffix lives on the
-    # Lambda, not the rule), so one keyword covers all 3 packs.
-    if len(sources) != 1:
-        print(f"  *** {name}: expected 1 mapping, got {len(sources)}")
-        bad += 1
-        continue
-    kv = sources[0]["sourceKeyword"]["keywordValue"]
-    expected = f"Custom_{name}-conformance-pack"
-    if kv != expected:
-        print(f"  *** {name}: keywordValue {kv!r}, expected {expected!r}")
-        bad += 1
-        continue
-    matched += 1
-if bad:
-    ok = False
-
-print(f"Audit Manager: {matched} controls map to 1 keyword each, "
-      f"{skipped} skipped (no Config rule)")
+# Audit Manager has been retired from this solution (deprecated by AWS).
+# The daily compile-audit-report Lambda now sources guardrail compliance
+# straight from the org AWS Config Aggregator, so the custom framework
+# JSON and its keyword mappings no longer exist. Nothing to validate here.
 
 print()
 print("OK" if ok else "FAIL")

@@ -159,44 +159,13 @@ GC02CheckNewThingConfigRule:
           MessageType: "ScheduledNotification"
 ```
 
-## Step 4 — Add the Audit Manager control (one mapping source)
+## Step 4 — Audit Manager (removed)
 
-Edit `src/lambda/aws_auditmanager_resources_config_setup/audit_manager_custom_framework.py`
-and append a new control entry under the relevant `controlSets` block
-(matched by guardrail family — `01-Protect User Accounts And Identities`,
-`02-Manage Access`, etc.). Each control needs **one** `controlMappingSources`
-entry using the `Custom_<rule_name>-conformance-pack` keyword format. The
-same keyword matches the (identically-named) deployed Config rule in every
-partition, so one entry covers the whole org.
-
-```python
-{
-    "type": "Custom",
-    "name": "gc02_check_new_thing",
-    "description": "<description>",
-    "testingInformation": "<what it validates>",
-    "actionPlanTitle": "<short action title>",
-    "actionPlanInstructions": "<remediation steps>",
-    "controlSources": "AWS Config",
-    "controlMappingSources": [
-        {
-            "sourceName": "NewThing-check",
-            "sourceSetUpOption": "System_Controls_Mapping",
-            "sourceType": "AWS_Config",
-            "sourceKeyword": {
-                "keywordInputType": "SELECT_FROM_LIST",
-                "keywordValue": "Custom_gc02_check_new_thing-conformance-pack",
-            },
-        },
-    ],
-    "tags": {},
-},
-```
-
-Notes:
-
-- The `sourceName` must be **unique within a control** and **≤ 100
-  characters**.
+Audit Manager has been retired from this solution (deprecated by AWS).
+The daily `aws_compile_audit_report` Lambda now pulls guardrail
+compliance directly from the org AWS Config Aggregator, so a new
+guardrail is picked up automatically as soon as its rule lands in the
+conformance pack — no framework/keyword mapping to maintain.
 
 ## Step 5 — Update IAM execution role(s) if needed
 

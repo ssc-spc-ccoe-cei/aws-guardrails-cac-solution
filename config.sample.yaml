@@ -16,7 +16,6 @@ Parameters:
   DestBucketName: ""
   EvidenceBucketName: ""
   AWSConfigConformsBucketName: ""
-  AdditionalAssessmentAdminRoleARN: ""
   ExecutionName: ""
   DeployRoles: "false"
   # Account Partitioner Lambda tuning (defaults match main.yaml/root.yaml).

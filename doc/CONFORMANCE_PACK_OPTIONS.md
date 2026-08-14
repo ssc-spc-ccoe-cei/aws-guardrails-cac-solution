@@ -205,9 +205,9 @@ flowchart TD
 ### Pros
 
 - ✅ **Proven to work** — `Fn::FindInMap` + `Ref: AWS::AccountId` confirmed working in Conformance Packs
-- ✅ **Single Conformance Pack** — one resource in `main.yaml`, one pack name, clean Audit Manager integration
-- ✅ **Single Config rule name per guardrail** — consistent across all accounts, simplifies Audit Manager framework references
-- ✅ **No Audit Manager changes required** — the existing `keywordValue` mappings in `audit_manager_custom_framework.py` and the `aws_compile_audit_report` evidence pipeline work as-is since all accounts see the same rule names
+- ✅ **Single Conformance Pack** — one resource in `main.yaml`, one pack name
+- ✅ **Single Config rule name per guardrail** — consistent across all accounts, so the org Config Aggregator merges evidence uniformly
+- ✅ **No evidence-pipeline changes required** — `aws_compile_audit_report` reads the aggregator directly and matches rules by the `gc\d\d_check_*` name pattern, which is identical across accounts
 
 ### Cons
 

@@ -267,8 +267,8 @@ The existing inline `AWS::Config::OrganizationConformancePack` resource
 would be replaced by an `AWS::CloudFormation::Stack` resource that
 delegates to `ConformancePackPartitions.yaml`. Critically the
 **logical name `ConformancePack` would be preserved**, so the existing
-`AuditAccountAuditManager` `DependsOn: ConformancePack` reference still
-resolves without modification.
+`EvidenceCollectionComponents` `DependsOn: ConformancePack` reference
+still resolves without modification.
 
 The nested stack receives only the per-partition account-list
 `!GetAtt`s from the partitioner; whether each pack is created is
@@ -319,55 +319,25 @@ comfortably. Measured body sizes:
 | 200 | 3 | 3.2 KB |
 | 210 (max) | 3 | ~3.4 KB |
 
-### 5. `audit_manager_custom_framework.py` — one `controlMappingSources` entry per control
+### 5. Evidence collection — org Config Aggregator (Audit Manager retired)
 
-Each Audit Manager custom control's `controlMappingSources` list keeps
-a single entry. The matching deployed Config rule has the same name
-in every account regardless of partition (`PartitionSuffix` only
-flows into Lambda ARNs), so one keyword aggregates evidence across
-the whole org. For example:
-
-```python
-# Before (unchanged)
-"controlMappingSources": [
-    {
-        "sourceName": "RootMFA-check",
-        "sourceSetUpOption": "System_Controls_Mapping",
-        "sourceType": "AWS_Config",
-        "sourceKeyword": {
-            "keywordInputType": "SELECT_FROM_LIST",
-            "keywordValue": "Custom_gc01_check_root_mfa-conformance-pack",
-        },
-    },
-],
-
-# After (unchanged)
-"controlMappingSources": [
-    {
-        "sourceName": "RootMFA-check",
-        ...
-        "keywordValue": "Custom_gc01_check_root_mfa-conformance-pack",
-    },
-],
-```
-
-`controlMappingSources` is left at one entry per control because the
-deployed Config rule name is identical across all three partitions
-(`PartitionSuffix` only flows into Lambda ARNs, not into
-`ConfigRuleName`). Audit Manager's keyword matches the same rule name
-across every account in scope and merges the evidence automatically.
-
-Audit Manager's limit of 5 `controlMappingSources` per control is well
-above the 1 we use.
+Audit Manager has been removed from this solution (deprecated by AWS).
+The daily `aws_compile_audit_report` Lambda now sources guardrail
+compliance directly from the org AWS Config Aggregator by querying
+`AWS::Config::ResourceCompliance` items and filtering on the
+`gc\d\d_check_*` rule-name pattern. Because that name is identical across
+every account regardless of partition (`PartitionSuffix` only flows into
+Lambda ARNs, not into `ConfigRuleName`), the aggregator merges evidence
+from P1/P2/P3 automatically with no per-partition configuration.
 
 #### Forward-compatibility with org growth
 
 When the organisation later scales past 70 (or 140) accounts and
 `ConformancePackP2` (or `P3`) gets deployed, the previously-non-existent
 P2/P3 accounts begin producing evaluations of the same
-`gc01_check_root_mfa` rule from the same single keyword on the next
-collection cycle — no framework redeploy, no manual reconciliation, no
-control rename.
+`gc01_check_root_mfa` rule that the aggregator picks up on the next
+collection cycle — no evidence-pipeline redeploy, no manual
+reconciliation, no control rename.
 
 ---
 

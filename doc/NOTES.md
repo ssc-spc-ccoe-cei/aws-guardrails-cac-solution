@@ -2,48 +2,7 @@
 
 ## Setup Lambdas
 
-The following lambda function (starting with aws\_ prefix) are used to prepare the base environment, including Audit Manager, S3, IAM and AWS Config resources setup.
-
-## aws_auditmanager_resources_config_setup
-
-- Hardcoded values 🔥
-
-  ```py
-  frameworks_data_string = zlib.decompress(base64.b64decode( "eJztXGtv2...")).decode("utf-8")
-  ```
-
-- `cfnresponse` class replaced with:
-
-  ```py
-  send(event, context, response_status, response_data, physical_resource_id=None, no_echo=False, reason=None):
-  ```
-
-- Linting info:
-
-  - Score: 9.15/ 10 💡
-  - Line Length >100 (mainly loggers)
-  - Some functions are too complex (>10 branches)
-    - 12, 20, 18, 13 control statements
-  - Unused function arguments
-
-- Testing Status: SUCCESS ✅
-
-## aws_auditmanager_setup
-
-- `cfnresponse` class replaced with:
-
-  ```py
-  send(event, context, response_status, response_data, physical_resource_id=None, no_echo=False, reason=None):
-  ```
-
-- Linting info:
-
-  - Score: 9.03/ 10 💡
-  - Line Length >100 (mainly loggers)
-  - Some functions are too complex
-    - 11, 11, 12 control statements
-
-- Testing Status: SUCCESS ✅
+The following lambda function (starting with aws\_ prefix) are used to prepare the base environment, including S3, IAM and AWS Config resources setup. (AWS Audit Manager has been removed from this solution — deprecated by AWS — and replaced by the org AWS Config Aggregator; see `aws_compile_audit_report` and `arch/templates/config-aggregator.yaml`.)
 
 ## aws_buckets_setup
 
@@ -428,5 +387,3 @@ Parameters:
   `InvokeUpdate: !Ref InvokeUpdate`, which is threaded down from
   `root.yaml` → `main.yaml` and bumped on every `make deploy` (via
   `$$UUID` in the makefile) and by the partition-sync Step Function.
-  The same fix was applied to `AWSAuditManagerSetup` in
-  `AuditAccountAuditManager.yaml`.
