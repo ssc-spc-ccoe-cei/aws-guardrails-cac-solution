@@ -53,7 +53,7 @@ Resources:
 ConformancePackP1:
   Type: AWS::Config::OrganizationConformancePack
   Properties:
-    OrganizationConformancePackName: !Sub "${OrganizationName}-GC-CP-Guardrails"
+    OrganizationConformancePackName: !Sub "${OrganizationName}-GC-CP-Guardrails-P1"
     ExcludedAccounts: !GetAtt AccountPartitioner.ExcludedFromP1
     ConformancePackInputParameters:
       - ParameterName: PartitionSuffix

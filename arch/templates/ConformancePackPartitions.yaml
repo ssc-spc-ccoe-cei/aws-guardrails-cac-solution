@@ -112,7 +112,12 @@ Resources:
     Type: AWS::Config::OrganizationConformancePack
     Condition: HasAccountsInP1
     Properties:
-      OrganizationConformancePackName: !Sub "${OrganizationName}-GC-CP-Guardrails"
+      # -P1 suffix (added when partitioning was introduced) sidesteps
+      # a name collision with the legacy top-level pack of the same
+      # base name during in-place upgrades from pre-partition
+      # deployments. Old pack is deleted by CFN as part of the same
+      # changeset; new one is created under this distinct name.
+      OrganizationConformancePackName: !Sub "${OrganizationName}-GC-CP-Guardrails-P1"
       TemplateS3Uri: !Sub "s3://${PipelineBucket}/${DeployVersion}/ConformancePack.yaml"
       # Exclude every account that belongs to a different partition.
       # All four (HasAccountsInP2, HasAccountsInP3) combinations are

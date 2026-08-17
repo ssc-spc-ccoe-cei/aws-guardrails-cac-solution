@@ -221,7 +221,7 @@ Parameters:
     Description: >-
       Maximum number of partitions the Account Partitioner Lambda is allowed
       to create. Hard-capped at 3 because the AuditAccountPreRequisitesPart*
-      templates and ConformancePack only define conditional clones for
+      templates and ConformancePackPartitions only define conditional clones for
       partitions 1, 2, and 3. Total addressable accounts =
       MaxAccountsPerPartition x MaxPartitions (default 70 x 3 = 210).
   RootStackName:
@@ -230,7 +230,7 @@ Parameters:
       Name of the root CloudFormation stack (passed in from root.yaml). The
       partition-sync Step Function calls cloudformation:UpdateStack against
       this stack to cascade fresh AccountsInP1/P2/P3 values into the
-      ConformancePack nested stack and PartitionCount into the Part1-8
+      ConformancePackStack nested stack and PartitionCount into the Part1-8
       StackSets when the partitioner reports accountsChanged=true. Nested
       stacks cannot be updated directly, so the state machine has to target
       the root.
@@ -1689,7 +1689,7 @@ Resources:
   # the one for the partition it is assigned to. See
   # ConformancePackPartitions.yaml for the full set of resources and
   # conditions.
-  ConformancePack:
+  ConformancePackStack:
     Type: AWS::CloudFormation::Stack
     DependsOn:
       - AuditAccountPreRequisitesPart1
@@ -1766,7 +1766,7 @@ Resources:
     Type: AWS::CloudFormation::StackSet
     DependsOn:
       - ConfigAggregator
-      - ConformancePack
+      - ConformancePackStack
       - AuditAccountPreRequisitesPart1
       - AuditAccountPreRequisitesPart2
       - AuditAccountPreRequisitesPart3

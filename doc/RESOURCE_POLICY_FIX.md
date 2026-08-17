@@ -188,18 +188,17 @@ because `ExcludedAccounts` ensures each account ever sees exactly one pack.
 #### 4b. `ConformancePackPartitions.yaml` — new nested stack
 
 A new nested template replaces the single inline
-`AWS::Config::OrganizationConformancePack` in `main.yaml`. **The logical name
-`ConformancePack` is preserved** so the existing
-`EvidenceCollectionComponents DependsOn: ConformancePack` reference still resolves.
-
-Why a nested stack: the per-partition account lists arrive from the partitioner as
-`!GetAtt` values, which cannot be used in parent-stack `Conditions`. Passing them
-into a nested stack as regular parameters lets the nested stack's `Conditions`
-gate each pack on partition emptiness.
+`AWS::Config::OrganizationConformancePack` in `main.yaml`. The parent-stack
+logical ID is `ConformancePackStack` (renamed from the historical
+`ConformancePack` to sidestep a resource-type-change conflict during
+in-place upgrades from pre-partition deployments — the old resource
+was `AWS::Config::OrganizationConformancePack`, the new one is
+`AWS::CloudFormation::Stack`). `EvidenceCollectionComponents`
+`DependsOn` was updated to match.
 
 | Resource | Condition | `PartitionSuffix` | `ExcludedAccounts` |
 |---|---|---|---|
-| `ConformancePackP1` (`${OrganizationName}-GC-CP-Guardrails`)    | `HasAccountsInP1` | `""`    | union of P2 ∪ P3 (whichever are non-empty), or `AWS::NoValue` |
+| `ConformancePackP1` (`${OrganizationName}-GC-CP-Guardrails-P1`) | `HasAccountsInP1` | `""`    | union of P2 ∪ P3 (whichever are non-empty), or `AWS::NoValue` |
 | `ConformancePackP2` (`${OrganizationName}-GC-CP-Guardrails-P2`) | `HasAccountsInP2` | `"_p2"` | union of P1 ∪ P3 (whichever are non-empty), or `AWS::NoValue` |
 | `ConformancePackP3` (`${OrganizationName}-GC-CP-Guardrails-P3`) | `HasAccountsInP3` | `"_p3"` | union of P1 ∪ P2 (whichever are non-empty), or `AWS::NoValue` |
 

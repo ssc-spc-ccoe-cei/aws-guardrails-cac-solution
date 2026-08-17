@@ -167,16 +167,19 @@ Resources:
 Pack names:
 
 ```
-${OrganizationName}-GC-CP-Guardrails       ← when AccountsInP1 is non-empty (always, in practice)
+${OrganizationName}-GC-CP-Guardrails-P1    ← when AccountsInP1 is non-empty (always, in practice)
 ${OrganizationName}-GC-CP-Guardrails-P2    ← when AccountsInP2 is non-empty
 ${OrganizationName}-GC-CP-Guardrails-P3    ← when AccountsInP3 is non-empty
 ```
 
 For organizations with ≤ 70 active accounts the behaviour is
-**indistinguishable** from the pre-fix deployment: one pack, same
-name, no exclusions, base `gc*` Lambda set only. This is intentional —
-the upgrade path for existing customers requires no manual
-configuration.
+functionally **indistinguishable** from the pre-fix deployment: one
+pack with no exclusions, base `gc*` Lambda set only. The pack name
+picks up a `-P1` suffix — this is the one visible break with earlier
+deployments, and it exists specifically to sidestep a
+`ConformancePackAlreadyExistsException` during in-place upgrades from
+the pre-partition template. The upgrade path otherwise requires no
+manual configuration.
 
 Each pack's `ExcludedAccounts` is built with a nested `!If` ladder so
 empty `AccountsInP*` strings are never `!Split`/`!Join`'d into the
@@ -188,7 +191,7 @@ ConformancePackP1:
   Type: AWS::Config::OrganizationConformancePack
   Condition: HasAccountsInP1
   Properties:
-    OrganizationConformancePackName: !Sub "${OrganizationName}-GC-CP-Guardrails"
+    OrganizationConformancePackName: !Sub "${OrganizationName}-GC-CP-Guardrails-P1"
     TemplateS3Uri: !Sub "s3://${PipelineBucket}/${DeployVersion}/ConformancePack.yaml"
     ExcludedAccounts: !If
       - HasAccountsInP2AndP3
@@ -265,10 +268,12 @@ The AWS Config API caps `ExcludedAccounts` at **1000 entries** per organization 
 
 The existing inline `AWS::Config::OrganizationConformancePack` resource
 would be replaced by an `AWS::CloudFormation::Stack` resource that
-delegates to `ConformancePackPartitions.yaml`. Critically the
-**logical name `ConformancePack` would be preserved**, so the existing
-`EvidenceCollectionComponents` `DependsOn: ConformancePack` reference
-still resolves without modification.
+delegates to `ConformancePackPartitions.yaml`. Because the resource
+`Type` changes (Config pack → nested stack), the logical ID is
+**renamed** from `ConformancePack` to `ConformancePackStack` —
+CloudFormation forbids in-place `Type` changes on a given logical ID.
+The `EvidenceCollectionComponents` `DependsOn: ConformancePack`
+reference is updated to `ConformancePackStack` in the same commit.
 
 The nested stack receives only the per-partition account-list
 `!GetAtt`s from the partitioner; whether each pack is created is

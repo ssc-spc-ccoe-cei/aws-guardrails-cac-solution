@@ -264,7 +264,7 @@ def run_partitioner():
           membership-change case: new accounts joining a multi-
           partition org must be added to the OTHER partitions'
           ``ExcludedAccounts`` lists, which only happens when the
-          ConformancePack nested stack is re-rendered.
+          ConformancePackStack nested stack is re-rendered.
         * ``accountsInPartition`` -- dict mapping partition_id (1..MAX_PARTITIONS)
           -> list of account-id strings; slots above partitionCount are empty
           lists. Used by the CloudFormation Custom Resource caller to compute
