@@ -1739,25 +1739,61 @@ Resources:
   #######################################################
   # Part 4b - AWS Config Organization Aggregator
   #######################################################
-  # Deploys the org-wide AWS Config Aggregator in the Audit account so
-  # operators have a single-pane view of GC guardrail Config rule
-  # compliance and Config-recorded resource inventory across every
-  # account in the organization.
+  # Deploys the org-wide AWS Config Aggregator into the Audit account so
+  # operators (and the audit-account ``aws_compile_audit_report`` Lambda,
+  # which reads the aggregator directly) have a single-pane view of GC
+  # guardrail Config rule compliance and Config-recorded resource
+  # inventory across every account in the organization.
   ConfigAggregator:
-    Type: AWS::CloudFormation::Stack
+    Type: AWS::CloudFormation::StackSet
     DependsOn:
       # Aggregator requires Config trusted access + Audit as delegated
       # admin, both of which are established by AWSConfigOrganizationsSetup.
       - AWSConfigOrganizationsSetup
     Properties:
-      TemplateURL: !Sub https://${PipelineBucket}.s3.${AWS::Region}.amazonaws.com/${DeployVersion}/config-aggregator.yaml
+      AutoDeployment:
+        Enabled: true
+        RetainStacksOnAccountRemoval: false
+      Capabilities:
+        - CAPABILITY_IAM
+        - CAPABILITY_NAMED_IAM
+      Description: GC Guardrails Assessment - Org AWS Config Aggregator (Audit account)
+      ManagedExecution:
+        Active: true
+      OperationPreferences:
+        FailureToleranceCount: 0
+        MaxConcurrentCount: 1
+        RegionOrder:
+          - ca-central-1
       Parameters:
-        OrganizationName: !Ref OrganizationName
+        - ParameterKey: OrganizationName
+          ParameterValue: !Ref OrganizationName
         # Comma-delimited list. Extend if visibility into additional
         # regions is required — remember the guardrail rules themselves
         # only exist in ca-central-1.
-        AggregatedRegions: "ca-central-1"
-        AggregatorName: !Sub "${OrganizationName}GC-Guardrails-Aggregator"
+        - ParameterKey: AggregatedRegions
+          ParameterValue: "ca-central-1"
+        - ParameterKey: AggregatorName
+          ParameterValue: !Sub "${OrganizationName}GC-Guardrails-Aggregator"
+      PermissionModel: SERVICE_MANAGED
+      StackInstancesGroup:
+        - DeploymentTargets:
+            # Deploy only to the Audit account. The Security OU is the
+            # required OU-level target for SERVICE_MANAGED StackSets;
+            # AccountFilterType INTERSECTION restricts the stack instance
+            # to the single AuditAccountID within that OU.
+            OrganizationalUnitIds:
+              - !Ref SecurityOUID
+            AccountFilterType: INTERSECTION
+            Accounts:
+              - !Ref AuditAccountID
+          Regions:
+            - ca-central-1
+      StackSetName: !Sub "${OrganizationName}-GC-ConfigAggregator"
+      Tags:
+        - Key: Source
+          Value: "ProServe Delivery Kit"
+      TemplateURL: !Sub https://${PipelineBucket}.s3.${AWS::Region}.amazonaws.com/${DeployVersion}/config-aggregator.yaml
 
   #######################################################
   # Part 5 - Evidence Collection Components
@@ -1978,9 +2014,6 @@ Resources:
                   - !Sub "arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${OrganizationName}*"
                   - !Sub "arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${RolePrefix}*"
                   - !Sub "arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${AccelRolePrefix}*"
-                  # config-aggregator.yaml's ConfigurationAggregatorRole
-                  # has no explicit RoleName and Path: /service-role/
-                  - !Sub "arn:${AWS::Partition}:iam::${AWS::AccountId}:role/service-role/${RootStackName}*"
                   # Legacy unprefixed role names created by main.yaml today:
                   - !Sub "arn:${AWS::Partition}:iam::${AWS::AccountId}:role/GCLambdaExecutionRoleAccountPolicy"
               - Sid: ReadAwsManagedPolicies
@@ -2003,8 +2036,6 @@ Resources:
                   - !Sub "arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${OrganizationName}*"
                   - !Sub "arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${RolePrefix}*"
                   - !Sub "arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${AccelRolePrefix}*"
-                  # Aggregator service role 
-                  - !Sub "arn:${AWS::Partition}:iam::${AWS::AccountId}:role/service-role/${RootStackName}*"
                 Condition:
                   StringEquals:
                     "iam:PassedToService":
@@ -2012,7 +2043,6 @@ Resources:
                       - states.amazonaws.com
                       - events.amazonaws.com
                       - cloudformation.amazonaws.com
-                      - config.amazonaws.com
               - Sid: ServiceLinkedRolesForStackSets
                 # SERVICE_MANAGED StackSets rely on org-wide SLRs. CFN may
                 # need to create the AWSServiceRoleForCloudFormationStackSets

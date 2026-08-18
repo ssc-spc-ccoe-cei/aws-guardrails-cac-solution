@@ -378,7 +378,7 @@ flowchart TB
         nested["ConformancePackPartitions\n(nested stack)"]
         packs["1..3 OrganizationConformancePack\nresources, each loading\nConformancePack.yaml with a\ndifferent PartitionSuffix"]
 
-        am["ConfigAggregator + EvidenceCollectionComponents\n(nested stack + StackSet)"]
+        am["ConfigAggregator + EvidenceCollectionComponents\n(StackSets — deployed into Audit account)"]
         framework["aws_compile_audit_report\n(reads org Config Aggregator directly)"]
 
         psStack["PartitionSyncStack\n(nested stack)"]
