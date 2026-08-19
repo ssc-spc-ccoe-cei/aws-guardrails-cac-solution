@@ -19,6 +19,7 @@ import logging
 import os
 import re
 import time
+from functools import cache
 
 import boto3
 from botocore.exceptions import BotoCoreError, ClientError
@@ -27,10 +28,15 @@ from utils import get_cloud_profile_from_tags
 from boto_util.client import get_client
 from boto_util.organizations import get_account_tags
 
+def _get_cloud_profile_from_tag_str(tag_str):
+    tags = json.loads(tag_str)
+    return get_cloud_profile_from_tags(tags)
+
+_get_cloud_profile_from_tag_str_cached = cache(_get_cloud_profile_from_tag_str)
+_get_account_tags_cached = cache(get_account_tags)
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
-
 
 def _required_env(name: str) -> str:
     v = os.environ.get(name)
@@ -58,7 +64,7 @@ CONFIG = {
 # suffix — the suffix only exists on the backing Lambda ARN). Anchoring
 # strictly to the ``gc\d\d_`` prefix guarantees we only pick up rules
 # deployed by the solution's org conformance pack(s).
-GUARDRAIL_RULE_RE = re.compile(r"^gc\d{2}_[a-z0-9_]+$")
+GUARDRAIL_RULE_RE = re.compile(r"^gc\d{2}_[a-z0-9_\-]+$")
 
 # Maps ``gc<NN>`` prefix to the human-readable control set name used
 # historically in the CSV's ``guardrail`` column. Kept in sync with the
@@ -97,9 +103,6 @@ OUTPUT_HEADER = [
 ]
 
 
-ACCOUNT_TAGS_CACHE: dict = {}
-
-
 def _safe_call(fn, ctx, *args, **kwargs):
     delay = 1
     for attempt in range(1, CONFIG["MAX_RETRIES"] + 1):
@@ -124,18 +127,6 @@ def _create_clients():
 def _get_management_account_id(org_client) -> str:
     resp = _safe_call(org_client.describe_organization, "describe_organization")
     return resp["Organization"]["MasterAccountId"]
-
-
-def _get_account_tags_cached(org_client, account_id: str) -> dict:
-    if account_id in ACCOUNT_TAGS_CACHE:
-        return ACCOUNT_TAGS_CACHE[account_id]
-    try:
-        tags = get_account_tags(org_client, account_id)
-    except Exception as e:
-        logger.error("Failed to get tags for %s: %s", account_id, e)
-        tags = {}
-    ACCOUNT_TAGS_CACHE[account_id] = tags
-    return tags
 
 
 def _iter_aggregate_compliance(config_client, aggregator_name: str):
@@ -215,7 +206,7 @@ def _row_from_evaluation(ev: dict, org_client, now_iso: str) -> list:
     rule_name = ev["rule_name"]
     control_set = CONTROL_SET_NAMES.get(rule_name[:4], rule_name[:4])
     tags = _get_account_tags_cached(org_client, ev["account_id"])
-    cloud_profile = get_cloud_profile_from_tags(tags)
+    cloud_profile = _get_cloud_profile_from_tag_str_cached(json.dumps(tags, sort_keys=True))
     return [
         ev["account_id"],
         str(cloud_profile.value),
