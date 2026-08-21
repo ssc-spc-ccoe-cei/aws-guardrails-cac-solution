@@ -1744,12 +1744,38 @@ Resources:
   # which reads the aggregator directly) have a single-pane view of GC
   # guardrail Config rule compliance and Config-recorded resource
   # inventory across every account in the organization.
+  ConfigAggregatorStackSetAdminRole:
+    # Dedicated SELF_MANAGED StackSet administration role for the
+    # ConfigAggregator StackSet. This role is scoped to assume ONLY
+    # the accelerator role in the Audit account.
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub "${OrganizationName}ConfigAggregatorStackSetAdminRole"
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: cloudformation.amazonaws.com
+            Action: sts:AssumeRole
+      Path: "/"
+      Policies:
+        - PolicyName: AssumeAcceleratorRoleInAudit
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action: sts:AssumeRole
+                Resource:
+                  - !Sub "arn:${AWS::Partition}:iam::${AuditAccountID}:role/${AcceleratorRole}"
+
   ConfigAggregator:
     Type: AWS::CloudFormation::StackSet
     DependsOn:
       # Aggregator requires Config trusted access + Audit as delegated
       # admin, both of which are established by AWSConfigOrganizationsSetup.
       - AWSConfigOrganizationsSetup
+      - ConfigAggregatorStackSetAdminRole
     Properties:
       Capabilities:
         - CAPABILITY_IAM
@@ -1777,7 +1803,7 @@ Resources:
       # customer's SCP allowlists (LZA: OrganizationAccountAccessRole /
       # AWSAccelerator*).
       PermissionModel: SELF_MANAGED
-      AdministrationRoleARN: !Sub "arn:${AWS::Partition}:iam::${AWS::AccountId}:role/AWSCloudFormationStackSetAdministrationRole"
+      AdministrationRoleARN: !GetAtt ConfigAggregatorStackSetAdminRole.Arn
       ExecutionRoleName: !Ref AcceleratorRole
       StackInstancesGroup:
         - DeploymentTargets:
@@ -2034,7 +2060,6 @@ Resources:
                   - !Sub "arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${OrganizationName}*"
                   - !Sub "arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${RolePrefix}*"
                   - !Sub "arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${AccelRolePrefix}*"
-                  - !Sub "arn:${AWS::Partition}:iam::${AWS::AccountId}:role/AWSCloudFormationStackSetAdministrationRole"
                 Condition:
                   StringEquals:
                     "iam:PassedToService":
