@@ -1751,9 +1751,6 @@ Resources:
       # admin, both of which are established by AWSConfigOrganizationsSetup.
       - AWSConfigOrganizationsSetup
     Properties:
-      AutoDeployment:
-        Enabled: true
-        RetainStacksOnAccountRemoval: false
       Capabilities:
         - CAPABILITY_IAM
         - CAPABILITY_NAMED_IAM
@@ -1775,16 +1772,17 @@ Resources:
           ParameterValue: "ca-central-1"
         - ParameterKey: AggregatorName
           ParameterValue: !Sub "${OrganizationName}GC-Guardrails-Aggregator"
-      PermissionModel: SERVICE_MANAGED
+      # SELF_MANAGED (instead of SERVICE_MANAGED) so we can pin the
+      # in-account execution role to the accelerator role that the
+      # customer's SCP allowlists (LZA: OrganizationAccountAccessRole /
+      # AWSAccelerator*).
+      PermissionModel: SELF_MANAGED
+      AdministrationRoleARN: !Sub "arn:${AWS::Partition}:iam::${AWS::AccountId}:role/AWSCloudFormationStackSetAdministrationRole"
+      ExecutionRoleName: !Ref AcceleratorRole
       StackInstancesGroup:
         - DeploymentTargets:
-            # Deploy only to the Audit account. The Security OU is the
-            # required OU-level target for SERVICE_MANAGED StackSets;
-            # AccountFilterType INTERSECTION restricts the stack instance
-            # to the single AuditAccountID within that OU.
-            OrganizationalUnitIds:
-              - !Ref SecurityOUID
-            AccountFilterType: INTERSECTION
+            # SELF_MANAGED targets accounts directly (no OU / no
+            # AccountFilterType). Aggregator only needs the Audit account.
             Accounts:
               - !Ref AuditAccountID
           Regions:
@@ -2036,6 +2034,7 @@ Resources:
                   - !Sub "arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${OrganizationName}*"
                   - !Sub "arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${RolePrefix}*"
                   - !Sub "arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${AccelRolePrefix}*"
+                  - !Sub "arn:${AWS::Partition}:iam::${AWS::AccountId}:role/AWSCloudFormationStackSetAdministrationRole"
                 Condition:
                   StringEquals:
                     "iam:PassedToService":
