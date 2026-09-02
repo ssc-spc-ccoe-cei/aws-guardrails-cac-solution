@@ -49,17 +49,15 @@ jobs:
  
       - name: Show non-secret configuration fields
         run: |
-          yq -r '{
-            StackName,
-            EnvironmentName,
-            CACVersion,
-            AWS_REGION,
-            OrganizationId: .Parameters.OrganizationId,
-            AuditAccountID: .Parameters.AuditAccountID,
-            SecurityOUID: .Parameters.SecurityOUID,
-            AcceleratorRole: .Parameters.AcceleratorRole,
-            AccelRolePrefix: .Parameters.AccelRolePrefix
-          }' config.yaml
+          echo "StackName=$(yq -r '.StackName' config.yaml)"
+          echo "EnvironmentName=$(yq -r '.EnvironmentName' config.yaml)"
+          echo "CACVersion=$(yq -r '.CACVersion' config.yaml)"
+          echo "AWS_REGION=$(yq -r '.AWS_REGION' config.yaml)"
+          echo "OrganizationId=$(yq -r '.Parameters.OrganizationId' config.yaml)"
+          echo "AuditAccountID=$(yq -r '.Parameters.AuditAccountID' config.yaml)"
+          echo "SecurityOUID=$(yq -r '.Parameters.SecurityOUID' config.yaml)"
+          echo "AcceleratorRole=$(yq -r '.Parameters.AcceleratorRole' config.yaml)"
+          echo "AccelRolePrefix=$(yq -r '.Parameters.AccelRolePrefix' config.yaml)"
           mkdir -p build
           ./tools/get-aws-config.py --input config.yaml --output build/params.json
  
@@ -77,4 +75,3 @@ jobs:
             build/params.json
             src/**/build/
           if-no-files-found: error
- 
