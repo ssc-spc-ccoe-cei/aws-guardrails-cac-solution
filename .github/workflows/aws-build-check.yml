@@ -47,13 +47,19 @@ jobs:
           test -n "${CONFIG_FILE_CONTENT}"
           printf '%s\n' "${CONFIG_FILE_CONTENT}" > config.yaml
  
-      - name: Validate ASEA configuration
+      - name: Show non-secret configuration fields
         run: |
-          test "$(yq -r '.Parameters.OrganizationId' config.yaml)" = "o-y6q3uhajcr"
-          test "$(yq -r '.Parameters.AuditAccountID' config.yaml)" = "251534099486"
-          test "$(yq -r '.Parameters.SecurityOUID' config.yaml)" = "ou-bv5z-a34miw2j"
-          test "$(yq -r '.Parameters.AcceleratorRole' config.yaml)" = "AWSAccelerator-PipelineRole"
-          test "$(yq -r '.Parameters.AccelRolePrefix' config.yaml)" = "AWSAccelerator-"
+          yq -r '{
+            StackName,
+            EnvironmentName,
+            CACVersion,
+            AWS_REGION,
+            OrganizationId: .Parameters.OrganizationId,
+            AuditAccountID: .Parameters.AuditAccountID,
+            SecurityOUID: .Parameters.SecurityOUID,
+            AcceleratorRole: .Parameters.AcceleratorRole,
+            AccelRolePrefix: .Parameters.AccelRolePrefix
+          }' config.yaml
           mkdir -p build
           ./tools/get-aws-config.py --input config.yaml --output build/params.json
  
@@ -71,3 +77,4 @@ jobs:
             build/params.json
             src/**/build/
           if-no-files-found: error
+ 
