@@ -1,0 +1,37 @@
+name: ASEA AWS Identity Check
+
+on:
+  push:
+    branches:
+    - feature/aws-dashboard
+  workflow_dispatch:
+
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  identity-check:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+
+    - name: Configure AWS credentials through OIDC
+      uses: aws-actions/configure-aws-credentials@v4
+      with:
+        role-to-assume: ${{ secrets.TEST_AWS_ROLE_ARN }}
+        role-session-name: cac-identity-check
+        aws-region: ca-central-1
+
+    - name: Verify assumed AWS account
+      run: |
+        ACCOUNT_ID="$(aws sts get-caller-identity --query Account --output text)"
+        ARN="$(aws sts get-caller-identity --query Arn --output text)"
+
+        echo "Assumed account: ${ACCOUNT_ID}"
+        echo "Assumed role: ${ARN}"
+
+        test "${ACCOUNT_ID}" = "526878402113"

@@ -1,0 +1,99 @@
+name: ASEA Package Check
+ 
+on:
+  push:
+    branches:
+      - feature/aws-dashboard
+  workflow_dispatch:
+ 
+permissions:
+  id-token: write
+  contents: read
+ 
+jobs:
+  package-check:
+    runs-on: ubuntu-latest
+ 
+    env:
+      AWS_REGION: ca-central-1
+      PIPELINE_BUCKET: gc-guardrails-deployments-526878402113
+      ARTIFACT_VERSION: asea-${{ github.sha }}
+ 
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+ 
+      - name: Configure AWS credentials through OIDC
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.TEST_AWS_ROLE_ARN }}
+          role-session-name: cac-package-check
+          aws-region: ${{ env.AWS_REGION }}
+ 
+      - name: Verify assumed AWS account and artifact bucket
+        run: |
+          account_id="$(aws sts get-caller-identity --query Account --output text)"
+          echo "Assumed account: ${account_id}"
+          echo "Artifact version: ${ARTIFACT_VERSION}"
+ 
+          test "${account_id}" = "526878402113"
+          aws s3api head-bucket --bucket "${PIPELINE_BUCKET}"
+ 
+      - name: Install build dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install aws-sam-cli boto3 ruamel.yaml
+          sudo snap install yq
+          jq --version
+          yq --version
+          sam --version
+ 
+      - name: Create configuration from protected secret
+        env:
+          CONFIG_FILE_CONTENT: ${{ secrets.TEST_CONFIG_FILE_CONTENT }}
+        run: |
+          test -n "${CONFIG_FILE_CONTENT}"
+          printf '%s\n' "${CONFIG_FILE_CONTENT}" > config.yaml
+ 
+      - name: Show non-secret configuration fields
+        run: |
+          echo "StackName=$(yq -r '.StackName' config.yaml)"
+          echo "EnvironmentName=$(yq -r '.EnvironmentName' config.yaml)"
+          echo "CACVersion=$(yq -r '.CACVersion' config.yaml)"
+          echo "AWS_REGION=$(yq -r '.AWS_REGION' config.yaml)"
+          echo "OrganizationId=$(yq -r '.Parameters.OrganizationId' config.yaml)"
+          echo "AuditAccountID=$(yq -r '.Parameters.AuditAccountID' config.yaml)"
+          echo "SecurityOUID=$(yq -r '.Parameters.SecurityOUID' config.yaml)"
+          echo "AcceleratorRole=$(yq -r '.Parameters.AcceleratorRole' config.yaml)"
+          echo "AccelRolePrefix=$(yq -r '.Parameters.AccelRolePrefix' config.yaml)"
+          mkdir -p build
+          ./tools/get-aws-config.py --input config.yaml --output build/params.json
+ 
+      - name: Build Lambda artifacts
+        run: |
+          chmod +x tools/buildsam.sh tools/samclean.sh tools/package-deploy.sh
+          ./tools/samclean.sh -p src/
+          ./tools/buildsam.sh -p src/
+ 
+      - name: Package and upload CloudFormation artifacts
+        run: |
+          ./tools/package-deploy.sh \
+            -b "${PIPELINE_BUCKET}" \
+            -r "${AWS_REGION}" \
+            -t "${GITHUB_WORKSPACE}/arch/templates" \
+            -p "${GITHUB_WORKSPACE}/arch/templates/build" \
+            -x "${ARTIFACT_VERSION}" \
+            -g "${GITHUB_SHA}"
+ 
+      - name: List uploaded artifacts
+        run: |
+          aws s3 ls "s3://${PIPELINE_BUCKET}/${ARTIFACT_VERSION}/" --recursive
+ 
+      - name: Upload generated deployment files
+        uses: actions/upload-artifact@v4
+        with:
+          name: cac-package-${{ github.sha }}
+          path: |
+            build/params.json
+            arch/templates/build/
+          if-no-files-found: error

@@ -95,7 +95,9 @@ Resources:
   Bucket:
     Condition: IsAuditAccount
     Type: AWS::S3::Bucket
-    DependsOn: BucketPermission
+    DependsOn:
+      - BucketPermission
+      - DashboardLambdaPermission
     Properties:
       OwnershipControls:
         Rules:
@@ -105,6 +107,13 @@ Resources:
         LambdaConfigurations:
           - Event: "s3:ObjectCreated:*"
             Function: !GetAtt BucketWatcherLambda.Arn
+          - Event: "s3:ObjectCreated:*"
+            Filter:
+              S3Key:
+                Rules:
+                  - Name: suffix
+                    Value: ".csv"
+            Function: !GetAtt DashboardLambda.Arn
       BucketEncryption:
         ServerSideEncryptionConfiguration:
           - ServerSideEncryptionByDefault:
@@ -313,3 +322,70 @@ Resources:
       Action: lambda:InvokeFunction
       Principal: events.amazonaws.com
       SourceArn: !GetAtt CronjobsScheduledRule.Arn
+
+  ##################################################
+  # Dashboard Generation Components
+  ##################################################
+
+  DashboardLambdaPermission:
+    Condition: IsAuditAccount
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: "lambda:InvokeFunction"
+      FunctionName: !Ref DashboardLambda
+      Principal: s3.amazonaws.com
+      SourceAccount: !Ref "AWS::AccountId"
+      SourceArn: !Sub "arn:aws:s3:::gc-fedclient-${AWS::AccountId}-${AWS::Region}"
+
+  DashboardLambda:
+    Condition: IsAuditAccount
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub "${OrganizationName}aws_generate_dashboard"
+      Description: Generates static HTML compliance dashboards from the daily evidence CSV.
+      Code: "../../src/lambda/aws_generate_dashboard/build/GenerateDashboardLambda/"
+      Handler: index.lambda_handler
+      Role: !GetAtt DashboardLambdaExecutionRole.Arn
+      Timeout: 120
+      MemorySize: 256
+      Runtime: nodejs22.x
+      Environment:
+        Variables:
+          ORG_NAME: !Ref OrganizationName
+          CAC_VERSION: !Ref DeployVersion
+
+  DashboardLambdaExecutionRole:
+    Condition: IsAuditAccount
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal: { Service: [lambda.amazonaws.com] }
+            Action: ["sts:AssumeRole"]
+      Path: /
+      ManagedPolicyArns:
+        - "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
+      Policies:
+        - PolicyName: DashboardS3Policy
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Sid: ReadEvidenceCSV
+                Effect: Allow
+                Action:
+                  - "s3:GetObject"
+                Resource: !Sub "arn:aws:s3:::gc-fedclient-${AWS::AccountId}-${AWS::Region}/*"
+              - Sid: DecryptEvidenceBucketKey
+                Effect: Allow
+                Action:
+                  - "kms:Decrypt"
+                  - "kms:GenerateDataKey"
+                Resource: !GetAtt myKey.Arn
+              - Sid: WriteDashboardHTML
+                Effect: Allow
+                Action:
+                  - "s3:GetObject"
+                  - "s3:PutObject"
+                Resource: !Sub "arn:aws:s3:::gc-fedclient-${AWS::AccountId}-${AWS::Region}/*"

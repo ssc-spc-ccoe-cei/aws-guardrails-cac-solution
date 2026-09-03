@@ -1,0 +1,155 @@
+name: ASEA CloudFormation Change Set
+ 
+on:
+  workflow_dispatch:
+    inputs:
+      stack_name:
+        description: Existing ASEA root stack to preview
+        required: true
+        default: SSC-CaC-SSC-CSPM-LZA-2
+ 
+permissions:
+  id-token: write
+  contents: read
+ 
+jobs:
+  change-set-preview:
+    runs-on: ubuntu-latest
+ 
+    env:
+      AWS_REGION: ca-central-1
+      PIPELINE_BUCKET: gc-guardrails-deployments-526878402113
+      ARTIFACT_VERSION: asea-${{ github.sha }}
+      TARGET_STACK: ${{ inputs.stack_name }}
+      CHANGE_SET_NAME: asea-preview-${{ github.sha }}
+ 
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+ 
+      - name: Configure AWS credentials through OIDC
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.TEST_AWS_ROLE_ARN }}
+          role-session-name: cac-change-set-preview
+          aws-region: ${{ env.AWS_REGION }}
+ 
+      - name: Verify target stack
+        run: |
+          test "$(aws sts get-caller-identity --query Account --output text)" = "526878402113"
+          aws cloudformation describe-stacks \
+            --stack-name "${TARGET_STACK}" \
+            --region "${AWS_REGION}" \
+            --query 'Stacks[0].[StackName,StackStatus]' \
+            --output table
+ 
+      - name: Install build dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install aws-sam-cli boto3 ruamel.yaml
+          sudo snap install yq
+ 
+      - name: Create configuration from protected secret
+        env:
+          CONFIG_FILE_CONTENT: ${{ secrets.TEST_CONFIG_FILE_CONTENT }}
+        run: |
+          test -n "${CONFIG_FILE_CONTENT}"
+          printf '%s\n' "${CONFIG_FILE_CONTENT}" > config.yaml
+          mkdir -p build
+ 
+          ./tools/get-aws-config.py \
+            --input config.yaml \
+            --output build/params.json
+ 
+          ./tools/get-cfn-output.py \
+            --stack "${TARGET_STACK}" \
+            --update build/params.json
+ 
+      - name: Build Lambda artifacts
+        run: |
+          chmod +x tools/buildsam.sh tools/samclean.sh tools/package-deploy.sh
+          ./tools/samclean.sh -p src/
+          ./tools/buildsam.sh -p src/
+ 
+      - name: Package and upload branch artifacts
+        run: |
+          ./tools/package-deploy.sh \
+            -b "${PIPELINE_BUCKET}" \
+            -r "${AWS_REGION}" \
+            -t "${GITHUB_WORKSPACE}/arch/templates" \
+            -p "${GITHUB_WORKSPACE}/arch/templates/build" \
+            -x "${ARTIFACT_VERSION}" \
+            -g "${GITHUB_SHA}"
+ 
+      - name: Fetch deployment-specific parameters
+        run: |
+          ssc_server="$(yq -r '.SSC_AWS_SERVER' config.yaml)"
+          organization_id="$(yq -r '.Parameters.OrganizationId' config.yaml)"
+ 
+          response="$(curl --fail --silent --show-error \
+            -A "GitHubActions/1.0" \
+            "${ssc_server}/api?orgid=${organization_id}&generateyaml=false")"
+ 
+          api_key="$(jq -er '.api_key' <<<"${response}")"
+          api_url="$(jq -er '.api_url' <<<"${response}")"
+          evidence_bucket="$(jq -er '.evidence_bucket_name' <<<"${response}")"
+ 
+          jq \
+            --arg bucket "${PIPELINE_BUCKET}" \
+            --arg api_url "${api_url}" \
+            --arg api_key "${api_key}" \
+            --arg evidence_bucket "${evidence_bucket}" \
+            --arg invoke_update "${GITHUB_SHA}" \
+            --arg deploy_version "${ARTIFACT_VERSION}" \
+            '
+            .Parameters
+            | map(
+                if .ParameterKey == "PipelineBucket" then .ParameterValue = $bucket
+                elif .ParameterKey == "ApiUrl" then .ParameterValue = $api_url
+                elif .ParameterKey == "ApiKey" then .ParameterValue = $api_key
+                elif .ParameterKey == "DestBucketName" then .ParameterValue = $evidence_bucket
+                elif .ParameterKey == "InvokeUpdate" then .ParameterValue = $invoke_update
+                elif .ParameterKey == "DeployVersion" then .ParameterValue = $deploy_version
+                else .
+                end
+              )
+            ' build/params.json > build/change-set-params.json
+ 
+      - name: Create CloudFormation change set
+        run: |
+          aws cloudformation delete-change-set \
+            --stack-name "${TARGET_STACK}" \
+            --change-set-name "${CHANGE_SET_NAME}" \
+            --region "${AWS_REGION}" 2>/dev/null || true
+ 
+          aws cloudformation create-change-set \
+            --stack-name "${TARGET_STACK}" \
+            --change-set-name "${CHANGE_SET_NAME}" \
+            --change-set-type UPDATE \
+            --template-url "https://${PIPELINE_BUCKET}.s3.${AWS_REGION}.amazonaws.com/${ARTIFACT_VERSION}/root.yaml" \
+            --parameters file://build/change-set-params.json \
+            --capabilities CAPABILITY_NAMED_IAM \
+            --region "${AWS_REGION}"
+ 
+          aws cloudformation wait change-set-create-complete \
+            --stack-name "${TARGET_STACK}" \
+            --change-set-name "${CHANGE_SET_NAME}" \
+            --region "${AWS_REGION}"
+ 
+      - name: Display planned changes
+        run: |
+          aws cloudformation describe-change-set \
+            --stack-name "${TARGET_STACK}" \
+            --change-set-name "${CHANGE_SET_NAME}" \
+            --region "${AWS_REGION}" \
+            --query 'Changes[].ResourceChange.[Action,LogicalResourceId,ResourceType,Replacement]' \
+            --output table
+ 
+      - name: Upload preview metadata
+        uses: actions/upload-artifact@v4
+        with:
+          name: cac-change-set-${{ github.sha }}
+          path: |
+            build/params.json
+            build/change-set-params.json
+            arch/templates/build/
