@@ -208,7 +208,7 @@ def _row_from_evaluation(ev: dict, org_client, now_iso: str) -> list:
     tags = _get_account_tags_cached(org_client, ev["account_id"])
     cloud_profile = _get_cloud_profile_from_tag_str_cached(json.dumps(tags, sort_keys=True))
     return [
-        ev["account_id"],
+        f'="{str(ev["account_id"])}"',
         str(cloud_profile.value),
         "AWS Config",
         control_set,
