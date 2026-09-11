@@ -59,13 +59,6 @@ CONFIG = {
     "PAGE_LIMIT": 100,  # SelectAggregateResourceConfig max
 }
 
-
-# Guardrail rule names look like ``gc01_check_root_mfa`` (no partition
-# suffix — the suffix only exists on the backing Lambda ARN). Anchoring
-# strictly to the ``gc\d\d_`` prefix guarantees we only pick up rules
-# deployed by the solution's org conformance pack(s).
-GUARDRAIL_RULE_RE = re.compile(r"^gc\d{2}_[a-z0-9_\-]+$")
-
 # Maps ``gc<NN>`` prefix to the human-readable control set name used
 # historically in the CSV's ``guardrail`` column. Kept in sync with the
 # GC Cloud Guardrails framework groupings.
@@ -129,6 +122,43 @@ def _get_management_account_id(org_client) -> str:
     return resp["Organization"]["MasterAccountId"]
 
 
+def _get_valid_rule_names(config_client, aggregator_name: str) -> dict:
+    """Gets a list of valid Config Rules associated with each account's Conformance Pack."""
+    expression = """
+    SELECT
+        accountId,
+        configuration.configRuleList.configRuleName
+    WHERE
+        resourceType = 'AWS::Config::ConformancePackCompliance'
+    """
+    valid_dict = {}
+    next_token = None
+    
+    while True:
+        kwargs = {
+            'Expression': expression,
+            'ConfigurationAggregatorName': aggregator_name
+        }
+        if next_token:
+            kwargs['NextToken'] = next_token
+            
+        # API call for aggregated queries
+        response = config_client.select_aggregate_resource_config(**kwargs)
+        
+        if 'Results' in response:
+            for row in response['Results']:
+                row_dict = json.loads(row)
+                valid_dict[row_dict['accountId']] = {
+                    rule['configRuleName'] for rule in row_dict['configuration']['configRuleList']
+                }
+            
+        next_token = response.get('NextToken')
+        if not next_token:
+            break
+            
+    return valid_dict
+
+
 def _iter_aggregate_compliance(config_client, aggregator_name: str):
     """Yield per-resource compliance rows from the org aggregator.
 
@@ -138,6 +168,8 @@ def _iter_aggregate_compliance(config_client, aggregator_name: str):
     evaluating that resource; we filter to guardrail rules and yield one
     tuple per (resource, rule) pair.
     """
+    valid_rules = _get_valid_rule_names(config_client, aggregator_name)
+
     expression = (
         "SELECT accountId, awsRegion, resourceId, resourceType, "
         "configuration.targetResourceId, configuration.targetResourceType, "
@@ -183,7 +215,7 @@ def _iter_aggregate_compliance(config_client, aggregator_name: str):
 
             for rule in rule_list:
                 rule_name = rule.get("configRuleName", "")
-                if not rule_name or not GUARDRAIL_RULE_RE.match(rule_name):
+                if not rule_name or not rule_name in valid_rules[account_id]:
                     continue
                 compliance = rule.get("complianceType") or cfg.get("complianceType") or "NOT_APPLICABLE"
                 if compliance == "NOT_APPLICABLE":
