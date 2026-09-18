@@ -1,6 +1,9 @@
 name: AWS Identity Check
  
 on:
+  push:
+    branches:
+      - rsrc_plcy_fix
   workflow_dispatch:
     inputs:
       environment:
