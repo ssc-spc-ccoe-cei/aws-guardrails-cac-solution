@@ -1,4 +1,4 @@
-name: ASEA AWS Identity Check
+name: ASEA AWS Identity Check Test
  
 on:
   push:
