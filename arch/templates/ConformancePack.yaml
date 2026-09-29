@@ -52,7 +52,7 @@ Parameters:
     Default: "12"
     Type: String
   PasswordPolicyMaxPasswordAge:
-    Default: "90"
+    Default: ""
     Type: String
   PasswordPolicyPasswordReusePrevention:
     Default: "24"
@@ -523,7 +523,7 @@ Resources:
     Type: "AWS::Config::ConfigRule"
     Properties:
       ConfigRuleName: gc02_check_iam_password_policy
-      Description: "Confirms that the IAM password policy aligns with GC guidance (min length 12, no complexity, no expiry). Remediate by updating IAM Account settings. Source: https://github.com/canada-ca/cloud-guardrails/blob/master/EN/02_Manage-Access.md"
+      Description: "Confirms that the IAM password policy aligns with GC guidance (min length 12, no complexity, and no password expiry requirement). Remediate by updating IAM Account settings. Source: https://github.com/canada-ca/cloud-guardrails/blob/master/EN/02_Manage-Access.md"
       InputParameters:
         ExecutionRoleName:
           Fn::If:
