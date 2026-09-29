@@ -11,7 +11,7 @@ permissions:
   contents: read
  
 jobs:
-  package-check:
+  build-and-publish:
     runs-on: ubuntu-latest
  
     env:
@@ -98,3 +98,20 @@ jobs:
             arch/templates/build/
           if-no-files-found: error
  
+      - name: Create and verify CloudShell workspace package
+        run: |
+          set -euo pipefail
+          make create-cloudshell-package
+          unzip -Z1 cloudshell.zip | grep -Fx config.yaml
+          unzip -Z1 cloudshell.zip | grep -Fx makefile
+          unzip -Z1 cloudshell.zip | grep -Fx arch/
+          unzip -Z1 cloudshell.zip | grep -Fx src/
+          unzip -Z1 cloudshell.zip | grep -Fx tools/
+          unzip -p cloudshell.zip config.yaml | cmp -s - config.yaml
+ 
+      - name: Upload CloudShell workspace package
+        uses: actions/upload-artifact@v4
+        with:
+          name: cac-lza-cloudshell-package-${{ github.sha }}
+          path: cloudshell.zip
+          if-no-files-found: error
