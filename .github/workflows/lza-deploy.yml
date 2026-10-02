@@ -16,14 +16,25 @@ jobs:
     runs-on: ubuntu-latest
  
     env:
-      AWS_REGION: ca-central-1
-      AWS_ACCOUNT_ID: "533267386226"
-      PIPELINE_BUCKET: gc-guardrails-deployments-533267386226
+      AWS_REGION: ${{ secrets.LZA_AWS_REGION }}
+      AWS_ACCOUNT_ID: ${{ secrets.LZA_AWS_ACCOUNT_ID }}
+      PIPELINE_BUCKET: ${{ secrets.LZA_PIPELINE_BUCKET }}
       DEPLOY_VERSION: lza-${{ github.sha }}
  
     steps:
       - name: Checkout selected branch
         uses: actions/checkout@v4
+ 
+      - name: Validate deployment configuration
+        run: |
+          set -euo pipefail
+ 
+          for variable_name in AWS_REGION AWS_ACCOUNT_ID PIPELINE_BUCKET; do
+            if [ -z "${!variable_name:-}" ]; then
+              echo "::error::Required deployment setting ${variable_name} is empty or unset"
+              exit 1
+            fi
+          done
  
       - name: Configure AWS credentials through OIDC
         uses: aws-actions/configure-aws-credentials@v4
@@ -121,4 +132,5 @@ jobs:
               exit 1
               ;;
           esac
+ 
  
