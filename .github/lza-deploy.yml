@@ -1,0 +1,124 @@
+name: LZA Deploy
+ 
+on:
+  workflow_dispatch:
+ 
+permissions:
+  id-token: write
+  contents: read
+ 
+concurrency:
+  group: lza-deploy-current-environment
+  cancel-in-progress: false
+ 
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+ 
+    env:
+      AWS_REGION: ca-central-1
+      AWS_ACCOUNT_ID: "533267386226"
+      PIPELINE_BUCKET: gc-guardrails-deployments-533267386226
+      DEPLOY_VERSION: lza-${{ github.sha }}
+ 
+    steps:
+      - name: Checkout selected branch
+        uses: actions/checkout@v4
+ 
+      - name: Configure AWS credentials through OIDC
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.LZA_AWS_ROLE_ARN }}
+          role-session-name: cac-lza-deploy
+          aws-region: ${{ env.AWS_REGION }}
+ 
+      - name: Verify deployment target
+        run: |
+          set -euo pipefail
+ 
+          ACCOUNT_ID="$(aws sts get-caller-identity --query Account --output text)"
+          echo "Selected ref: ${GITHUB_REF_NAME}"
+          echo "Commit: ${GITHUB_SHA}"
+          echo "Assumed account: ${ACCOUNT_ID}"
+          echo "Region: ${AWS_REGION}"
+          echo "Deployment version: ${DEPLOY_VERSION}"
+ 
+          if [ "${ACCOUNT_ID}" != "${AWS_ACCOUNT_ID}" ]; then
+            echo "::error::Expected account ${AWS_ACCOUNT_ID} but assumed ${ACCOUNT_ID}"
+            exit 1
+          fi
+ 
+          aws s3api head-bucket --bucket "${PIPELINE_BUCKET}"
+ 
+      - name: Install deployment dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install aws-sam-cli boto3 ruamel.yaml
+          sudo snap install yq
+          sudo apt-get update
+          sudo apt-get install --yes uuid-runtime
+          jq --version
+          yq --version
+          sam --version
+ 
+      - name: Create configuration from protected secret
+        env:
+          CONFIG_FILE_CONTENT: ${{ secrets.LZA_CONFIG_FILE_CONTENT }}
+        run: |
+          set -euo pipefail
+ 
+          if [ -z "${CONFIG_FILE_CONTENT}" ]; then
+            echo "::error::Secret LZA_CONFIG_FILE_CONTENT is empty or unset"
+            exit 1
+          fi
+ 
+          printf '%s\n' "${CONFIG_FILE_CONTENT}" > config.yaml
+          mkdir -p build
+          ./tools/get-aws-config.py --input config.yaml --output build/params.json
+ 
+      - name: Build Lambda artifacts
+        run: |
+          chmod +x tools/buildsam.sh tools/samclean.sh tools/package-deploy.sh
+          ./tools/samclean.sh -p src/
+          ./tools/buildsam.sh -p src/
+ 
+      - name: Package CloudFormation deployment
+        run: |
+          ./tools/package-deploy.sh \
+            -b "${PIPELINE_BUCKET}" \
+            -r "${AWS_REGION}" \
+            -t "${GITHUB_WORKSPACE}/arch/templates" \
+            -p "${GITHUB_WORKSPACE}/arch/templates/build" \
+            -x "${DEPLOY_VERSION}" \
+            -g "${GITHUB_SHA}"
+ 
+      - name: Verify packaged templates
+        run: aws s3 ls "s3://${PIPELINE_BUCKET}/${DEPLOY_VERSION}/" --recursive
+ 
+      - name: Deploy selected branch
+        env:
+          CONFIG_FILE: config.yaml
+        run: make deploy-stack DEPLOY_VERSION="${DEPLOY_VERSION}"
+ 
+      - name: Verify deployed stack
+        run: |
+          set -euo pipefail
+ 
+          STACK_NAME="$(yq '.StackName' config.yaml)-$(yq '.EnvironmentName' config.yaml)"
+          STACK_STATUS="$(aws cloudformation describe-stacks \
+            --stack-name "${STACK_NAME}" \
+            --query 'Stacks[0].StackStatus' \
+            --output text)"
+ 
+          echo "Stack: ${STACK_NAME}"
+          echo "Status: ${STACK_STATUS}"
+ 
+          case "${STACK_STATUS}" in
+            CREATE_COMPLETE|UPDATE_COMPLETE)
+              ;;
+            *)
+              echo "::error::Stack ${STACK_NAME} finished with unexpected status ${STACK_STATUS}"
+              exit 1
+              ;;
+          esac
+ 
