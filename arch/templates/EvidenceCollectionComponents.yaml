@@ -1,7 +1,7 @@
 AWSTemplateFormatVersion: 2010-09-09
-
+ 
 Description: Upload an object to an S3 bucket, triggering a Lambda event, returning the object key as a Stack Output.
-
+ 
 Parameters:
   DestBucketName:
     Description: S3 Bucket name
@@ -34,7 +34,7 @@ Parameters:
       Name of the AWS Config Organization Aggregator (deployed by
       config-aggregator.yaml) queried by the daily compile-audit-report
       Lambda. Empty string uses the solution default (see !Sub below).
-
+ 
 Conditions:
   UseDefaultAggregatorName: !Equals
     - !Ref AggregatorName
@@ -42,7 +42,7 @@ Conditions:
   IsAuditAccount: !Equals
     - !Ref AWS::AccountId
     - !Ref AuditAccountID
-
+ 
 Resources:
   CloudGuardrailsCommonLayer:
     Condition: IsAuditAccount
@@ -97,29 +97,22 @@ Resources:
               - "kms:GenerateDataKey"
               - "kms:GenerateDataKeyWithoutPlaintext"
             Resource: "*"
-
+ 
   Bucket:
     Condition: IsAuditAccount
     Type: AWS::S3::Bucket
-    DependsOn:
-      - BucketPermission
-      - DashboardLambdaPermission
+    DependsOn: BucketPermission
     Properties:
       OwnershipControls:
         Rules:
           - ObjectOwnership: BucketOwnerPreferred
       BucketName: !Sub "gc-fedclient-${AWS::AccountId}-${AWS::Region}"
       NotificationConfiguration:
+        EventBridgeConfiguration:
+          EventBridgeEnabled: true
         LambdaConfigurations:
           - Event: "s3:ObjectCreated:*"
             Function: !GetAtt BucketWatcherLambda.Arn
-          - Event: "s3:ObjectCreated:*"
-            Filter:
-              S3Key:
-                Rules:
-                  - Name: suffix
-                    Value: ".csv"
-            Function: !GetAtt DashboardLambda.Arn
       BucketEncryption:
         ServerSideEncryptionConfiguration:
           - ServerSideEncryptionByDefault:
@@ -149,7 +142,7 @@ Resources:
             Condition:
               Bool:
                 aws:SecureTransport: "false"
-
+ 
   BucketPermission:
     Condition: IsAuditAccount
     Type: AWS::Lambda::Permission
@@ -159,7 +152,7 @@ Resources:
       Principal: s3.amazonaws.com
       SourceAccount: !Ref "AWS::AccountId"
       SourceArn: !Sub "arn:aws:s3:::gc-fedclient-${AWS::AccountId}-${AWS::Region}"
-
+ 
   BucketWatcherLambda:
     Condition: IsAuditAccount
     Type: AWS::Lambda::Function
@@ -175,7 +168,7 @@ Resources:
         Variables:
           target_bucket: !Ref DestBucketName
           ORG_ID: !Ref OrganizationId
-
+ 
   LambdaExecutionRole:
     Condition: IsAuditAccount
     Type: AWS::IAM::Role
@@ -210,7 +203,7 @@ Resources:
                   - "s3:GetObjectTagging"
                   - "s3:PutObjectTagging"
                 Resource: !Sub "arn:aws:s3:::${DestBucketName}/*"
-
+ 
   # Cronjobs
   ## Create your Lambda
   CronjobsLambda:
@@ -237,7 +230,7 @@ Resources:
           DEFAULT_CLOUD_PROFILE: !Ref DefaultCloudProfile
       Runtime: python3.12
       Timeout: 720
-
+ 
   CronLambdaExecutionRole:
     Condition: IsAuditAccount
     Type: AWS::IAM::Role
@@ -311,7 +304,7 @@ Resources:
                 Resource:
                   - !Sub "arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/lambda/${OrganizationName}gc*"
                 Effect: Allow
-
+ 
   ## Create schedule.
   CronjobsScheduledRule:
     Condition: IsAuditAccount
@@ -324,7 +317,7 @@ Resources:
       Targets:
         - Arn: !GetAtt CronjobsLambda.Arn
           Id: TargetFunctionV1
-
+ 
   ## Grant permission to Events trigger Lambda.
   PermissionForEventsToInvokeCronjobsLambda:
     Condition: IsAuditAccount
@@ -334,21 +327,41 @@ Resources:
       Action: lambda:InvokeFunction
       Principal: events.amazonaws.com
       SourceArn: !GetAtt CronjobsScheduledRule.Arn
-
+ 
   ##################################################
   # Dashboard Generation Components
   ##################################################
-
+ 
+  DashboardObjectCreatedRule:
+    Condition: IsAuditAccount
+    Type: AWS::Events::Rule
+    Properties:
+      EventPattern:
+        source:
+          - aws.s3
+        detail-type:
+          - Object Created
+        detail:
+          bucket:
+            name:
+              - !Ref Bucket
+          object:
+            key:
+              - suffix: ".csv"
+      State: ENABLED
+      Targets:
+        - Arn: !GetAtt DashboardLambda.Arn
+          Id: DashboardLambda
+ 
   DashboardLambdaPermission:
     Condition: IsAuditAccount
     Type: AWS::Lambda::Permission
     Properties:
       Action: "lambda:InvokeFunction"
       FunctionName: !Ref DashboardLambda
-      Principal: s3.amazonaws.com
-      SourceAccount: !Ref "AWS::AccountId"
-      SourceArn: !Sub "arn:aws:s3:::gc-fedclient-${AWS::AccountId}-${AWS::Region}"
-
+      Principal: events.amazonaws.com
+      SourceArn: !GetAtt DashboardObjectCreatedRule.Arn
+ 
   DashboardLambda:
     Condition: IsAuditAccount
     Type: AWS::Lambda::Function
@@ -365,7 +378,7 @@ Resources:
         Variables:
           ORG_NAME: !Ref OrganizationName
           CAC_VERSION: !Ref DeployVersion
-
+ 
   DashboardLambdaExecutionRole:
     Condition: IsAuditAccount
     Type: AWS::IAM::Role
