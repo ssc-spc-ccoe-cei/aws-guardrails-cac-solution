@@ -3,7 +3,7 @@
 * Triggered by S3 ObjectCreated events on gc-fedclient bucket.
 * Outputs one detailed HTML dashboard to the same source/report S3 bucket.
 */
-
+ 
 const fs = require('fs');
 const path = require('path');
 const { parse } = require('csv-parse/sync');
@@ -14,9 +14,9 @@ const {
     PutObjectCommand,
 } = require('@aws-sdk/client-s3');
 const { DataProcessor } = require('./lib/dataProcessor');
-
+ 
 const s3 = new S3Client({});
-
+ 
 // Helper: buffer a Node.js Readable stream (v3 returns streams for GetObject.Body)
 async function streamToString(stream) {
     const chunks = [];
@@ -25,86 +25,102 @@ async function streamToString(stream) {
     }
     return Buffer.concat(chunks).toString('utf-8');
 }
-
+ 
 const ORG_NAME = process.env.ORG_NAME || 'Unknown Org';
 const CAC_VERSION = process.env.CAC_VERSION || 'v2.0';
-
+ 
 // Load Handlebars templates
 const templateDir = path.join(__dirname, 'templates');
 const detailedTemplate = Handlebars.compile(
     fs.readFileSync(path.join(templateDir, 'detailed.hbs'), 'utf8')
 );
-
+ 
+function getS3Object(event) {
+    if (event?.Records?.[0]?.s3) {
+        return {
+            sourceBucket: event.Records[0].s3.bucket.name,
+            key: event.Records[0].s3.object.key,
+        };
+    }
+ 
+    if (event?.source === 'aws.s3' && event?.detail?.bucket && event?.detail?.object) {
+        return {
+            sourceBucket: event.detail.bucket.name,
+            key: event.detail.object.key,
+        };
+    }
+ 
+    throw new Error('Unsupported S3 event format');
+}
+ 
 // Register Handlebars helpers
 Handlebars.registerHelper('eq', (a, b) => a === b);
 Handlebars.registerHelper('ne', (a, b) => a !== b);
 Handlebars.registerHelper('uppercase', (str) => str.toUpperCase());
 Handlebars.registerHelper('zfill', (num, len) => String(num).padStart(len, '0'));
-
+ 
 /**
 * Main Lambda handler
 */
 exports.lambda_handler = async (event, context) => {
     try {
-        const record = event.Records[0].s3;
-        const sourceBucket = record.bucket.name;
-        const key = record.object.key;
-
+        const { sourceBucket, key } = getS3Object(event);
+ 
         console.log(`Triggered by s3://${sourceBucket}/${key}`);
-
+ 
         // Skip internal files
         if (key.startsWith('chunks/') || key.startsWith('state/') || !key.toLowerCase().endsWith('.csv')) {
             console.log(`Skipping key: ${key}`);
             return { status: 'skipped' };
         }
-
+ 
         // Fetch CSV from S3
         const csvObject = await s3.send(
             new GetObjectCommand({ Bucket: sourceBucket, Key: key })
         );
         const csvContent = await streamToString(csvObject.Body);
-
+ 
         // Parse CSV
         const rows = parse(csvContent, {
             columns: true,
             skip_empty_lines: true,
         });
-
+ 
         console.log(`Read ${rows.length} data rows from CSV`);
-
+ 
         if (rows.length === 0) {
             console.warn('CSV contained no data rows');
             return { status: 'empty' };
         }
-
+ 
         // Extract org/version from first row
         const first = rows[0];
         const orgName = first.organizationName?.trim() || ORG_NAME;
         const cacVersion = first.cacVersion?.trim() || CAC_VERSION;
         const reportDate = new Date().toISOString().split('T')[0];
-
+ 
         // Process data
         const processor = new DataProcessor(rows);
         const detailedData = processor.generateDetailedData();
-
+ 
         const detailedHtml = detailedTemplate({
             orgName,
             cacVersion,
             reportDate,
             ...detailedData,
         });
-
+ 
         const dashboardKey = 'dashboards/latest.html';
-
+ 
         await s3.send(new PutObjectCommand({
             Bucket: sourceBucket,
             Key: dashboardKey,
             Body: detailedHtml,
             ContentType: 'text/html',
         }));
-
+ 
         console.log(`Written s3://${sourceBucket}/${dashboardKey}`);
-
+ 
         return {
             status: 'success',
             dashboardKey,
@@ -114,4 +130,6 @@ exports.lambda_handler = async (event, context) => {
         throw error;
     }
 };
-
+ 
+ 
+ 
