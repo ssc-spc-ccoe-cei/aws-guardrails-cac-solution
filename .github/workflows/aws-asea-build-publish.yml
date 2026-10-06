@@ -15,9 +15,9 @@ jobs:
     runs-on: ubuntu-latest
  
     env:
-      AWS_REGION: ca-central-1
-      AWS_ACCOUNT_ID: "526878402113"
-      PIPELINE_BUCKET: gc-guardrails-deployments-526878402113
+      AWS_REGION: ${{ secrets.TEST_AWS_REGION }}
+      AWS_ACCOUNT_ID: ${{ secrets.TEST_AWS_ACCOUNT_ID }}
+      PIPELINE_BUCKET: ${{ secrets.TEST_PIPELINE_BUCKET }}
       ARTIFACT_VERSION: asea-${{ github.sha }}
  
     steps:
@@ -34,7 +34,6 @@ jobs:
       - name: Verify assumed AWS account and artifact bucket
         run: |
           account_id="$(aws sts get-caller-identity --query Account --output text)"
-          echo "Assumed account: ${account_id}"
           echo "Artifact version: ${ARTIFACT_VERSION}"
           test "${account_id}" = "${AWS_ACCOUNT_ID}"
           aws s3api head-bucket --bucket "${PIPELINE_BUCKET}"
