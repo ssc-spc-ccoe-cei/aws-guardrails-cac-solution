@@ -14,7 +14,7 @@ Deploy **one Conformance Pack per partition** in `main.yaml`. Each pack contains
 
 ### How It Works
 
-1. **`aws_account_partitioner`** (Custom Resource Lambda) runs early in `main.yaml`. It lists all org accounts, assigns them to partitions (≤70 each), and returns partition membership lists as outputs.
+1. **`aws_account_partitioner`** (Custom Resource Lambda) runs early in `main.yaml`. It lists all org accounts, assigns them to partitions (≤60 each), and returns partition membership lists as outputs.
 2. **`main.yaml`** creates 1–3 `AWS::Config::OrganizationConformancePack` resources, each receiving:
    - A `PartitionSuffix` parameter (`""`, `"_p2"`, or `"_p3"`)
    - An `ExcludedAccounts` list (all accounts **not** in that partition)
@@ -111,7 +111,7 @@ flowchart TD
 - ✅ **Each account sees exactly 37 rules** — clean Config console and Audit Manager reports
 - ✅ **Simple template change** — just add `${PartitionSuffix}` to existing `SourceIdentifier` lines
 - ✅ **Same template reused** for all partitions via S3 URI
-- ✅ **Backward compatible** — orgs with ≤70 accounts just have one pack with empty suffix (no change)
+- ✅ **Backward compatible** — orgs with ≤60 accounts just have one pack with empty suffix (no change)
 - ✅ **Audit Manager keywords stay simple** — `PartitionSuffix` only flows into Lambda ARNs, not into `ConfigRuleName` (AWS Config's conformance-pack engine silently ignores intrinsic functions in `ConfigRuleName` anyway), so rule names are identical across partitions and one keyword per control covers the whole org.
 
 ### Cons

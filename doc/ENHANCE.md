@@ -8,7 +8,7 @@ This document describes how to add new rules to the solution.
 > every guardrail Lambda may exist in **up to three partition variants**
 > — `<org>gcXX_check_<name>`, `<org>gcXX_check_<name>_p2`, and
 > `<org>gcXX_check_<name>_p3` — to keep each clone's resource-based
-> policy under Lambda's 20 KB limit at >70 accounts. The instructions
+> policy under Lambda's 20 KB limit at >60 accounts. The instructions
 > below were updated accordingly.
 
 ## Prerequisites

@@ -8,8 +8,8 @@ account-to-partition mapping maintained by `aws_account_partitioner` in the
 
 AWS Lambda resource-based policies are capped at **20 KB**. With one
 `AddPermission` statement per organization account, the policy on each
-guardrail Lambda overflows around **~70 accounts**. To support up to **210
-accounts**, accounts are split across up to **3 partitions of ≤70**, and each
+guardrail Lambda overflows around **~60 accounts**. To support up to **180
+accounts**, accounts are split across up to **3 partitions of ≤60**, and each
 guardrail Lambda is cloned per partition. This Lambda keeps each clone's
 policy in sync with its partition's accounts so every clone stays well under
 the 20 KB limit.

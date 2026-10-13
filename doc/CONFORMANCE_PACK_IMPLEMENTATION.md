@@ -33,7 +33,7 @@ partition it has been assigned to in DynamoDB.
 
 1. **`aws_account_partitioner`** (Custom Resource Lambda) would run
    early in `main.yaml`. It lists all org accounts, assigns each to a
-   partition (≤ 70 accounts each, up to 3 partitions), and returns the
+   partition (≤ 60 accounts each, up to 3 partitions), and returns the
    per-partition account lists as comma-separated strings
    (`AccountsInP1` / `AccountsInP2` / `AccountsInP3`).
 2. A nested CloudFormation stack would receive those three lists and
@@ -56,7 +56,7 @@ partition it has been assigned to in DynamoDB.
 
 ```mermaid
 flowchart TD
-    A[aws_account_partitioner<br/>Custom Resource Lambda] -->|Lists org accounts<br/>Assigns to partitions ≤70 each| B[Returns AccountsInP1/P2/P3<br/>as comma-separated strings]
+    A[aws_account_partitioner<br/>Custom Resource Lambda] -->|Lists org accounts<br/>Assigns to partitions ≤60 each| B[Returns AccountsInP1/P2/P3<br/>as comma-separated strings]
 
     B --> N[ConformancePackPartitions.yaml<br/>nested stack]
 
@@ -172,7 +172,7 @@ ${OrganizationName}-GC-CP-Guardrails-P2    ← when AccountsInP2 is non-empty
 ${OrganizationName}-GC-CP-Guardrails-P3    ← when AccountsInP3 is non-empty
 ```
 
-For organizations with ≤ 70 active accounts the behaviour is
+For organizations with ≤ 60 active accounts the behaviour is
 functionally **indistinguishable** from the pre-fix deployment: one
 pack with no exclusions, base `gc*` Lambda set only. The pack name
 picks up a `-P1` suffix — this is the one visible break with earlier
@@ -311,18 +311,17 @@ pack via its emptiness condition).
 #### CloudFormation 4 KB response-body cap
 
 The CloudFormation Custom Resource response body is capped at 4096
-bytes. With `MAX_ACCOUNTS_PER_PARTITION × MAX_PARTITIONS = 70 × 3 =
-210` account IDs at ~14 bytes each (12-digit + comma), the combined
-`AccountsInPx` payload tops out at ~2.7 KB plus envelope, which fits
+bytes. With `MAX_ACCOUNTS_PER_PARTITION × MAX_PARTITIONS = 60 × 3 =
+180` account IDs at ~14 bytes each (12-digit + comma), the combined
+`AccountsInPx` payload tops out at ~2.4 KB plus envelope, which fits
 comfortably. Measured body sizes:
 
 | Active accounts | `count` | Body size |
 |---:|:---:|---:|
 | 1 | 1 | 419 B |
-| 70 | 1 | ~1.4 KB |
-| 140 | 2 | ~2.0 KB |
-| 200 | 3 | 3.2 KB |
-| 210 (max) | 3 | ~3.4 KB |
+| 60 | 1 | ~1.3 KB |
+| 120 | 2 | ~1.9 KB |
+| 180 (max) | 3 | ~2.9 KB |
 
 ### 5. Evidence collection — org Config Aggregator (Audit Manager retired)
 
@@ -337,7 +336,7 @@ from P1/P2/P3 automatically with no per-partition configuration.
 
 #### Forward-compatibility with org growth
 
-When the organisation later scales past 70 (or 140) accounts and
+When the organisation later scales past 60 (or 120) accounts and
 `ConformancePackP2` (or `P3`) gets deployed, the previously-non-existent
 P2/P3 accounts begin producing evaluations of the same
 `gc01_check_root_mfa` rule that the aggregator picks up on the next
@@ -350,10 +349,10 @@ reconciliation, no control rename.
 
 | Active accounts | Partitions | Packs deployed | Behaviour |
 |---:|:---:|:---|:---|
-| 1–70 | 1 | `…-GC-CP-Guardrails` only | Identical to pre-fix deployment. No `ExcludedAccounts`. Every account targets base `<org>gc*` Lambdas. |
-| 71–140 | 2 | `…` + `…-P2` | Each pack lists the *other* partition's accounts in `ExcludedAccounts`, so every account receives exactly one pack. P1 accounts target base Lambdas; P2 accounts target `_p2` clones. |
-| 141–210 | 3 | `…` + `…-P2` + `…-P3` | Each pack excludes the union of the other two partitions' accounts. Three sets of Lambda clones, three packs, every account in exactly one of them. |
-| >210 | — | (failure) | Partitioner raises and the Custom Resource fails. Manual intervention required (raise `MaxAccountsPerPartition`, `MaxPartitions`, or both). |
+| 1–60 | 1 | `…-GC-CP-Guardrails` only | Identical to pre-fix deployment. No `ExcludedAccounts`. Every account targets base `<org>gc*` Lambdas. |
+| 61–120 | 2 | `…` + `…-P2` | Each pack lists the *other* partition's accounts in `ExcludedAccounts`, so every account receives exactly one pack. P1 accounts target base Lambdas; P2 accounts target `_p2` clones. |
+| 121–180 | 3 | `…` + `…-P2` + `…-P3` | Each pack excludes the union of the other two partitions' accounts. Three sets of Lambda clones, three packs, every account in exactly one of them. |
+| >180 | — | (failure) | Partitioner raises and the Custom Resource fails. Manual intervention required (raise `MaxAccountsPerPartition`, `MaxPartitions`, or both). |
 
 The assignment of any specific account to a specific partition is
 **stable** once made: existing rows in the

@@ -62,7 +62,7 @@ Parameters:
       output. 1 = single partition (legacy behaviour, no clones).
       2 = create _p2 clones. 3 = create _p2 and _p3 clones. Hard-capped at
       3 to keep each clone's resource-based policy under Lambda's 20 KB
-      limit (3 partitions x 70 accounts = 210 supported accounts).
+      limit (3 partitions x 60 accounts = 180 supported accounts).
 
 Conditions:
   GenerateEvidenceBucketName: !Equals

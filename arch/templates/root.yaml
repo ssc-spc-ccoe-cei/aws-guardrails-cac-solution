@@ -92,9 +92,9 @@ Parameters:
     Default: "LogArchive"
   MaxAccountsPerPartition:
     Type: Number
-    Default: 70
+    Default: 60
     MinValue: 1
-    MaxValue: 70
+    MaxValue: 60
     Description: >-
       Max accounts per partition for the Account Partitioner Lambda. Keeps
       each guardrail Lambda's resource-based policy under the 20 KB IAM limit.

@@ -1,7 +1,7 @@
 """AWS Account Partitioner
 
 Manages partition state for guardrail Lambda cloning. Partitions organize
-accounts into groups of ≤70 so each Lambda clone's resource-based policy
+accounts into groups of ≤60 so each Lambda clone's resource-based policy
 stays under the 20 KB limit.
 
 Invocation contexts:
@@ -31,7 +31,7 @@ logger.setLevel(logging.INFO)
 
 # Configuration from environment variables
 PARTITION_TABLE_NAME = os.environ.get("PARTITION_TABLE_NAME", "gc-guardrails-partition-state")
-MAX_ACCOUNTS_PER_PARTITION = int(os.environ.get("MAX_ACCOUNTS_PER_PARTITION", "70"))
+MAX_ACCOUNTS_PER_PARTITION = int(os.environ.get("MAX_ACCOUNTS_PER_PARTITION", "60"))
 MAX_PARTITIONS = int(os.environ.get("MAX_PARTITIONS", "3"))
 
 
@@ -355,7 +355,7 @@ def _build_cfn_response_data(result):
     with ``Fn::Split`` / ``Fn::Join``.
 
     The total response body is capped at 4 KB by CloudFormation; with
-    ``MAX_ACCOUNTS_PER_PARTITION * MAX_PARTITIONS = 210`` account IDs at
+    ``MAX_ACCOUNTS_PER_PARTITION * MAX_PARTITIONS = 180`` account IDs at
     13 bytes each (12 digits + comma), the combined payload stays well
     under that limit.
     """

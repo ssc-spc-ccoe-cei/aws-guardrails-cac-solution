@@ -205,7 +205,7 @@ Parameters:
     Description: The python runtime to use for the compliance dashboard
   MaxAccountsPerPartition:
     Type: Number
-    Default: 70
+    Default: 60
     MinValue: 1
     MaxValue: 200
     Description: >-
@@ -223,7 +223,7 @@ Parameters:
       to create. Hard-capped at 3 because the AuditAccountPreRequisitesPart*
       templates and ConformancePackPartitions only define conditional clones for
       partitions 1, 2, and 3. Total addressable accounts =
-      MaxAccountsPerPartition x MaxPartitions (default 70 x 3 = 210).
+      MaxAccountsPerPartition x MaxPartitions (default 60 x 3 = 180).
   RootStackName:
     Type: String
     Description: >-

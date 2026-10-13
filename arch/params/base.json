@@ -69,7 +69,7 @@
   },
   {
     "ParameterKey": "MaxAccountsPerPartition",
-    "ParameterValue": "70"
+    "ParameterValue": "60"
   },
   {
     "ParameterKey": "MaxPartitions",
