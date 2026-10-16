@@ -22,11 +22,36 @@ Parameters:
   DefaultCloudProfile:
     Type: String
     Description: The cloud profile to use when one is not provided by an account.
+  PartitionCount:
+    Type: String
+    Default: "1"
+    AllowedValues:
+      - "1"
+      - "2"
+      - "3"
+    Description: >-
+      Number of account partitions to deploy guardrail Lambda clones for.
+      Set by main.yaml from the aws_account_partitioner Custom Resource
+      output. 1 = single partition (legacy behaviour, no clones).
+      2 = create _p2 clones. 3 = create _p2 and _p3 clones.
 
 Conditions:
   IsAuditAccount: !Equals
     - !Ref AWS::AccountId
     - !Ref AuditAccountID
+  CreatePartition2: !Not
+    - !Equals
+      - !Ref PartitionCount
+      - "1"
+  CreatePartition3: !Equals
+    - !Ref PartitionCount
+    - "3"
+  IsAuditAccountAndCreatePartition2: !And
+    - !Condition IsAuditAccount
+    - !Condition CreatePartition2
+  IsAuditAccountAndCreatePartition3: !And
+    - !Condition IsAuditAccount
+    - !Condition CreatePartition3
 
 Resources:
   CloudGuardrailsCommonLayer:
@@ -42,6 +67,44 @@ Resources:
     Type: AWS::Lambda::Function
     Properties:
       FunctionName: !Sub "${OrganizationName}gc06_check_encryption_at_rest_part2"
+      Code: "../../src/lambda/gc06_check_encryption_at_rest_part2/build/GC06CheckEncryptionAtRestPart2Lambda/"
+      Handler: app.lambda_handler
+      Role: !Sub "arn:aws:iam::${AuditAccountID}:role/${RolePrefix}default_assessment_role"
+      Runtime: !Ref PythonRuntime
+      Timeout: 600
+      Layers:
+        - !Ref CloudGuardrailsCommonLayer
+      LoggingConfig:
+        LogGroup: !Sub "${OrganizationName}gc_guardrails"
+        LogFormat: "JSON"
+      Environment:
+        Variables:
+          DEFAULT_CLOUD_PROFILE: !Ref DefaultCloudProfile
+
+  GC06CheckEncryptionAtRestPart2LambdaP2:
+    Condition: IsAuditAccountAndCreatePartition2
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub "${OrganizationName}gc06_check_encryption_at_rest_part2_p2"
+      Code: "../../src/lambda/gc06_check_encryption_at_rest_part2/build/GC06CheckEncryptionAtRestPart2Lambda/"
+      Handler: app.lambda_handler
+      Role: !Sub "arn:aws:iam::${AuditAccountID}:role/${RolePrefix}default_assessment_role"
+      Runtime: !Ref PythonRuntime
+      Timeout: 600
+      Layers:
+        - !Ref CloudGuardrailsCommonLayer
+      LoggingConfig:
+        LogGroup: !Sub "${OrganizationName}gc_guardrails"
+        LogFormat: "JSON"
+      Environment:
+        Variables:
+          DEFAULT_CLOUD_PROFILE: !Ref DefaultCloudProfile
+
+  GC06CheckEncryptionAtRestPart2LambdaP3:
+    Condition: IsAuditAccountAndCreatePartition3
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub "${OrganizationName}gc06_check_encryption_at_rest_part2_p3"
       Code: "../../src/lambda/gc06_check_encryption_at_rest_part2/build/GC06CheckEncryptionAtRestPart2Lambda/"
       Handler: app.lambda_handler
       Role: !Sub "arn:aws:iam::${AuditAccountID}:role/${RolePrefix}default_assessment_role"

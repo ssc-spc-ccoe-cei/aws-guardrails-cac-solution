@@ -1,0 +1,9 @@
+{
+  "RequestType": "Create",
+  "ResponseURL": "https://pre-signed-url",
+  "StackId": "arn:aws:cloudformation:ca-central-1:123456789012:stack/test-stack/guid",
+  "RequestId": "unique-id-for-create-request",
+  "ResourceType": "Custom::AccountPartitioner",
+  "LogicalResourceId": "AccountPartitioner",
+  "ResourceProperties": {}
+}

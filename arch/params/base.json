@@ -52,10 +52,6 @@
     "ParameterValue": ""
   },
   {
-    "ParameterKey": "AdditionalAssessmentAdminRoleARN",
-    "ParameterValue": ""
-  },
-  {
     "ParameterKey": "BGA1",
     "ParameterValue": ""
   },
@@ -70,5 +66,13 @@
   {
     "ParameterKey": "BGA4",
     "ParameterValue": ""
+  },
+  {
+    "ParameterKey": "MaxAccountsPerPartition",
+    "ParameterValue": "60"
+  },
+  {
+    "ParameterKey": "MaxPartitions",
+    "ParameterValue": "3"
   }
 ]

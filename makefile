@@ -140,16 +140,6 @@ setup-admin-delegate:
 		--service-principal config.amazonaws.com \
 		--account-id $(AUDIT_ACCOUNT)
 
-deploy-config-aggregator:
-	$(info --- Deploying Config Aggregator ---)
-	@aws cloudformation deploy \
-		--template-file ./arch/templates/config-aggregator.yaml \
-		--stack-name "$(STACK)-config-aggregator-$(ENV_NAME)" \
-		--parameter-overrides $(shell $(PARAMETERS_STRING)) "PipelineBucket"="$(PIPELINE_BUCKET)"\
-		--s3-bucket $(PIPELINE_BUCKET) \
-		--capabilities CAPABILITY_NAMED_IAM \
-		--disable-rollback
-
 deploy-stack:
 	$(info --- Deploying Stack ---)
 	@{ \

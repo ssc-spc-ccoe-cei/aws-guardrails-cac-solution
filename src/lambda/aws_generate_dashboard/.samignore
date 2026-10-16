@@ -1,0 +1,7 @@
+# Files excluded from the SAM build artifact for this Lambda.
+# See: https://docs.aws.amazon.com/serverless-application-model/latest/developerguide/using-sam-cli-build.html
+test-local.js
+build/
+node_modules/
+README.md
+.gitignore

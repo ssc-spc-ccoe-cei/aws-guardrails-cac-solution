@@ -78,14 +78,81 @@ def create_iam_policy(session, policy_name, policy_document):
     return sts_response["Policy"]
 
 
+def create_or_update_iam_policy(session, policy_name, policy_document, account_id):
+    """
+    Idempotent policy upsert.
+
+    Creates the customer-managed IAM policy if it does not exist. If it
+    already exists, publishes the supplied document as a NEW default
+    policy version via ``create_policy_version(SetAsDefault=True)`` rather
+    than going through a delete + recreate cycle.
+
+    Why this matters:
+        * ``DeletePolicy`` fails with ``DeleteConflict`` if the policy is
+          attached to ANY IAM entity (role / user / group). The previous
+          "if EntityAlreadyExists, delete and recreate" pattern was
+          therefore brittle — any partially-cleaned-up state, concurrent
+          invocation, or extra attachment caused the lambda to loop until
+          its reinvocation budget (~50 min) was exhausted.
+        * ``create_policy_version`` is in-place: every role / user that
+          currently has this policy attached immediately picks up the new
+          permissions, so we never have to detach + reattach.
+        * IAM caps a policy at 5 versions, so we prune the oldest
+          non-default version when we hit the limit.
+
+    Returns a dict shaped like ``create_policy``'s ``Policy`` field so
+    callers can keep using ``policy["Arn"]``.
+    """
+    iam_client = session.client("iam")
+    policy_arn = f"arn:aws:iam::{account_id}:policy/{policy_name}"
+
+    try:
+        return create_iam_policy(
+            session=session,
+            policy_name=policy_name,
+            policy_document=policy_document,
+        )
+    except ClientError as e:
+        if e.response["Error"]["Code"] != "EntityAlreadyExists":
+            raise
+
+    logger.info(f"Policy {policy_name} already exists; publishing a new default version")
+
+    # IAM allows max 5 versions per managed policy. Make room if needed.
+    versions = iam_client.list_policy_versions(PolicyArn=policy_arn)["Versions"]
+    if len(versions) >= 5:
+        non_default = [v for v in versions if not v["IsDefaultVersion"]]
+        non_default.sort(key=lambda v: v["CreateDate"])
+        oldest = non_default[0]
+        iam_client.delete_policy_version(PolicyArn=policy_arn, VersionId=oldest["VersionId"])
+        logger.info(f"Deleted oldest non-default policy version {oldest['VersionId']} to free a slot")
+
+    iam_client.create_policy_version(
+        PolicyArn=policy_arn,
+        PolicyDocument=policy_document,
+        SetAsDefault=True,
+    )
+    logger.info(f"Published new default policy version for {policy_name}")
+    return {"Arn": policy_arn, "PolicyName": policy_name}
+
+
 def attach_iam_policy_to_role(session, role_name, policy_arn):
     """
-    Attaches an IAM policy to a role.
+    Attaches an IAM policy to a role. Safe to call when the policy is
+    already attached — IAM treats ``attach_role_policy`` as idempotent and
+    returns success, but we still swallow ``LimitExceeded`` /
+    ``EntityAlreadyExists`` defensively in case of race conditions.
     """
     logger.info(f"Attach Policy: {policy_arn} to Role {role_name}")
     iam_client = session.client("iam")
-    sts_response = iam_client.attach_role_policy(RoleName=role_name, PolicyArn=policy_arn)
-    return sts_response
+    try:
+        return iam_client.attach_role_policy(RoleName=role_name, PolicyArn=policy_arn)
+    except ClientError as e:
+        code = e.response["Error"]["Code"]
+        if code in ("EntityAlreadyExists",):
+            logger.info(f"Policy {policy_arn} already attached to {role_name}; skipping")
+            return {"Status": "AlreadyAttached"}
+        raise
 
 
 def create_iam_role(session, role_name, principal):
@@ -104,6 +171,49 @@ def create_iam_role(session, role_name, principal):
     return sts_response["Role"]
 
 
+def create_or_update_iam_role(session, role_name, principal):
+    """
+    Idempotent role upsert.
+
+    Creates the role if missing, otherwise updates its trust policy
+    in-place with ``update_assume_role_policy``. The previous flow
+    (delete + recreate) had two problems:
+
+        1. It depended on ``detach_all_policies_from_role`` succeeding,
+           which itself depended on ``DeletePolicy`` succeeding — and
+           ``DeletePolicy`` fails with ``DeleteConflict`` whenever the
+           policy is attached to anything else. That cascade was the root
+           cause of the "Cannot delete a policy attached to entities"
+           errors and the resulting 50-minute reinvocation loops.
+        2. Tearing the role down briefly broke every guardrail Lambda
+           clone that assumes it during the rebuild window.
+
+    Always returns a role dict (the freshly-created role, or the
+    pre-existing role fetched via ``get_role``) so callers can rely on
+    ``iam_role["RoleName"]`` without worrying about un-bound variables.
+    """
+    iam_client = session.client("iam")
+    assume_role_policy_document = json.dumps(
+        {
+            "Version": "2012-10-17",
+            "Statement": [{"Effect": "Allow", "Principal": {"AWS": principal}, "Action": "sts:AssumeRole"}],
+        }
+    )
+
+    try:
+        return create_iam_role(session=session, role_name=role_name, principal=principal)
+    except ClientError as e:
+        if e.response["Error"]["Code"] != "EntityAlreadyExists":
+            raise
+
+    logger.info(f"Role {role_name} already exists; updating assume role policy in place")
+    iam_client.update_assume_role_policy(
+        RoleName=role_name,
+        PolicyDocument=assume_role_policy_document,
+    )
+    return iam_client.get_role(RoleName=role_name)["Role"]
+
+
 def delete_role(session, role_name):
     """
     Deletes an IAM role.
@@ -116,7 +226,10 @@ def delete_role(session, role_name):
 
 def detach_all_policies_from_role(session, role_name):
     """
-    Detaches all policies from a role and deletes any custom policies.
+    Detaches all managed policies and removes all inline policies from a
+    role. Does NOT delete the managed policies themselves — that is the
+    caller's responsibility via ``delete_iam_policy``, which now safely
+    detaches a policy from every attached entity before deletion.
     """
     logger.info(f"Detach all policies from {role_name}")
     iam_client = session.client("iam")
@@ -124,14 +237,13 @@ def detach_all_policies_from_role(session, role_name):
 
     logger.info(f"Attached Policies to role {role_name} are {sts_response['AttachedPolicies']}")
     for policy in sts_response["AttachedPolicies"]:
-        logger.info(f"Deleting Policy: {policy}")
+        logger.info(f"Detaching managed policy: {policy}")
         iam_client.detach_role_policy(RoleName=role_name, PolicyArn=policy["PolicyArn"])
-        delete_iam_policy(session=session, policy_arn=policy["PolicyArn"])
 
     sts_response = iam_client.list_role_policies(RoleName=role_name)
     logger.info(f"Inline Policies attached to role {role_name} are {sts_response['PolicyNames']}")
     for policy_name in sts_response["PolicyNames"]:
-        logger.info(f"Deleting Policy: {policy_name}")
+        logger.info(f"Deleting inline Policy: {policy_name}")
         iam_client.delete_role_policy(RoleName=role_name, PolicyName=policy_name)
     return sts_response
 
@@ -160,9 +272,40 @@ def assume_role(session, account_id, role_name):
     return sts_session
 
 
+def detach_policy_from_all_entities(session, policy_arn):
+    """
+    Detaches an IAM policy from every role, user, and group it is
+    attached to. Required before ``DeletePolicy``, which fails with
+    ``DeleteConflict`` if any attachment remains.
+    """
+    iam_client = session.client("iam")
+    paginator = iam_client.get_paginator("list_entities_for_policy")
+    for page in paginator.paginate(PolicyArn=policy_arn):
+        for role in page.get("PolicyRoles", []):
+            logger.info(f"Detaching policy {policy_arn} from role {role['RoleName']}")
+            try:
+                iam_client.detach_role_policy(RoleName=role["RoleName"], PolicyArn=policy_arn)
+            except ClientError as err:
+                logger.warning(f"Failed to detach policy {policy_arn} from role {role['RoleName']}: {err}")
+        for user in page.get("PolicyUsers", []):
+            logger.info(f"Detaching policy {policy_arn} from user {user['UserName']}")
+            try:
+                iam_client.detach_user_policy(UserName=user["UserName"], PolicyArn=policy_arn)
+            except ClientError as err:
+                logger.warning(f"Failed to detach policy {policy_arn} from user {user['UserName']}: {err}")
+        for group in page.get("PolicyGroups", []):
+            logger.info(f"Detaching policy {policy_arn} from group {group['GroupName']}")
+            try:
+                iam_client.detach_group_policy(GroupName=group["GroupName"], PolicyArn=policy_arn)
+            except ClientError as err:
+                logger.warning(f"Failed to detach policy {policy_arn} from group {group['GroupName']}: {err}")
+
+
 def delete_iam_policy(session, policy_arn):
     """
-    Deletes an IAM policy, skipping AWS managed policies.
+    Deletes an IAM policy, skipping AWS managed policies. Detaches the
+    policy from every entity it is attached to first, otherwise
+    ``DeletePolicy`` returns ``DeleteConflict``.
     """
     # Check if the policy is an AWS managed policy
     if policy_arn.startswith("arn:aws:iam::aws:policy/"):
@@ -170,6 +313,10 @@ def delete_iam_policy(session, policy_arn):
         return {"Status": "Skipped", "Reason": "AWS Managed Policy"}
 
     iam_client = session.client("iam")
+
+    # Detach from every role / user / group; otherwise delete_policy fails.
+    detach_policy_from_all_entities(session=session, policy_arn=policy_arn)
+
     # List all versions of the policy
     versions = iam_client.list_policy_versions(PolicyArn=policy_arn)
 
@@ -356,62 +503,54 @@ def lambda_handler(event, context):
                         send(cfn_event, context, FAILED, response_data)
                         raise err
 
-                    # Create or recreate the IAM role
+                    # Create the IAM role, or update its trust policy in place
+                    # if it already exists. We deliberately do NOT delete and
+                    # recreate the role on update: doing so cascades into
+                    # delete_iam_policy calls that fail with DeleteConflict
+                    # whenever a managed policy is attached to anything else,
+                    # which was the root cause of the lambda timing out in 50
+                    # minute reinvocation loops.
                     try:
-                        iam_role = create_iam_role(session=sts_session, role_name=role_name, principal=trust_principal)
+                        iam_role = create_or_update_iam_role(
+                            session=sts_session, role_name=role_name, principal=trust_principal
+                        )
                     except ClientError as e:
-                        if e.response["Error"]["Code"] == "EntityAlreadyExists":
-                            logger.info(
-                                f"Existing IAM Role {role_name} found in account {account['Id']}, "
-                                f"removing policies and deleting role."
-                            )
-                            detach_all_policies_from_role(session=sts_session, role_name=role_name)
-                            delete_role(session=sts_session, role_name=role_name)
-                            iam_role = create_iam_role(
-                                session=sts_session, role_name=role_name, principal=trust_principal
-                            )
-                        else:
-                            logger.info(f"Exception occurred while creating role {role_name} in {account['Id']}: {e}")
+                        logger.error(
+                            f"Exception occurred while creating/updating role {role_name} in {account['Id']}: {e}"
+                        )
+                        # Without iam_role we cannot attach policies for this
+                        # account; move on to the next account instead of
+                        # crashing the whole invocation.
+                        continue
 
-                    # Create or recreate each policy in policy_package["Docs"], then attach
+                    # For each managed policy we own, either create it or
+                    # publish a new default version. create_or_update_iam_policy
+                    # is in-place: every role that currently has this policy
+                    # attached automatically picks up the new permissions.
                     for policy_doc in policy_package["Docs"]:
                         logger.info(f"Policy_Doc: {json.dumps(policy_doc)}")
+                        policy_name = policy_doc["Statement"][0]["Sid"]
                         try:
-                            policy = create_iam_policy(
+                            policy = create_or_update_iam_policy(
                                 session=sts_session,
-                                policy_name=policy_doc["Statement"][0]["Sid"],
+                                policy_name=policy_name,
                                 policy_document=json.dumps(policy_doc),
+                                account_id=account["Id"],
                             )
-                        except ClientError as e:
-                            if e.response["Error"]["Code"] == "EntityAlreadyExists":
-                                logger.info(
-                                    f"Existing Policy {policy_doc['Statement'][0]['Sid']} found. Recreating it."
-                                )
-                                try:
-                                    delete_iam_policy(
-                                        session=sts_session,
-                                        policy_arn=f"arn:aws:iam::{account['Id']}:policy/{policy_doc['Statement'][0]['Sid']}",
-                                    )
-                                    policy = create_iam_policy(
-                                        session=sts_session,
-                                        policy_name=policy_doc["Statement"][0]["Sid"],
-                                        policy_document=json.dumps(policy_doc),
-                                    )
-                                except Exception as e2:
-                                    logger.info(
-                                        f"Error recreating {policy_doc['Statement'][0]['Sid']}. Exception: {e2}"
-                                    )
-                            else:
-                                logger.info(
-                                    f"Exception occurred while creating policy {policy_doc['Statement'][0]['Sid']}: {e}"
-                                )
+                        except Exception as err:
+                            logger.error(
+                                f"Error creating/updating policy {policy_name} in {account['Id']}. Exception: {err}"
+                            )
+                            continue
 
                         try:
                             attach_iam_policy_to_role(
                                 session=sts_session, role_name=iam_role["RoleName"], policy_arn=policy["Arn"]
                             )
                         except Exception as err:
-                            logger.info(f"Error attaching {iam_role['RoleName']} to {policy['Arn']}. Exception: {err}")
+                            logger.error(
+                                f"Error attaching {iam_role['RoleName']} to {policy['Arn']}. Exception: {err}"
+                            )
 
                 # At this point, all operations completed successfully for this event
                 send(cfn_event, context, SUCCESS, response_data)
@@ -480,6 +619,6 @@ def lambda_handler(event, context):
         raise err
     """
     except Exception as err:
-        logger.Error(f"Error occurred: {err}")
+        logger.error(f"Error occurred: {err}")
         t.join()
         raise err

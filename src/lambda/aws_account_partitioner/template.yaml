@@ -1,15 +1,15 @@
 AWSTemplateFormatVersion: '2010-09-09'
 Transform: AWS::Serverless-2016-10-31
 Description: >
-  aws_auditmanager_setup
+  aws_account_partitioner
 
 Globals:
   Function:
-    Timeout: 90
+    Timeout: 180
     MemorySize: 128
 
 Resources:
-  AWSAuditManagerSetupLambda:
+  AccountPartitionerLambda:
     Type: AWS::Serverless::Function
     Properties:
       CodeUri: .

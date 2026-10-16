@@ -10,14 +10,6 @@ Parameters:
     Type: String
     Description: >-
       The AWS Account ID (12 digits) of the Audit Account
-  ClientEvidenceBucket:
-    Type: String
-    Description: >-
-      The name of the Amazon S3 bucket to be created to store the required documents for assessment.
-  AWSConfigConformsBucketName:
-    Type: String
-    Description: >-
-      The name of the Amazon S3 bucket used for the conformance pack deployment .
   RolePrefix:
     Type: String
     Default: "ASEA-"
@@ -37,6 +29,24 @@ Parameters:
     Default: 'python3.12'
     Description:
       The python runtime to use for the compliance dashboard
+  # Policy packages forwarded from main.yaml's InvokeCustomLambda /
+  # InvokeCustomLambda2 via YAML anchor + StackSet parameter. Embedding
+  # them in the EventBridge target Input below means the steady-state
+  # new-account path uses the EXACT same policy as the bootstrap path,
+  # so the two cannot drift. Both are JSON-encoded objects (already
+  # `!Sub`-substituted for ${ClientEvidenceBucket} /
+  # ${AWSConfigConformsBucketName} in main.yaml), so they slot straight
+  # into the surrounding EventBridge Input JSON as nested objects.
+  GCLambdaExecutionRolePolicyPackage:
+    Type: String
+    Description: >-
+      JSON policy package attached to the GCLambdaExecutionRole role.
+      DO NOT override at deploy time — sourced from main.yaml.
+  GCLambdaExecutionRole2PolicyPackage:
+    Type: String
+    Description: >-
+      JSON policy package attached to the GCLambdaExecutionRole2 role.
+      DO NOT override at deploy time — sourced from main.yaml.
 
 Resources:
   LambdaCreateRole:
@@ -66,7 +76,7 @@ Resources:
                   - lambda:GetFunction
                   - lambda:InvokeAsync
                   - lambda:GetAlias
-                Resource: !Sub "arn:${AWS::Partition}:lambda:*:${AWS::AccountId}:function:${OrganizationName}aws_create_role"
+                Resource: !Sub "arn:${AWS::Partition}:lambda:*:${AWS::AccountId}:function:${OrganizationName}aws_org_create_role"
               - Effect: Allow
                 Action:
                   - lambda:ListFunctions
@@ -175,17 +185,73 @@ Resources:
               )
               return sts_response['Policy']
           
+          def create_or_update_iam_policy(session, policy_name, policy_document, account_id):
+              """
+              Idempotent policy upsert. Creates the customer-managed IAM
+              policy if missing, otherwise publishes the supplied document
+              as a NEW default policy version via
+              create_policy_version(SetAsDefault=True) instead of doing a
+              delete + recreate.
+          
+              Why: DeletePolicy fails with DeleteConflict when the policy
+              is attached to anything else, which was the root cause of
+              "Cannot delete a policy attached to entities" errors and
+              the 50 minute reinvocation loops. create_policy_version is
+              in-place so every attached role picks up the new perms
+              automatically. IAM caps a policy at 5 versions, so we prune
+              the oldest non-default version when we hit the limit.
+              """
+              iam_client = session.client('iam')
+              policy_arn = f"arn:aws:iam::{account_id}:policy/{policy_name}"
+          
+              try:
+                  return create_iam_policy(
+                      session=session,
+                      policy_name=policy_name,
+                      policy_document=policy_document
+                  )
+              except ClientError as e:
+                  if e.response['Error']['Code'] != 'EntityAlreadyExists':
+                      raise
+          
+              logger.info(f"Policy {policy_name} already exists; publishing a new default version")
+          
+              versions = iam_client.list_policy_versions(PolicyArn=policy_arn)['Versions']
+              if len(versions) >= 5:
+                  non_default = [v for v in versions if not v['IsDefaultVersion']]
+                  non_default.sort(key=lambda v: v['CreateDate'])
+                  oldest = non_default[0]
+                  iam_client.delete_policy_version(
+                      PolicyArn=policy_arn,
+                      VersionId=oldest['VersionId']
+                  )
+                  logger.info(f"Deleted oldest non-default policy version {oldest['VersionId']} to free a slot")
+          
+              iam_client.create_policy_version(
+                  PolicyArn=policy_arn,
+                  PolicyDocument=policy_document,
+                  SetAsDefault=True
+              )
+              logger.info(f"Published new default policy version for {policy_name}")
+              return {"Arn": policy_arn, "PolicyName": policy_name}
+          
           def attach_iam_policy_to_role(session, role_name, policy_arn):
               """
-              Attaches an IAM policy to a role.
+              Attaches an IAM policy to a role. Idempotent: swallows
+              EntityAlreadyExists in case of race conditions.
               """
               logger.info(f"Attach Policy: {policy_arn} to Role {role_name}")
               iam_client = session.client('iam')
-              sts_response = iam_client.attach_role_policy(
-                  RoleName=role_name,
-                  PolicyArn=policy_arn
-              )
-              return sts_response
+              try:
+                  return iam_client.attach_role_policy(
+                      RoleName=role_name,
+                      PolicyArn=policy_arn
+                  )
+              except ClientError as e:
+                  if e.response['Error']['Code'] == 'EntityAlreadyExists':
+                      logger.info(f"Policy {policy_arn} already attached to {role_name}; skipping")
+                      return {"Status": "AlreadyAttached"}
+                  raise
           
           def create_iam_role(session, role_name, principal):
               """
@@ -211,6 +277,40 @@ Resources:
               )
               return sts_response['Role']
           
+          def create_or_update_iam_role(session, role_name, principal):
+              """
+              Idempotent role upsert. Creates the role if missing,
+              otherwise updates its trust policy in place via
+              update_assume_role_policy. The previous "delete + recreate"
+              pattern cascaded into DeletePolicy DeleteConflict errors
+              and briefly broke every guardrail Lambda clone that
+              assumes this role during the rebuild window.
+              """
+              iam_client = session.client('iam')
+              assume_role_policy_document = json.dumps({
+                  'Version': '2012-10-17',
+                  'Statement': [
+                      {
+                          'Effect': 'Allow',
+                          'Principal': {'AWS': principal},
+                          'Action': 'sts:AssumeRole'
+                      }
+                  ]
+              })
+          
+              try:
+                  return create_iam_role(session=session, role_name=role_name, principal=principal)
+              except ClientError as e:
+                  if e.response['Error']['Code'] != 'EntityAlreadyExists':
+                      raise
+          
+              logger.info(f"Role {role_name} already exists; updating assume role policy in place")
+              iam_client.update_assume_role_policy(
+                  RoleName=role_name,
+                  PolicyDocument=assume_role_policy_document
+              )
+              return iam_client.get_role(RoleName=role_name)['Role']
+          
           def delete_role(session, role_name):
               """
               Deletes an IAM role.
@@ -224,7 +324,10 @@ Resources:
           
           def detach_all_policies_from_role(session, role_name):
               """
-              Detaches all policies from a role and deletes any custom policies.
+              Detaches all managed policies and removes all inline
+              policies from a role. Does NOT delete the managed policies
+              themselves — callers should use delete_iam_policy for that,
+              which now safely detaches from every entity first.
               """
               logger.info(f"Detach all policies from {role_name}")
               iam_client = session.client('iam')
@@ -232,17 +335,16 @@ Resources:
           
               logger.info(f"Attached Policies to role {role_name} are {sts_response['AttachedPolicies']}")
               for policy in sts_response['AttachedPolicies']:
-                  logger.info(f"Deleting Policy: {policy}")
+                  logger.info(f"Detaching managed policy: {policy}")
                   iam_client.detach_role_policy(
                       RoleName=role_name,
                       PolicyArn=policy['PolicyArn']
                   )
-                  delete_iam_policy(session=session, policy_arn=policy['PolicyArn'])
           
               sts_response = iam_client.list_role_policies(RoleName=role_name)
               logger.info(f"Inline Policies attached to role {role_name} are {sts_response['PolicyNames']}")
               for policy_name in sts_response['PolicyNames']:
-                  logger.info(f"Deleting Policy: {policy_name}")
+                  logger.info(f"Deleting inline Policy: {policy_name}")
                   iam_client.delete_role_policy(
                       RoleName=role_name,
                       PolicyName=policy_name
@@ -272,9 +374,39 @@ Resources:
               )
               return sts_session
           
+          def detach_policy_from_all_entities(session, policy_arn):
+              """
+              Detaches an IAM policy from every role, user, and group it
+              is attached to. Required before DeletePolicy, which fails
+              with DeleteConflict if any attachment remains.
+              """
+              iam_client = session.client('iam')
+              paginator = iam_client.get_paginator('list_entities_for_policy')
+              for page in paginator.paginate(PolicyArn=policy_arn):
+                  for role in page.get('PolicyRoles', []):
+                      logger.info(f"Detaching policy {policy_arn} from role {role['RoleName']}")
+                      try:
+                          iam_client.detach_role_policy(RoleName=role['RoleName'], PolicyArn=policy_arn)
+                      except ClientError as err:
+                          logger.warning(f"Failed to detach policy {policy_arn} from role {role['RoleName']}: {err}")
+                  for user in page.get('PolicyUsers', []):
+                      logger.info(f"Detaching policy {policy_arn} from user {user['UserName']}")
+                      try:
+                          iam_client.detach_user_policy(UserName=user['UserName'], PolicyArn=policy_arn)
+                      except ClientError as err:
+                          logger.warning(f"Failed to detach policy {policy_arn} from user {user['UserName']}: {err}")
+                  for group in page.get('PolicyGroups', []):
+                      logger.info(f"Detaching policy {policy_arn} from group {group['GroupName']}")
+                      try:
+                          iam_client.detach_group_policy(GroupName=group['GroupName'], PolicyArn=policy_arn)
+                      except ClientError as err:
+                          logger.warning(f"Failed to detach policy {policy_arn} from group {group['GroupName']}: {err}")
+          
           def delete_iam_policy(session, policy_arn):
               """
               Deletes an IAM policy, skipping AWS managed policies.
+              Detaches the policy from every entity it is attached to
+              first, otherwise DeletePolicy returns DeleteConflict.
               """
               # Check if the policy is an AWS managed policy
               if policy_arn.startswith("arn:aws:iam::aws:policy/"):
@@ -282,6 +414,10 @@ Resources:
                   return {"Status": "Skipped", "Reason": "AWS Managed Policy"}
             
               iam_client = session.client('iam')
+          
+              # Detach from every role / user / group; otherwise delete_policy fails.
+              detach_policy_from_all_entities(session=session, policy_arn=policy_arn)
+          
               # List all versions of the policy
               versions = iam_client.list_policy_versions(PolicyArn=policy_arn)
           
@@ -468,59 +604,49 @@ Resources:
                                   send(cfn_event, context, FAILED, response_data)
                                   raise err
               
-                              # Create or recreate the IAM role
+                              # Create the IAM role, or update its trust
+                              # policy in place if it already exists. We do
+                              # NOT delete and recreate the role: doing so
+                              # cascades into delete_iam_policy calls that
+                              # fail with DeleteConflict whenever a managed
+                              # policy is attached to anything else (the
+                              # root cause of the lambda timing out in
+                              # 50 minute reinvocation loops).
                               try:
-                                  iam_role = create_iam_role(
+                                  iam_role = create_or_update_iam_role(
                                       session=sts_session,
                                       role_name=role_name,
                                       principal=trust_principal
                                   )
                               except ClientError as e:
-                                  if e.response['Error']['Code'] == 'EntityAlreadyExists':
-                                      logger.info(
-                                          f"Existing IAM Role {role_name} found in account {account['Id']}, "
-                                          f"removing policies and deleting role."
-                                      )
-                                      detach_all_policies_from_role(session=sts_session, role_name=role_name)
-                                      delete_role(session=sts_session, role_name=role_name)
-                                      iam_role = create_iam_role(
-                                          session=sts_session,
-                                          role_name=role_name,
-                                          principal=trust_principal
-                                      )
-                                  else:
-                                      logger.info(f"Exception occurred while creating role {role_name} in {account['Id']}: {e}")
+                                  logger.error(
+                                      f"Exception occurred while creating/updating role {role_name} in {account['Id']}: {e}"
+                                  )
+                                  # Without iam_role we cannot attach
+                                  # policies for this account; move on.
+                                  continue
               
-                              # Create or recreate each policy in policy_package["Docs"], then attach
+                              # For each managed policy we own, either
+                              # create it or publish a new default version.
+                              # create_or_update_iam_policy is in-place:
+                              # every role that currently has this policy
+                              # attached automatically picks up the new
+                              # permissions, no delete/reattach required.
                               for policy_doc in policy_package["Docs"]:
                                   logger.info(f"Policy_Doc: {json.dumps(policy_doc)}")
+                                  policy_name = policy_doc['Statement'][0]['Sid']
                                   try:
-                                      policy = create_iam_policy(
+                                      policy = create_or_update_iam_policy(
                                           session=sts_session,
-                                          policy_name=policy_doc['Statement'][0]['Sid'],
-                                          policy_document=json.dumps(policy_doc)
+                                          policy_name=policy_name,
+                                          policy_document=json.dumps(policy_doc),
+                                          account_id=account['Id']
                                       )
-                                  except ClientError as e:
-                                      if e.response['Error']['Code'] == 'EntityAlreadyExists':
-                                          logger.info(f"Existing Policy {policy_doc['Statement'][0]['Sid']} found. Recreating it.")
-                                          try:
-                                              delete_iam_policy(
-                                                  session=sts_session,
-                                                  policy_arn=f"arn:aws:iam::{account['Id']}:policy/{policy_doc['Statement'][0]['Sid']}"
-                                              )
-                                              policy = create_iam_policy(
-                                                  session=sts_session,
-                                                  policy_name=policy_doc['Statement'][0]['Sid'],
-                                                  policy_document=json.dumps(policy_doc)
-                                              )
-                                          except Exception as e2:
-                                              logger.info(
-                                                  f"Error recreating {policy_doc['Statement'][0]['Sid']}. Exception: {e2}"
-                                              )
-                                      else:
-                                          logger.info(
-                                              f"Exception occurred while creating policy {policy_doc['Statement'][0]['Sid']}: {e}"
-                                          )
+                                  except Exception as err:
+                                      logger.error(
+                                          f"Error creating/updating policy {policy_name} in {account['Id']}. Exception: {err}"
+                                      )
+                                      continue
               
                                   try:
                                       attach_iam_policy_to_role(
@@ -529,7 +655,7 @@ Resources:
                                           policy_arn=policy['Arn']
                                       )
                                   except Exception as err:
-                                      logger.info(
+                                      logger.error(
                                           f"Error attaching {iam_role['RoleName']} to {policy['Arn']}. Exception: {err}"
                                       )
               
@@ -585,7 +711,7 @@ Resources:
                           send(cfn_event, context, FAILED, response_data, response_data.get('lower', None))
                           stop_reinvocation = True
               except Exception as err:
-                  logger.Error(f"Error occurred: {err}")
+                  logger.error(f"Error occurred: {err}")
                   t.join()
                   raise err
 
@@ -611,180 +737,25 @@ Resources:
         - 
           Arn: !GetAtt CreateRoleLambda.Arn
           Id: "TargetFunctionV1"
+          # PolicyPackage values are forwarded from main.yaml's
+          # InvokeCustomLambda / InvokeCustomLambda2 via the YAML anchor
+          # there.
           Input: !Sub |-
               {
-                
                 "Roles": [
                   {
                     "Name": "${AccelRolePrefix}GCLambdaExecutionRole2",
                     "TrustPrincipal": "arn:${AWS::Partition}:iam::${AuditAccountID}:root",
                     "SwitchRole": "${AcceleratorRole}",
-                    "PolicyPackage": {
-                      "Docs": [{
-                        "Version": "2012-10-17",
-                        "Statement": [{
-                          "Action": [
-                            "acm:Describe*",
-                            "acm:Get*",
-                            "acm:List*",
-                            "apigateway:GET", 
-                            "backup:ListBackupVaults",
-                            "backup:ListRecoveryPointsByBackupVault",
-                            "cassandra:Select",
-                            "cloudfront:Describe*",
-                            "cloudfront:Get*",
-                            "cloudfront:List*",
-                            "cloudtrail:DescribeTrails",
-                            "cloudtrail:Get*",
-                            "cloudtrail:ListTrails",
-                            "cloudtrail:LookupEvents",
-                            "codebuild:BatchGetProjects",
-                            "codebuild:ListProjects",
-                            "config:PutEvaluations",
-                            "config:Get*",
-                            "docdb-elastic:List*",
-                            "dynamodb:DescribeTable",
-                            "dynamodb:ListTables",
-                            "ec2:Describe*",
-                            "ec2:GetEbsEncryptionByDefault",
-                            "eks:DescribeCluster",
-                            "eks:ListClusters",
-                            "elasticache:Describe*",
-                            "elasticfilesystem:DescribeFileSystems",
-                            "elasticloadbalancing:Describe*",
-                            "es:DescribeElasticsearchDomains",  
-                            "es:ListDomainNames",
-                            "kinesis:DescribeStream",
-                            "kinesis:ListStreams",
-                            "memorydb:Describe*",
-                            "organizations:Describe*",
-                            "organizations:List*",
-                            "qldb:DescribeLedger",
-                            "qldb:ListLedgers",
-                            "rds:Describe*",
-                            "redshift:Describe*",
-                            "resource-explorer-2:ListIndexes",
-                            "resource-explorer-2:Search",
-                            "s3:Get*",
-                            "s3:List*",
-                            "sns:GetTopicAttributes",
-                            "sns:ListTopics",
-                            "tag:GetResources",
-                            "timestream:DescribeEndpoints",
-                            "timestream:List*"
-                          ],
-                          "Resource": [
-                            "*"
-                          ],
-                          "Effect": "Allow",
-                          "Sid": "GCComplianceAllowAccess2"
-                        }]
-                      }]
-                    }
+                    "PolicyPackage": ${GCLambdaExecutionRole2PolicyPackage}
                   },
                   {
                     "Name": "${AccelRolePrefix}GCLambdaExecutionRole",
                     "TrustPrincipal": "arn:${AWS::Partition}:iam::${AuditAccountID}:root",
                     "SwitchRole": "${AcceleratorRole}",
-                    "PolicyPackage": {
-                        "Docs": [{
-                          "Version": "2012-10-17",
-                            "Statement": [{
-                              "Action": [
-                                "acm:Describe*",
-                                "acm:Get*",
-                                "acm:List*",
-                                "apigateway:GET",
-                                "aws-marketplace:ListEntities",
-                                "backup:List*",
-                                "cassandra:Select",
-                                "cloudfront:Describe*",
-                                "cloudfront:Get*",
-                                "cloudfront:List*",
-                                "cloudtrail:DescribeTrails",
-                                "cloudtrail:Get*",
-                                "cloudtrail:ListTrails",
-                                "cloudtrail:LookupEvents",
-                                "codebuild:BatchGetProjects",
-                                "codebuild:ListProjects",
-                                "config:PutEvaluations",
-                                "dax:DescribeClusters",
-                                "docdb-elastic:ListClusters",
-                                "docdb-elastic:ListClusterSnapshots",
-                                "dynamodb:DescribeTable",
-                                "dynamodb:ListTables",
-                                "ec2:Describe*",
-                                "ec2:GetEbsEncryptionByDefault",
-                                "eks:DescribeCluster",
-                                "eks:ListClusters",
-                                "elasticache:Describe*",
-                                "elasticfilesystem:DescribeFileSystems",
-                                "iam:GenerateCredentialReport",
-                                "iam:Get*",
-                                "iam:List*",
-                                "iam:Simulate*",
-                                "kinesis:DescribeStream",
-                                "kinesis:ListStreams",
-                                "memorydb:Describe*",
-                                "organizations:Describe*",
-                                "organizations:List*",
-                                "qldb:DescribeLedger",
-                                "qldb:ListLedgers",
-                                "rds:Describe*",
-                                "resource-explorer-2:ListIndexes",
-                                "resource-explorer-2:Search",
-                                "s3:Get*",
-                                "s3:List*",
-                                "sns:GetTopicAttributes",
-                                "sns:ListTopics",
-                                "tag:GetResources",
-                                "timestream:DescribeEndpoints",
-                                "timestream:List*"
-                              ],
-                              "Resource": [
-                                "*"
-                              ],
-                              "Effect": "Allow",
-                              "Sid": "GCComplianceAllowAccess"
-                            },
-                            {
-                              "Action": [
-                                "s3:Get*",
-                                "s3:ListBucket"
-                              ],
-                              "Resource": [
-                                "arn:${AWS::Partition}:s3:::${AWSConfigConformsBucketName}",
-                                "arn:${AWS::Partition}:s3:::${AWSConfigConformsBucketName}/*",
-                                "arn:${AWS::Partition}:s3:::${ClientEvidenceBucket}",
-                                "arn:${AWS::Partition}:s3:::${ClientEvidenceBucket}/*"
-                              ],
-                              "Effect": "Allow",
-                              "Sid": "GcComplianceAllowBucketAccess"
-                            },
-                            {
-                              "Action": [
-                                "account:GetAlternateContact"
-                              ],
-                              "Resource": [
-                                "arn:aws:account::*:account",
-                                "arn:aws:account::*:account/o-*/*"
-                              ],
-                              "Effect": "Allow",
-                              "Sid": "AllowReadAccountInfo"
-                            },
-                            {
-                              "Action": [
-                                "s3:ListAllMyBuckets"
-                              ],
-                              "Resource": "*",
-                              "Effect": "Allow",
-                              "Sid": "GcComplianceAllowListBucketAccess"
-                            }
-                          ]
-                        }]
-                      }
+                    "PolicyPackage": ${GCLambdaExecutionRolePolicyPackage}
                   }
-                ] 
+                ]
               }
 
   PermissionForEventsToInvokeLambda: 

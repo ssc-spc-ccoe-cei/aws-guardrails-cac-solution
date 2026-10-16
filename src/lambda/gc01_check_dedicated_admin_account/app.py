@@ -31,6 +31,12 @@ from boto_util.sso_admin import list_all_sso_admin_instances
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
 
+def _is_missing_group_error(error):
+    error_details = error.response.get("Error", {})
+    return (
+        error_details.get("Code") == "ResourceNotFoundException"
+        and "GROUP NOT FOUND" in error_details.get("Message", "").upper()
+    )
 
 # def fetch_sso_users(sso_admin_client, identity_store_client):
 #     """
@@ -136,24 +142,32 @@ def fetch_sso_users(sso_admin_client, identity_store_client, management_account_
         # Step 3: Expand group memberships
         for group_id in group_ids:
             next_token = None
-            while True:
-                response = identity_store_client.list_group_memberships(
-                    IdentityStoreId=instance_id,
-                    GroupId=group_id,
-                    NextToken=next_token
-                ) if next_token else identity_store_client.list_group_memberships(
-                    IdentityStoreId=instance_id,
-                    GroupId=group_id
-                )
-
-                for membership in response.get("GroupMemberships", []):
-                    user_ids.add(membership["MemberId"]["UserId"])
-                    logger.info(f"{membership}")
-
-                next_token = response.get("NextToken")
-                if not next_token:
-                    break
-
+            try:
+                while True:
+                    response = identity_store_client.list_group_memberships(
+                        IdentityStoreId=instance_id,
+                        GroupId=group_id,
+                        NextToken=next_token
+                    ) if next_token else identity_store_client.list_group_memberships(
+                        IdentityStoreId=instance_id,
+                        GroupId=group_id
+                    )
+ 
+                    for membership in response.get("GroupMemberships", []):
+                        user_ids.add(membership["MemberId"]["UserId"])
+                        logger.info(f"{membership}")
+ 
+                    next_token = response.get("NextToken")
+                    if not next_token:
+                        break
+            except botocore.exceptions.ClientError as error:
+                if not _is_missing_group_error(error):
+                    raise
+                logger.warning(
+                    "Skipping stale Identity Center group assignment %s in identity store %s",
+                    group_id,
+                    instance_id,
+                )        
         # Step 4: Fetch user details
         next_token = None
         while True:
@@ -561,28 +575,37 @@ def _get_group_user_ids_cached(identity_store_client, identity_store_id: str, gr
  
     user_ids: set[str] = set()
     next_token = None
-    while True:
-        resp = (
-            identity_store_client.list_group_memberships(
-                IdentityStoreId=identity_store_id,
-                GroupId=group_id,
-                NextToken=next_token,
+   try:
+        while True:
+            resp = (
+                identity_store_client.list_group_memberships(
+                    IdentityStoreId=identity_store_id,
+                    GroupId=group_id,
+                    NextToken=next_token,
+                )
+                if next_token
+                else identity_store_client.list_group_memberships(
+                    IdentityStoreId=identity_store_id,
+                    GroupId=group_id,
+                )
             )
-            if next_token
-            else identity_store_client.list_group_memberships(
-                IdentityStoreId=identity_store_id,
-                GroupId=group_id,
-            )
+ 
+            for membership in resp.get("GroupMemberships", []) or []:
+                uid = membership.get("MemberId", {}).get("UserId")
+                if uid:
+                    user_ids.add(uid)
+ 
+            next_token = resp.get("NextToken")
+            if not next_token:
+                break
+    except botocore.exceptions.ClientError as error:
+        if not _is_missing_group_error(error):
+            raise
+        logger.warning(
+            "Skipping stale Identity Center group assignment %s in identity store %s",
+            group_id,
+            identity_store_id,
         )
- 
-        for membership in resp.get("GroupMemberships", []) or []:
-            uid = membership.get("MemberId", {}).get("UserId")
-            if uid:
-                user_ids.add(uid)
- 
-        next_token = resp.get("NextToken")
-        if not next_token:
-            break
  
     cache[group_id] = user_ids
     return user_ids

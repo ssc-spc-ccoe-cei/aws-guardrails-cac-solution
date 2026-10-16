@@ -1,7 +1,7 @@
 AWSTemplateFormatVersion: 2010-09-09
-
+ 
 Description: Upload an object to an S3 bucket, triggering a Lambda event, returning the object key as a Stack Output.
-
+ 
 Parameters:
   DestBucketName:
     Description: S3 Bucket name
@@ -27,16 +27,22 @@ Parameters:
   DefaultCloudProfile:
     Type: String
     Description: The cloud profile to use when one is not provided by an account.
-  AssessmentName:
+  AggregatorName:
     Type: String
-    Default: "GC Guardrails Assessment"
-    Description: Name of assessment in auditmanager.
-
+    Default: ""
+    Description: >-
+      Name of the AWS Config Organization Aggregator (deployed by
+      config-aggregator.yaml) queried by the daily compile-audit-report
+      Lambda. Empty string uses the solution default (see !Sub below).
+ 
 Conditions:
+  UseDefaultAggregatorName: !Equals
+    - !Ref AggregatorName
+    - ""
   IsAuditAccount: !Equals
     - !Ref AWS::AccountId
     - !Ref AuditAccountID
-
+ 
 Resources:
   CloudGuardrailsCommonLayer:
     Condition: IsAuditAccount
@@ -91,7 +97,7 @@ Resources:
               - "kms:GenerateDataKey"
               - "kms:GenerateDataKeyWithoutPlaintext"
             Resource: "*"
-
+ 
   Bucket:
     Condition: IsAuditAccount
     Type: AWS::S3::Bucket
@@ -102,6 +108,8 @@ Resources:
           - ObjectOwnership: BucketOwnerPreferred
       BucketName: !Sub "gc-fedclient-${AWS::AccountId}-${AWS::Region}"
       NotificationConfiguration:
+        EventBridgeConfiguration:
+          EventBridgeEnabled: true
         LambdaConfigurations:
           - Event: "s3:ObjectCreated:*"
             Function: !GetAtt BucketWatcherLambda.Arn
@@ -134,7 +142,7 @@ Resources:
             Condition:
               Bool:
                 aws:SecureTransport: "false"
-
+ 
   BucketPermission:
     Condition: IsAuditAccount
     Type: AWS::Lambda::Permission
@@ -144,7 +152,7 @@ Resources:
       Principal: s3.amazonaws.com
       SourceAccount: !Ref "AWS::AccountId"
       SourceArn: !Sub "arn:aws:s3:::gc-fedclient-${AWS::AccountId}-${AWS::Region}"
-
+ 
   BucketWatcherLambda:
     Condition: IsAuditAccount
     Type: AWS::Lambda::Function
@@ -160,7 +168,7 @@ Resources:
         Variables:
           target_bucket: !Ref DestBucketName
           ORG_ID: !Ref OrganizationId
-
+ 
   LambdaExecutionRole:
     Condition: IsAuditAccount
     Type: AWS::IAM::Role
@@ -195,7 +203,7 @@ Resources:
                   - "s3:GetObjectTagging"
                   - "s3:PutObjectTagging"
                 Resource: !Sub "arn:aws:s3:::${DestBucketName}/*"
-
+ 
   # Cronjobs
   ## Create your Lambda
   CronjobsLambda:
@@ -212,14 +220,17 @@ Resources:
         Variables:
           source_target_bucket: !Sub "gc-fedclient-${AWS::AccountId}-${AWS::Region}"
           ORG_ID: !Ref OrganizationId
-          ASSESSMENT_NAME: !Ref AssessmentName
+          AGGREGATOR_NAME: !If
+            - UseDefaultAggregatorName
+            - !Sub "${OrganizationName}GC-Guardrails-Aggregator"
+            - !Ref AggregatorName
           ORG_NAME: !Ref OrganizationName
           TENANT_ID: !Ref TenantId
           CAC_VERSION: !Ref DeployVersion
           DEFAULT_CLOUD_PROFILE: !Ref DefaultCloudProfile
       Runtime: python3.12
       Timeout: 720
-
+ 
   CronLambdaExecutionRole:
     Condition: IsAuditAccount
     Type: AWS::IAM::Role
@@ -272,10 +283,13 @@ Resources:
                 Resource: !GetAtt myKey.Arn
               - Effect: Allow
                 Action:
-                  - "auditmanager:GetEvidenceByEvidenceFolder"
-                  - "auditmanager:GetEvidenceFoldersByAssessment"
-                  - "auditmanager:ListAssessments"
-                Resource: !Sub "arn:aws:auditmanager:${AWS::Region}:${AWS::AccountId}:assessment/*"
+                  # Org Config Aggregator read APIs used to source guardrail
+                  # compliance data (replaces the retired Audit Manager path).
+                  - "config:SelectAggregateResourceConfig"
+                  - "config:DescribeConfigurationAggregators"
+                  - "config:DescribeAggregateComplianceByConfigRules"
+                  - "config:GetAggregateComplianceDetailsByConfigRule"
+                Resource: "*"
               - Sid: AllowCreateLogGroup
                 Action:
                   - "logs:CreateLogGroup"
@@ -290,7 +304,7 @@ Resources:
                 Resource:
                   - !Sub "arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/lambda/${OrganizationName}gc*"
                 Effect: Allow
-
+ 
   ## Create schedule.
   CronjobsScheduledRule:
     Condition: IsAuditAccount
@@ -303,7 +317,7 @@ Resources:
       Targets:
         - Arn: !GetAtt CronjobsLambda.Arn
           Id: TargetFunctionV1
-
+ 
   ## Grant permission to Events trigger Lambda.
   PermissionForEventsToInvokeCronjobsLambda:
     Condition: IsAuditAccount
@@ -313,3 +327,90 @@ Resources:
       Action: lambda:InvokeFunction
       Principal: events.amazonaws.com
       SourceArn: !GetAtt CronjobsScheduledRule.Arn
+ 
+  ##################################################
+  # Dashboard Generation Components
+  ##################################################
+ 
+  DashboardObjectCreatedRule:
+    Condition: IsAuditAccount
+    Type: AWS::Events::Rule
+    Properties:
+      EventPattern:
+        source:
+          - aws.s3
+        detail-type:
+          - Object Created
+        detail:
+          bucket:
+            name:
+              - !Ref Bucket
+          object:
+            key:
+              - suffix: ".csv"
+      State: ENABLED
+      Targets:
+        - Arn: !GetAtt DashboardLambda.Arn
+          Id: DashboardLambda
+ 
+  DashboardLambdaPermission:
+    Condition: IsAuditAccount
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: "lambda:InvokeFunction"
+      FunctionName: !Ref DashboardLambda
+      Principal: events.amazonaws.com
+      SourceArn: !GetAtt DashboardObjectCreatedRule.Arn
+ 
+  DashboardLambda:
+    Condition: IsAuditAccount
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub "${OrganizationName}aws_generate_dashboard"
+      Description: Generates static HTML compliance dashboards from the daily evidence CSV.
+      Code: "../../src/lambda/aws_generate_dashboard/build/GenerateDashboardLambda/"
+      Handler: index.lambda_handler
+      Role: !GetAtt DashboardLambdaExecutionRole.Arn
+      Timeout: 120
+      MemorySize: 256
+      Runtime: nodejs22.x
+      Environment:
+        Variables:
+          ORG_NAME: !Ref OrganizationName
+          CAC_VERSION: !Ref DeployVersion
+ 
+  DashboardLambdaExecutionRole:
+    Condition: IsAuditAccount
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal: { Service: [lambda.amazonaws.com] }
+            Action: ["sts:AssumeRole"]
+      Path: /
+      ManagedPolicyArns:
+        - "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
+      Policies:
+        - PolicyName: DashboardS3Policy
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Sid: ReadEvidenceCSV
+                Effect: Allow
+                Action:
+                  - "s3:GetObject"
+                Resource: !Sub "arn:aws:s3:::gc-fedclient-${AWS::AccountId}-${AWS::Region}/*"
+              - Sid: DecryptEvidenceBucketKey
+                Effect: Allow
+                Action:
+                  - "kms:Decrypt"
+                  - "kms:GenerateDataKey"
+                Resource: !GetAtt myKey.Arn
+              - Sid: WriteDashboardHTML
+                Effect: Allow
+                Action:
+                  - "s3:GetObject"
+                  - "s3:PutObject"
+                Resource: !Sub "arn:aws:s3:::gc-fedclient-${AWS::AccountId}-${AWS::Region}/*"
