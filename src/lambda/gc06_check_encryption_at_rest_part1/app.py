@@ -5,6 +5,7 @@
 import json
 import logging
 import time
+import boto3
 
 from utils import is_scheduled_notification, check_required_parameters, check_guardrail_requirement_by_cloud_usage_profile, get_cloud_profile_from_tags, GuardrailType, GuardrailRequirementType
 from boto_util.organizations import get_account_tags
@@ -132,8 +133,9 @@ def assess_api_gw_encryption_at_rest(api_gw_client, event):
                                 api_id,
                             )
                     # build evaluation
+                    resource_identifier = f"{api_id}:{deployment_id}:{stage_name}"
                     local_evaluations.append(
-                        build_evaluation(stage_name, compliance_status, event, resource_type, annotation)
+                        build_evaluation(resource_identifier, compliance_status, event, resource_type, annotation)
                     )
                     if compliance_status == "NON_COMPLIANT":
                         NONCOMPLIANT_SERVICES.add("API Gateway")
@@ -207,13 +209,15 @@ def assess_backup_encryption_at_rest(backup_client, event):
 ############################################################
 # AWS CloudTrail specific support functions
 #   - CLOUD_TRAIL_ENCRYPTION_ENABLED
-def assess_cloudtrail_encryption_at_rest(AWScloudtrail_client, event):
+def assess_cloudtrail_encryption_at_rest(s3_client, AWScloudtrail_client, event):
     """
     Finds AWS CloudTrail trails that are not encrypted at rest using KMS
     """
     local_evaluations = []
     trails = []
     resource_type = "AWS::CloudTrail::Trail"
+    AWS_CONTROL_TOWER_CLOUDTRAIL_NAME = "aws-controltower-BaselineCloudTrail"
+
     try:
         response = AWScloudtrail_client.describe_trails()
         trails = response.get("trailList", [])
@@ -223,15 +227,39 @@ def assess_cloudtrail_encryption_at_rest(AWScloudtrail_client, event):
     except ValueError:
         logger.error("CloudTrail - Error while calling describe_trails")
         NONCOMPLIANT_SERVICES.add("CloudTrail")
+
     logger.info("CloudTrail - %s trails found.", len(trails))
+
     for trail in trails:
         compliance_status = "NON_COMPLIANT"
         annotation = "Not using KMS"
-        if trail.get("KmsKeyId", ""):
+        trail_name = trail.get("Name", "INVALID")
+
+        #ignore control tower cloudtrail from compliance check. it will be always logged into s3 bucket with default encryption
+        if trail_name == AWS_CONTROL_TOWER_CLOUDTRAIL_NAME:
             compliance_status = "COMPLIANT"
-            annotation = "KMS key confirmed"
+            annotation = "AWS Control Tower Trail"
+        
+        else:
+            if trail.get("KmsKeyId", ""):
+                compliance_status = "COMPLIANT"
+                annotation = "KMS key confirmed"
+            else:
+                logger.info("### trail doesn't have kms keys %s", trail)
+                s3_bucket_name = trail.get("S3BucketName", "")
+                if s3_bucket_name:
+                    bucket_encrypted_flag = check_s3_bucket_encryption(s3_client, s3_bucket_name)
+                    if bucket_encrypted_flag or s3_bucket_name.startswith(CLOUD_TRAIL_PLACEHOLDER_BUCKET_PREFIX):
+                        logger.info("### trail bucket %s  has encryption", s3_bucket_name)
+                        compliance_status = "COMPLIANT"
+                        annotation = "Trail bucket has encryption enabled"
+                    else:
+                        logger.info("### trail bucket %s  has no encryption", s3_bucket_name)
+                        compliance_status = "NON_COMPLIANT"
+                        annotation = "Trail bucket has no encryption enabled"
+        
         logger.info(
-            "CloudTrail - Trail %s is %s", trail.get("TrailARN", trail.get("Name", "INVALID")), compliance_status
+            "### CloudTrail - Trail %s is %s", trail.get("TrailARN", trail.get("Name", "INVALID")), compliance_status
         )
         # build evaluation
         local_evaluations.append(
@@ -243,6 +271,24 @@ def assess_cloudtrail_encryption_at_rest(AWScloudtrail_client, event):
             NONCOMPLIANT_SERVICES.add("CloudTrail")
     logger.info("CloudTrail - reporting %s evaluations.", len(local_evaluations))
     return local_evaluations
+
+def check_s3_bucket_encryption(s3_client, bucket_name):
+    """
+    Check if S3 bucket has encryption enabled
+    :return True if bucket is encrypted, else False
+    """
+    # s3_client = get_client("s3")
+
+    try:
+        response = s3_client.get_bucket_encryption(Bucket=bucket_name)
+        encryption_rules = response.get('ServerSideEncryptionConfiguration', {}).get('Rules', [])
+
+        if encryption_rules:
+            return True
+        return False
+    except botocore.exceptions.ClientError as ex:
+        logger.error("S3 error while checking bucket encryption for %s: %s", bucket_name, ex)
+        return False
 
 
 ############################################################
@@ -425,13 +471,15 @@ def assess_dax_encryption_at_rest(dax_client, event):
     local_evaluations = []
     clusters = []
     resource_type = "AWS::DAX::Cluster"
+    boto3_session = boto3.session.Session()
+    region_name = boto3_session.region_name
     try:
         clusters = describe_all_dax_clusters(dax_client, PAGE_SIZE, INTERVAL_BETWEEN_API_CALLS)
     except botocore.exceptions.ClientError as ex:
-        logger.error("DAX - Error while calling dax_get_clusters_list %s", ex)
+        logger.info("DAX is not available in the region %s", region_name)
         # NONCOMPLIANT_SERVICES.add('DAX')
     except ValueError:
-        logger.error("DAX - Error while calling dax_get_clusters_list")
+        logger.info("DAX is not available in the region %s",region_name )
         # NONCOMPLIANT_SERVICES.add('DAX')
     logger.info("DAX - %s clusters found.", len(clusters))
     for cluster in clusters:
@@ -604,11 +652,13 @@ def lambda_handler(event, context):
     global NONCOMPLIANT_SERVICES
     global PAGE_SIZE
     global INTERVAL_BETWEEN_API_CALLS
+    global CLOUD_TRAIL_PLACEHOLDER_BUCKET_PREFIX
 
     NONCOMPLIANT_SERVICES = set({})
     EBS_ENCRYPTION_AT_REST = False
     PAGE_SIZE = 25
     INTERVAL_BETWEEN_API_CALLS = 0.1
+    CLOUD_TRAIL_PLACEHOLDER_BUCKET_PREFIX = "codepipeline-cloudtrail-placeholder-bucket-"
 
     # establish AWS API clients
     aws_api_gw_client = get_client("apigateway", aws_account_id, execution_role_name, is_not_audit_account)
@@ -619,7 +669,7 @@ def lambda_handler(event, context):
     aws_dax_client = get_client("dax", aws_account_id, execution_role_name, is_not_audit_account)
     #aws_dynamo_db_client = get_client("dynamodb", aws_account_id, execution_role_name, is_not_audit_account)
     aws_ec2_client = get_client("ec2", aws_account_id, execution_role_name, is_not_audit_account)
-    
+    aws_s3_client = get_client("s3", aws_account_id, execution_role_name, is_not_audit_account)
     # Check cloud profile
     tags = get_account_tags(get_client("organizations", assume_role=False), aws_account_id)
     cloud_profile = get_cloud_profile_from_tags(tags)
@@ -652,7 +702,7 @@ def lambda_handler(event, context):
     evaluations.extend(assess_codebuild_encryption_at_rest(aws_codebuild_client, event))
 
     # CloudTrail
-    evaluations.extend(assess_cloudtrail_encryption_at_rest(aws_cloudtrail_client, event))
+    evaluations.extend(assess_cloudtrail_encryption_at_rest(aws_s3_client, aws_cloudtrail_client, event))
 
     # DynamoDB
     #evaluations.extend(assess_dynamodb_encryption_at_rest(aws_dynamo_db_client, event))

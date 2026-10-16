@@ -8,6 +8,19 @@ Parameters:
   UpdateTriggerVersion:
     Type: String
     Default: "v1.1"
+  PartitionSuffix:
+    Type: String
+    Default: ""
+    AllowedValues:
+      - ""
+      - "_p2"
+      - "_p3"
+    Description: >-
+      Suffix appended to every guardrail Config rule name and to the Lambda
+      function name referenced by each rule. Empty for partition 1 (the base
+      / "P1" pack); ``_p2`` and ``_p3`` are used by the partition-2 and
+      partition-3 packs created by ConformancePackPartitions.yaml when the
+      organization grows beyond ``MaxAccountsPerPartition`` accounts.
   GCLambdaExecutionRoleName:
     Type: String
   GCLambdaExecutionRoleName2:
@@ -18,9 +31,17 @@ Parameters:
     Type: String
   BGA2:
     Type: String
+  BGA3:
+    Type: String
+    Default: ""
+  BGA4:
+    Type: String
+    Default: ""
   OrganizationName:
     Type: String
   DeployVersion:
+    Type: String
+  LogArchiveAccountName:
     Type: String
   # GC01
   S3AttestationLetterPath:
@@ -28,19 +49,19 @@ Parameters:
   RuleNamingConventionFilePath:
     Type: String
   PasswordPolicyMinimumPasswordLength:
-    Default: "14"
+    Default: "12"
     Type: String
   PasswordPolicyMaxPasswordAge:
-    Default: "90"
+    Default: ""
     Type: String
   PasswordPolicyPasswordReusePrevention:
     Default: "24"
     Type: String
   PasswordPolicyRequireSymbols:
-    Default: "True"
+    Default: "False"
     Type: String
   PasswordPolicyRequireNumbers:
-    Default: "True"
+    Default: "False"
     Type: String
   PasswordPolicyRequireUppercaseCharacters:
     Default: "True"
@@ -58,6 +79,11 @@ Parameters:
     Type: String
   NonPrivilegedUsersFilePath:
     Type: String
+  LogSourceAttestationFilePath:
+    Type: String
+  ExternalAlertsAttestationFilePath:
+    Type: String
+
   # GC02
   S3AccountManagementPlanPath:
     Type: String
@@ -85,6 +111,8 @@ Parameters:
     Type: String
   S3SecureNetworkTransmissionPolicyPath:
     Type: String
+  S3NonComplianceOptoutFilePath:
+    Type: String
   # GC08
   S3TargetNetworkArchitecturePath:
     Type: String
@@ -98,9 +126,6 @@ Parameters:
   # GC10
   S3LogBucketsPath:
     Type: String
-  LogArchiveAccountName:
-    Type: String
-    Default: LogArchive
   # GC11
   S3MonitoringUseCasesPath:
     Type: String
@@ -111,51 +136,18 @@ Parameters:
     Type: String
   S3EmergencyAccountAlertsRuleNamesPath:
     Type: String
+  LogSourceNonComplianceAttestationFilePath:
+    Type: String
+  ExternalAlertsNonComplianceAttestationFilePath:
+    Type: String
 
 Resources:
   # GC01
-  GC01CheckAttestationLetterConfigRule:
-    Type: "AWS::Config::ConfigRule"
-    Properties:
-      ConfigRuleName: gc01_check_attestation_letter
-      Description: Checks S3 bucket for the attestation letter.
-      InputParameters:
-        s3ObjectPath:
-          Fn::If:
-            - s3AttestationLetterPath
-            - Ref: S3AttestationLetterPath
-            - Ref: AWS::NoValue
-        ExecutionRoleName:
-          Fn::If:
-            - GCLambdaExecutionRoleName
-            - Ref: GCLambdaExecutionRoleName
-            - Ref: AWS::NoValue
-        AuditAccountID:
-          Fn::If:
-            - auditAccountID
-            - Ref: AuditAccountID
-            - Ref: AWS::NoValue
-      Scope:
-        ComplianceResourceTypes:
-          - AWS::Account
-      MaximumExecutionFrequency: TwentyFour_Hours
-      Source:
-        Owner: CUSTOM_LAMBDA
-        SourceIdentifier:
-          Fn::Join:
-            - ""
-            - - "arn:aws:lambda:ca-central-1:"
-              - Ref: AuditAccountID
-              - !Sub ":function:${OrganizationName}gc01_check_attestation_letter"
-        SourceDetails:
-          - EventSource: "aws.config"
-            MessageType: "ScheduledNotification"
-
   GC01CheckRootAccountMFAEnabled:
     Type: "AWS::Config::ConfigRule"
     Properties:
       ConfigRuleName: gc01_check_root_mfa
-      Description: Checks Root account to ensure MFA is enabled
+      Description: "Confirms that MFA is enabled for the root account. Remediate by enabling MFA on the root user per AWS root-user MFA guidance. Source: https://github.com/canada-ca/cloud-guardrails/blob/master/EN/01_Protect-user-accounts-and-identities.md"
       InputParameters:
         ExecutionRoleName:
           Fn::If:
@@ -178,7 +170,7 @@ Resources:
             - ""
             - - "arn:aws:lambda:ca-central-1:"
               - Ref: AuditAccountID
-              - !Sub ":function:${OrganizationName}gc01_check_root_mfa"
+              - !Sub ":function:${OrganizationName}gc01_check_root_mfa${PartitionSuffix}"
         SourceDetails:
           - EventSource: "aws.config"
             MessageType: "ScheduledNotification"
@@ -187,7 +179,7 @@ Resources:
     Type: "AWS::Config::ConfigRule"
     Properties:
       ConfigRuleName: gc01_check_federated_users_mfa
-      Description: Checks federated users to ensure that MFA is setup.
+      Description: "Confirms that MFA is enabled for federated users. Remediate by enabling MFA at the federated identity provider. Source: https://github.com/canada-ca/cloud-guardrails/blob/master/EN/01_Protect-user-accounts-and-identities.md"
       InputParameters:
         ExecutionRoleName:
           Fn::If:
@@ -210,7 +202,7 @@ Resources:
             - ""
             - - "arn:aws:lambda:ca-central-1:"
               - Ref: AuditAccountID
-              - !Sub ":function:${OrganizationName}gc01_check_federated_users_mfa"
+              - !Sub ":function:${OrganizationName}gc01_check_federated_users_mfa${PartitionSuffix}"
         SourceDetails:
           - EventSource: "aws.config"
             MessageType: "ScheduledNotification"
@@ -219,7 +211,7 @@ Resources:
     Type: "AWS::Config::ConfigRule"
     Properties:
       ConfigRuleName: gc01_check_monitoring_and_logging
-      Description: Checks that monitoring and auditing is implemented for all user accounts.
+      Description: "Confirms that CloudTrail and account monitoring are enabled. Remediate by configuring a multi-region CloudTrail trail with logging active. Source: https://github.com/canada-ca/cloud-guardrails/blob/master/EN/01_Protect-user-accounts-and-identities.md"
       InputParameters:
         ExecutionRoleName:
           Fn::If:
@@ -243,7 +235,7 @@ Resources:
             - ""
             - - "arn:aws:lambda:ca-central-1:"
               - Ref: AuditAccountID
-              - !Sub ":function:${OrganizationName}gc01_check_monitoring_and_logging"
+              - !Sub ":function:${OrganizationName}gc01_check_monitoring_and_logging${PartitionSuffix}"
         SourceDetails:
           - EventSource: "aws.config"
             MessageType: "ScheduledNotification"
@@ -252,7 +244,7 @@ Resources:
     Type: "AWS::Config::ConfigRule"
     Properties:
       ConfigRuleName: gc01_check_alerts_flag_misuse
-      Description: Checks that alerts are setup to notify authorized personnel of suspicious activities.
+      Description: "Confirms that GuardDuty or EventBridge alerts flag account misuse. Remediate by enabling GuardDuty or configuring EventBridge rules for alerts. Source: https://github.com/canada-ca/cloud-guardrails/blob/master/EN/01_Protect-user-accounts-and-identities.md"
       InputParameters:
         RuleNamingConventionFilePath:
           Fn::If:
@@ -269,6 +261,16 @@ Resources:
             - auditAccountID
             - Ref: AuditAccountID
             - Ref: AWS::NoValue
+        LogSourceAttestationFilePath:
+          Fn::If:
+            - logSourceAttestationFilePath
+            - Ref: LogSourceAttestationFilePath
+            - Ref: AWS::NoValue
+        ExternalAlertsAttestationFilePath:
+          Fn::If:
+            - externalAlertsAttestationFilePath
+            - Ref: ExternalAlertsAttestationFilePath
+            - Ref: AWS::NoValue
       Scope:
         ComplianceResourceTypes:
           - AWS::Account
@@ -281,7 +283,7 @@ Resources:
             - ""
             - - "arn:aws:lambda:ca-central-1:"
               - Ref: AuditAccountID
-              - !Sub ":function:${OrganizationName}gc01_check_alerts_flag_misuse"
+              - !Sub ":function:${OrganizationName}gc01_check_alerts_flag_misuse${PartitionSuffix}"
         SourceDetails:
           - EventSource: "aws.config"
             MessageType: "ScheduledNotification"
@@ -290,7 +292,7 @@ Resources:
     Type: "AWS::Config::ConfigRule"
     Properties:
       ConfigRuleName: gc01_check_mfa_digital_policy
-      Description: Checks that an mfa digital policy is in place to ensure that MFA configurations are enforced.
+      Description: "Confirms that a digital policy enforces MFA for federated identities. Remediate by configuring an MFA-enforcement policy at your IdP. Source: https://github.com/canada-ca/cloud-guardrails/blob/master/EN/01_Protect-user-accounts-and-identities.md"
       InputParameters:
         ExecutionRoleName:
           Fn::If:
@@ -313,7 +315,7 @@ Resources:
             - ""
             - - "arn:aws:lambda:ca-central-1:"
               - Ref: AuditAccountID
-              - !Sub ":function:${OrganizationName}gc01_check_mfa_digital_policy"
+              - !Sub ":function:${OrganizationName}gc01_check_mfa_digital_policy${PartitionSuffix}"
         SourceDetails:
           - EventSource: "aws.config"
             MessageType: "ScheduledNotification"
@@ -322,7 +324,7 @@ Resources:
     Type: "AWS::Config::ConfigRule"
     Properties:
       ConfigRuleName: gc01_check_dedicated_admin_account
-      Description: Checks that there are dedicated user accounts for administration.
+      Description: "Confirms that dedicated admin users exist and non-privileged users lack admin access. Remediate by adjusting IAM or Identity Center permissions. Source: https://github.com/canada-ca/cloud-guardrails/blob/master/EN/01_Protect-user-accounts-and-identities.md"
       InputParameters:
         PrivilegedUsersFilePath:
           Fn::If:
@@ -355,7 +357,7 @@ Resources:
             - ""
             - - "arn:aws:lambda:ca-central-1:"
               - Ref: AuditAccountID
-              - !Sub ":function:${OrganizationName}gc01_check_dedicated_admin_account"
+              - !Sub ":function:${OrganizationName}gc01_check_dedicated_admin_account${PartitionSuffix}"
         SourceDetails:
           - EventSource: "aws.config"
             MessageType: "ScheduledNotification"
@@ -364,7 +366,7 @@ Resources:
     Type: "AWS::Config::ConfigRule"
     Properties:
       ConfigRuleName: gc01_check_iam_users_mfa
-      Description: Checks IAM users to ensure MFA is enabled
+      Description: "Confirms that MFA is enabled for all IAM users. Remediate by enabling an MFA device for each IAM user per AWS IAM MFA guidance. Source: https://github.com/canada-ca/cloud-guardrails/blob/master/EN/01_Protect-user-accounts-and-identities.md"
       InputParameters:
         ExecutionRoleName:
           Fn::If:
@@ -386,6 +388,16 @@ Resources:
             - bgUser2
             - Ref: BGA2
             - Ref: AWS::NoValue
+        BgUser3:
+          Fn::If:
+            - bgUser3
+            - Ref: BGA3
+            - Ref: AWS::NoValue
+        BgUser4:
+          Fn::If:
+            - bgUser4
+            - Ref: BGA4
+            - Ref: AWS::NoValue
       Scope:
         ComplianceResourceTypes:
           - AWS::Account
@@ -398,52 +410,16 @@ Resources:
             - ""
             - - "arn:aws:lambda:ca-central-1:"
               - Ref: AuditAccountID
-              - !Sub ":function:${OrganizationName}gc01_check_iam_users_mfa"
+              - !Sub ":function:${OrganizationName}gc01_check_iam_users_mfa${PartitionSuffix}"
         SourceDetails:
           - EventSource: "aws.config"
             MessageType: "ScheduledNotification"
   # GC02
-  GC02CheckAccountManagementPlanConfigRule:
-    Type: "AWS::Config::ConfigRule"
-    Properties:
-      ConfigRuleName: gc02_check_account_mgmt_plan
-      Description: Checks S3 bucket for the account management plan document
-      InputParameters:
-        s3ObjectPath:
-          Fn::If:
-            - s3AccountManagementPlanPath
-            - Ref: S3AccountManagementPlanPath
-            - Ref: AWS::NoValue
-        ExecutionRoleName:
-          Fn::If:
-            - GCLambdaExecutionRoleName
-            - Ref: GCLambdaExecutionRoleName
-            - Ref: AWS::NoValue
-        AuditAccountID:
-          Fn::If:
-            - auditAccountID
-            - Ref: AuditAccountID
-            - Ref: AWS::NoValue
-      Scope:
-        ComplianceResourceTypes:
-          - AWS::Account
-      MaximumExecutionFrequency: TwentyFour_Hours
-      Source:
-        Owner: CUSTOM_LAMBDA
-        SourceIdentifier:
-          Fn::Join:
-            - ""
-            - - "arn:aws:lambda:ca-central-1:"
-              - Ref: AuditAccountID
-              - !Sub ":function:${OrganizationName}gc02_check_account_mgmt_plan"
-        SourceDetails:
-          - EventSource: "aws.config"
-            MessageType: "ScheduledNotification"
   GC02CheckPrivilegedRolesReviewConfigRule:
     Type: "AWS::Config::ConfigRule"
     Properties:
       ConfigRuleName: gc02_check_privileged_roles_review
-      Description: Checks S3 bucket for the role assignment review verification document.
+      Description: "Confirms that a privileged role review document exists in S3 and is current within 12 months. Remediate by uploading the review to the configured S3 path. Source: https://github.com/canada-ca/cloud-guardrails/blob/master/EN/02_Manage-Access.md"
       InputParameters:
         s3ObjectPath:
           Fn::If:
@@ -471,56 +447,16 @@ Resources:
             - ""
             - - "arn:aws:lambda:ca-central-1:"
               - Ref: AuditAccountID
-              - !Sub ":function:${OrganizationName}gc02_check_privileged_roles_review"
+              - !Sub ":function:${OrganizationName}gc02_check_privileged_roles_review${PartitionSuffix}"
         SourceDetails:
           - EventSource: "aws.config"
             MessageType: "ScheduledNotification"
-  GC02CheckAccessManagementAttestationConfigRule:
-    Type: "AWS::Config::ConfigRule"
-    Properties:
-      ConfigRuleName: gc02_check_access_management_attestation
-      Description: Checks S3 bucket for the access management attestation document.      
-      InputParameters: 
-        s3AccessManagementAttestationPath:
-          Fn::If:
-            - s3AccessManagementAttestationDocumentPath
-            - Ref: S3AccessManagementAttestationDocumentPath
-            - Ref: AWS::NoValue
-        s3RoleAssignmentReviewPath:
-          Fn::If:
-            - s3RoleAssignmentReviewDocumentPath
-            - Ref: S3RoleAssignmentReviewDocumentPath
-            - Ref: AWS::NoValue 
-        ExecutionRoleName:
-          Fn::If:
-            - GCLambdaExecutionRoleName
-            - Ref: GCLambdaExecutionRoleName
-            - Ref: AWS::NoValue
-        AuditAccountID:
-          Fn::If:
-            - auditAccountID
-            - Ref: AuditAccountID
-            - Ref: AWS::NoValue
-      Scope:
-        ComplianceResourceTypes:
-          - AWS::Account
-      MaximumExecutionFrequency: TwentyFour_Hours
-      Source:
-        Owner: CUSTOM_LAMBDA
-        SourceIdentifier:
-          Fn::Join:
-            - ""
-            - - "arn:aws:lambda:ca-central-1:"
-              - Ref: AuditAccountID
-              - !Sub ":function:${OrganizationName}gc02_check_access_management_attestation"
-        SourceDetails:
-          - EventSource: "aws.config"
-            MessageType: "ScheduledNotification"
+ 
   GC02CheckGroupAccessConfigurationConfigRule:
     Type: "AWS::Config::ConfigRule"
     Properties:
       ConfigRuleName: gc02_check_group_access_configuration
-      Description: Checks that access configurations and policies are implemented for different classes of users.
+      Description: "Confirms that admin and non-admin groups have correctly scoped policies and members. Remediate by adjusting group policies or memberships in IAM/Identity Center. Source: https://github.com/canada-ca/cloud-guardrails/blob/master/EN/02_Manage-Access.md"
       InputParameters:
         s3ObjectPath:
           Fn::If:
@@ -548,7 +484,7 @@ Resources:
             - ""
             - - "arn:aws:lambda:ca-central-1:"
               - Ref: AuditAccountID
-              - !Sub ":function:${OrganizationName}gc02_check_group_access_configuration"
+              - !Sub ":function:${OrganizationName}gc02_check_group_access_configuration${PartitionSuffix}"
         SourceDetails:
           - EventSource: "aws.config"
             MessageType: "ScheduledNotification"
@@ -556,7 +492,7 @@ Resources:
     Type: "AWS::Config::ConfigRule"
     Properties:
       ConfigRuleName: gc02_check_password_protection_mechanisms
-      Description: Checks S3 bucket for the account management plan document
+      Description: "Confirms that an account management plan is present in S3 and password protections meet GC guidance. Remediate by uploading the plan to the S3 path. Source: https://github.com/canada-ca/cloud-guardrails/blob/master/EN/02_Manage-Access.md"
       InputParameters:
         ExecutionRoleName:
           Fn::If:
@@ -579,7 +515,7 @@ Resources:
             - ""
             - - "arn:aws:lambda:ca-central-1:"
               - Ref: AuditAccountID
-              - !Sub ":function:${OrganizationName}gc02_check_password_protection_mechanisms"
+              - !Sub ":function:${OrganizationName}gc02_check_password_protection_mechanisms${PartitionSuffix}"
         SourceDetails:
           - EventSource: "aws.config"
             MessageType: "ScheduledNotification"
@@ -587,7 +523,7 @@ Resources:
     Type: "AWS::Config::ConfigRule"
     Properties:
       ConfigRuleName: gc02_check_iam_password_policy
-      Description: Checks IAM Password Policy for Compliance
+      Description: "Checks IAM password policy against GC guidance: minimum length 12, no complexity, and no expiry. Remediate in IAM account settings. Source: https://github.com/canada-ca/cloud-guardrails/blob/master/EN/02_Manage-Access.md"
       InputParameters:
         ExecutionRoleName:
           Fn::If:
@@ -655,7 +591,7 @@ Resources:
             - ""
             - - "arn:aws:lambda:ca-central-1:"
               - Ref: AuditAccountID
-              - !Sub ":function:${OrganizationName}gc02_check_iam_password_policy"
+              - !Sub ":function:${OrganizationName}gc02_check_iam_password_policy${PartitionSuffix}"
         SourceDetails:
           - EventSource: "aws.config"
             MessageType: "ScheduledNotification"
@@ -664,7 +600,7 @@ Resources:
     Type: "AWS::Config::ConfigRule"
     Properties:
       ConfigRuleName: gc03_check_endpoint_access_config
-      Description: Demonstrate that access configurations and policies are implemented for devices
+      Description: "Confirms that endpoint access configurations for devices align with the federated IdP. Remediate by ensuring the IdP enforces required endpoint controls. Source: https://github.com/canada-ca/cloud-guardrails/blob/master/EN/03_Secure-Endpoints.md"
       InputParameters:
         ExecutionRoleName:
           Fn::If:
@@ -687,7 +623,7 @@ Resources:
             - ""
             - - "arn:aws:lambda:ca-central-1:"
               - Ref: AuditAccountID
-              - !Sub ":function:${OrganizationName}gc03_check_endpoint_access_config"
+              - !Sub ":function:${OrganizationName}gc03_check_endpoint_access_config${PartitionSuffix}"
         SourceDetails:
           - EventSource: "aws.config"
             MessageType: "ScheduledNotification"
@@ -695,7 +631,7 @@ Resources:
     Type: "AWS::Config::ConfigRule"
     Properties:
       ConfigRuleName: gc03_check_trusted_devices_admin_access
-      Description: Confirm that administrative access to cloud environments is from approved and trusted locations and devices
+      Description: "Confirms that CloudWatch alarms detect unapproved IP access and sign-ins without MFA. Remediate by creating the required alarms in CloudWatch. Source: https://github.com/canada-ca/cloud-guardrails/blob/master/EN/03_Secure-Endpoints.md"
       InputParameters:
         ExecutionRoleName:
           Fn::If:
@@ -722,6 +658,16 @@ Resources:
             - bgUser2
             - Ref: BGA2
             - Ref: AWS::NoValue
+        BgUser3:
+          Fn::If:
+            - bgUser3
+            - Ref: BGA3
+            - Ref: AWS::NoValue
+        BgUser4:
+          Fn::If:
+            - bgUser4
+            - Ref: BGA4
+            - Ref: AWS::NoValue
       Scope:
         ComplianceResourceTypes:
           - AWS::Account
@@ -733,7 +679,7 @@ Resources:
             - ""
             - - "arn:aws:lambda:ca-central-1:"
               - Ref: AuditAccountID
-              - !Sub ":function:${OrganizationName}gc03_check_trusted_devices_admin_access"
+              - !Sub ":function:${OrganizationName}gc03_check_trusted_devices_admin_access${PartitionSuffix}"
         SourceDetails:
           - EventSource: "aws.config"
             MessageType: "ScheduledNotification"
@@ -742,7 +688,7 @@ Resources:
     Type: "AWS::Config::ConfigRule"
     Properties:
       ConfigRuleName: gc04_check_enterprise_monitoring
-      Description: Confirms if the AWS IAM Role and IAM Policy have been created for Enterprise Monitoring
+      Description: "Confirms that the enterprise monitoring IAM role and policy exist and are attached. Remediate by creating the role and policy per GC04 guidance. Source: https://github.com/canada-ca/cloud-guardrails/blob/master/EN/04_Enterprise-Monitoring-Accounts.md"
       InputParameters:
         IAM_Role_Name:
           Fn::If:
@@ -775,7 +721,7 @@ Resources:
             - ""
             - - "arn:aws:lambda:ca-central-1:"
               - Ref: AuditAccountID
-              - !Sub ":function:${OrganizationName}gc04_check_enterprise_monitoring"
+              - !Sub ":function:${OrganizationName}gc04_check_enterprise_monitoring${PartitionSuffix}"
         SourceDetails:
           - EventSource: "aws.config"
             MessageType: "ScheduledNotification"
@@ -783,7 +729,7 @@ Resources:
     Type: "AWS::Config::ConfigRule"
     Properties:
       ConfigRuleName: gc04_check_alerts_flag_misuse
-      Description: Confirms that alerts to authorized personnel have been implemented to flag misuse, suspicious sign-in attempts, or when changes are made to the cloud broker account.
+      Description: "Confirms that EventBridge rules flag misuse or changes to the cloud broker role. Remediate by creating EventBridge rules per the naming convention. Source: https://github.com/canada-ca/cloud-guardrails/blob/master/EN/04_Enterprise-Monitoring-Accounts.md"
       InputParameters:
         IAM_Role_Name:
           Fn::If:
@@ -811,7 +757,7 @@ Resources:
             - ""
             - - "arn:aws:lambda:ca-central-1:"
               - Ref: AuditAccountID
-              - !Sub ":function:${OrganizationName}gc04_check_alerts_flag_misuse"
+              - !Sub ":function:${OrganizationName}gc04_check_alerts_flag_misuse${PartitionSuffix}"
         SourceDetails:
           - EventSource: "aws.config"
             MessageType: "ScheduledNotification"
@@ -820,7 +766,7 @@ Resources:
     Type: "AWS::Config::ConfigRule"
     Properties:
       ConfigRuleName: gc05_check_data_location
-      Description: Confirms if the account has deployed resources to unauthorized regions.
+      Description: "Confirms that no resources are deployed in unauthorized regions outside Canada. Remediate by removing resources outside ca-central-1/ca-west-1. Source: https://github.com/canada-ca/cloud-guardrails/blob/master/EN/05_Data-Location.md"
       InputParameters:
         ExecutionRoleName:
           Fn::If:
@@ -843,7 +789,7 @@ Resources:
             - ""
             - - "arn:aws:lambda:ca-central-1:"
               - Ref: AuditAccountID
-              - !Sub ":function:${OrganizationName}gc05_check_data_location"
+              - !Sub ":function:${OrganizationName}gc05_check_data_location${PartitionSuffix}"
         SourceDetails:
           - EventSource: "aws.config"
             MessageType: "ScheduledNotification"
@@ -852,7 +798,7 @@ Resources:
     Type: "AWS::Config::ConfigRule"
     Properties:
       ConfigRuleName: gc06_check_encryption_at_rest_part1
-      Description: Checks AWS resources for encryption at rest
+      Description: "Confirms that storage services (part 1) are encrypted at rest. Remediate by enabling encryption at rest on the affected data repositories. Source: https://github.com/canada-ca/cloud-guardrails/blob/master/EN/06_Protect-Data-at-Rest.md"
       InputParameters:
         ExecutionRoleName:
           Fn::If:
@@ -885,7 +831,7 @@ Resources:
             - ""
             - - "arn:aws:lambda:ca-central-1:"
               - Ref: AuditAccountID
-              - !Sub ":function:${OrganizationName}gc06_check_encryption_at_rest_part1"
+              - !Sub ":function:${OrganizationName}gc06_check_encryption_at_rest_part1${PartitionSuffix}"
         SourceDetails:
           - EventSource: "aws.config"
             MessageType: "ScheduledNotification"
@@ -893,7 +839,7 @@ Resources:
     Type: "AWS::Config::ConfigRule"
     Properties:
       ConfigRuleName: gc06_check_encryption_at_rest_part2
-      Description: Checks AWS resources for encryption at rest
+      Description: "Confirms that storage services (part 2) are encrypted at rest. Remediate by enabling encryption at rest on the affected data repositories. Source: https://github.com/canada-ca/cloud-guardrails/blob/master/EN/06_Protect-Data-at-Rest.md"
       InputParameters:
         ExecutionRoleName:
           Fn::If:
@@ -927,52 +873,17 @@ Resources:
             - ""
             - - "arn:aws:lambda:ca-central-1:"
               - Ref: AuditAccountID
-              - !Sub ":function:${OrganizationName}gc06_check_encryption_at_rest_part2"
+              - !Sub ":function:${OrganizationName}gc06_check_encryption_at_rest_part2${PartitionSuffix}"
         SourceDetails:
           - EventSource: "aws.config"
             MessageType: "ScheduledNotification"
   # GC07
-  GC07CheckSecureNetworkTransmissionPolicyConfigRule:
-    Type: "AWS::Config::ConfigRule"
-    Properties:
-      ConfigRuleName: gc07_check_secure_network_transmission_policy
-      Description: Checks S3 bucket for the secure network transmission policy
-      InputParameters:
-        s3ObjectPath:
-          Fn::If:
-            - s3SecureNetworkTransmissionPolicyPath
-            - Ref: S3SecureNetworkTransmissionPolicyPath
-            - Ref: AWS::NoValue
-        ExecutionRoleName:
-          Fn::If:
-            - GCLambdaExecutionRoleName
-            - Ref: GCLambdaExecutionRoleName
-            - Ref: AWS::NoValue
-        AuditAccountID:
-          Fn::If:
-            - auditAccountID
-            - Ref: AuditAccountID
-            - Ref: AWS::NoValue
-      Scope:
-        ComplianceResourceTypes:
-          - AWS::Account
-      MaximumExecutionFrequency: TwentyFour_Hours
-      Source:
-        Owner: CUSTOM_LAMBDA
-        SourceIdentifier:
-          Fn::Join:
-            - ""
-            - - "arn:aws:lambda:ca-central-1:"
-              - Ref: AuditAccountID
-              - !Sub ":function:${OrganizationName}gc07_check_secure_network_transmission_policy"
-        SourceDetails:
-          - EventSource: "aws.config"
-            MessageType: "ScheduledNotification"
+  
   GC07CheckCertificateAuthoritiesConfigRule:
     Type: "AWS::Config::ConfigRule"
     Properties:
       ConfigRuleName: gc07_check_certificate_authorities
-      Description: Verify cryptographic algorithms and protocols are configured by the user in accordance with ITSP.40.111 and ITSP.40.062
+      Description: "Confirms that ACM certificates are issued by CAs aligned with GC TLS server recommendations. Remediate by reissuing certificates from approved CAs. Source: https://github.com/canada-ca/cloud-guardrails/blob/master/EN/07_Protect-Data-in-Transit.md"
       InputParameters:
         S3CasCurrentlyInUsePath:
           Fn::If:
@@ -1000,7 +911,7 @@ Resources:
             - ""
             - - "arn:aws:lambda:ca-central-1:"
               - Ref: AuditAccountID
-              - !Sub ":function:${OrganizationName}gc07_check_certificate_authorities"
+              - !Sub ":function:${OrganizationName}gc07_check_certificate_authorities${PartitionSuffix}"
         SourceDetails:
           - EventSource: "aws.config"
             MessageType: "ScheduledNotification"
@@ -1008,7 +919,7 @@ Resources:
     Type: "AWS::Config::ConfigRule"
     Properties:
       ConfigRuleName: gc07_check_cryptographic_algorithms
-      Description: Verify cryptographic algorithms and protocols are configured by the user in accordance with ITSP.40.111 and ITSP.40.062
+      Description: "Confirms that ELB Classic policies use ciphers/protocols per ITSP.40.111 and ITSP.40.062. Remediate by updating the load balancer policy. Source: https://github.com/canada-ca/cloud-guardrails/blob/master/EN/07_Protect-Data-in-Transit.md"
       InputParameters:
         ExecutionRoleName:
           Fn::If:
@@ -1031,7 +942,7 @@ Resources:
             - ""
             - - "arn:aws:lambda:ca-central-1:"
               - Ref: AuditAccountID
-              - !Sub ":function:${OrganizationName}gc07_check_cryptographic_algorithms"
+              - !Sub ":function:${OrganizationName}gc07_check_cryptographic_algorithms${PartitionSuffix}"
         SourceDetails:
           - EventSource: "aws.config"
             MessageType: "ScheduledNotification"
@@ -1039,7 +950,7 @@ Resources:
     Type: "AWS::Config::ConfigRule"
     Properties:
       ConfigRuleName: gc07_check_encryption_in_transit
-      Description: Checks AWS resources for SSL/TLS enforcement
+      Description: "Confirms that endpoints enforce TLS for data in transit. Remediate by updating endpoint configurations to require TLS. Source: https://github.com/canada-ca/cloud-guardrails/blob/master/EN/07_Protect-Data-in-Transit.md"
       InputParameters:
         ExecutionRoleName:
           Fn::If:
@@ -1050,6 +961,11 @@ Resources:
           Fn::If:
             - auditAccountID
             - Ref: AuditAccountID
+            - Ref: AWS::NoValue
+        S3NonComplianceOptoutFilePath:
+          Fn::If:
+            - s3NonComplianceOptoutFilePath
+            - Ref: S3NonComplianceOptoutFilePath
             - Ref: AWS::NoValue
       Scope:
         ComplianceResourceTypes:
@@ -1067,7 +983,7 @@ Resources:
             - ""
             - - "arn:aws:lambda:ca-central-1:"
               - Ref: AuditAccountID
-              - !Sub ":function:${OrganizationName}gc07_check_encryption_in_transit"
+              - !Sub ":function:${OrganizationName}gc07_check_encryption_in_transit${PartitionSuffix}"
         SourceDetails:
           - EventSource: "aws.config"
             MessageType: "ScheduledNotification"
@@ -1076,7 +992,7 @@ Resources:
     Type: "AWS::Config::ConfigRule"
     Properties:
       ConfigRuleName: gc08_check_target_network_architecture
-      Description: Checks S3 bucket for the target network architecture document
+      Description: "Confirms that a Target Network Architecture document is present in S3. Remediate by uploading the document to the configured S3 path. Source: https://github.com/canada-ca/cloud-guardrails/blob/master/EN/08_Segmentation.md"
       InputParameters:
         s3ObjectPath:
           Fn::If:
@@ -1104,7 +1020,7 @@ Resources:
             - ""
             - - "arn:aws:lambda:ca-central-1:"
               - Ref: AuditAccountID
-              - !Sub ":function:${OrganizationName}gc08_check_target_network_architecture"
+              - !Sub ":function:${OrganizationName}gc08_check_target_network_architecture${PartitionSuffix}"
         SourceDetails:
           - EventSource: "aws.config"
             MessageType: "ScheduledNotification"
@@ -1112,7 +1028,7 @@ Resources:
     Type: "AWS::Config::ConfigRule"
     Properties:
       ConfigRuleName: gc08_check_cloud_deployment_guide
-      Description: Checks S3 bucket for the cloud deployment guide document
+      Description: "Confirms that a Cloud Deployment Guide document is present in S3. Remediate by uploading the document to the configured S3 path. Source: https://github.com/canada-ca/cloud-guardrails/blob/master/EN/08_Segmentation.md"
       InputParameters:
         s3ObjectPath:
           Fn::If:
@@ -1140,7 +1056,7 @@ Resources:
             - ""
             - - "arn:aws:lambda:ca-central-1:"
               - Ref: AuditAccountID
-              - !Sub ":function:${OrganizationName}gc08_check_cloud_deployment_guide"
+              - !Sub ":function:${OrganizationName}gc08_check_cloud_deployment_guide${PartitionSuffix}"
         SourceDetails:
           - EventSource: "aws.config"
             MessageType: "ScheduledNotification"
@@ -1148,7 +1064,7 @@ Resources:
     Type: "AWS::Config::ConfigRule"
     Properties:
       ConfigRuleName: gc08_check_cloud_segmentation_design
-      Description: Checks S3 bucket for the cloud segmentation guide document
+      Description: "Confirms that a Cloud Segmentation Design document is present in S3. Remediate by uploading the document to the configured S3 path. Source: https://github.com/canada-ca/cloud-guardrails/blob/master/EN/08_Segmentation.md"
       InputParameters:
         s3ObjectPath:
           Fn::If:
@@ -1176,53 +1092,17 @@ Resources:
             - ""
             - - "arn:aws:lambda:ca-central-1:"
               - Ref: AuditAccountID
-              - !Sub ":function:${OrganizationName}gc08_check_cloud_segmentation_design"
+              - !Sub ":function:${OrganizationName}gc08_check_cloud_segmentation_design${PartitionSuffix}"
         SourceDetails:
           - EventSource: "aws.config"
             MessageType: "ScheduledNotification"
   # GC09
-  GC09CheckNetworkSecurityArchitectureConfigRule:
-    Type: "AWS::Config::ConfigRule"
-    Properties:
-      ConfigRuleName: gc09_check_netsec_architecture
-      Description: Checks S3 bucket for the network security architecture document
-      InputParameters:
-        s3ObjectPath:
-          Fn::If:
-            - s3NetworkArchitectureDocumentPath
-            - Ref: S3NetworkArchitectureDocumentPath
-            - Ref: AWS::NoValue
-        ExecutionRoleName:
-          Fn::If:
-            - GCLambdaExecutionRoleName
-            - Ref: GCLambdaExecutionRoleName
-            - Ref: AWS::NoValue
-        AuditAccountID:
-          Fn::If:
-            - auditAccountID
-            - Ref: AuditAccountID
-            - Ref: AWS::NoValue
-      Scope:
-        ComplianceResourceTypes:
-          - AWS::Account
-      MaximumExecutionFrequency: TwentyFour_Hours
-      Source:
-        Owner: CUSTOM_LAMBDA
-        SourceIdentifier:
-          Fn::Join:
-            - ""
-            - - "arn:aws:lambda:ca-central-1:"
-              - Ref: AuditAccountID
-              - !Sub ":function:${OrganizationName}gc09_check_netsec_architecture"
-        SourceDetails:
-          - EventSource: "aws.config"
-            MessageType: "ScheduledNotification"
-
+  
   GC09CheckNonPublicStorageAccountsConfigRule:
     Type: "AWS::Config::ConfigRule"
     Properties:
       ConfigRuleName: gc09_check_non_public_storage_accounts
-      Description: Checks all s3 buckets to ensure they are not exposed to the public.
+      Description: "Confirms that S3 buckets are not publicly exposed. Remediate by configuring S3 Block Public Access to deny public access on all buckets. Source: https://github.com/canada-ca/cloud-guardrails/blob/master/EN/09_Network-Security-Services.md"
       InputParameters:
         ExecutionRoleName:
           Fn::If:
@@ -1245,7 +1125,7 @@ Resources:
             - ""
             - - "arn:aws:lambda:ca-central-1:"
               - Ref: AuditAccountID
-              - !Sub ":function:${OrganizationName}gc09_check_non_public_storage_accounts"
+              - !Sub ":function:${OrganizationName}gc09_check_non_public_storage_accounts${PartitionSuffix}"
         SourceDetails:
           - EventSource: "aws.config"
             MessageType: "ScheduledNotification"
@@ -1254,7 +1134,7 @@ Resources:
     Type: "AWS::Config::ConfigRule"
     Properties:
       ConfigRuleName: gc10_check_cyber_center_sensors
-      Description: Confirm that the Cyber Centre's sensors or other cyber defense services are implemented where available.
+      Description: "Confirms that Cyber Centre sensors are in place via the cbs-global-reader role and Log Archive replication. Remediate by creating the role and S3 replication. Source: https://github.com/canada-ca/cloud-guardrails/blob/master/EN/10_Cyber-Defense-Services.md"
       InputParameters:
         S3LogBucketsPath:
           Fn::If:
@@ -1287,7 +1167,7 @@ Resources:
             - ""
             - - "arn:aws:lambda:ca-central-1:"
               - Ref: AuditAccountID
-              - !Sub ":function:${OrganizationName}gc10_check_cyber_center_sensors"
+              - !Sub ":function:${OrganizationName}gc10_check_cyber_center_sensors${PartitionSuffix}"
         SourceDetails:
           - EventSource: "aws.config"
             MessageType: "ScheduledNotification"
@@ -1297,7 +1177,7 @@ Resources:
     Type: "AWS::Config::ConfigRule"
     Properties:
       ConfigRuleName: gc11_check_security_contact
-      Description: Confirms that the account valid alternate security contact configured
+      Description: "Confirms that a valid alternate Security contact is registered on the AWS account. Remediate by setting the Security contact in Account alternate contacts. Source: https://github.com/canada-ca/cloud-guardrails/blob/master/EN/11_Logging-and-Monitoring.md"
       InputParameters:
         ExecutionRoleName:
           Fn::If:
@@ -1320,7 +1200,7 @@ Resources:
             - ""
             - - "arn:aws:lambda:ca-central-1:"
               - Ref: AuditAccountID
-              - !Sub ":function:${OrganizationName}gc11_check_security_contact"
+              - !Sub ":function:${OrganizationName}gc11_check_security_contact${PartitionSuffix}"
         SourceDetails:
           - EventSource: "aws.config"
             MessageType: "ScheduledNotification"
@@ -1329,7 +1209,7 @@ Resources:
     Type: "AWS::Config::ConfigRule"
     Properties:
       ConfigRuleName: gc11_check_monitoring_use_cases
-      Description: Confirms whether monitoring and auditing is implemented for all users
+      Description: "Confirms that a Monitoring Use Cases document is present in S3. Remediate by uploading the document to the configured S3 path. Source: https://github.com/canada-ca/cloud-guardrails/blob/master/EN/11_Logging-and-Monitoring.md"
       InputParameters:
         ExecutionRoleName:
           Fn::If:
@@ -1357,7 +1237,7 @@ Resources:
             - ""
             - - "arn:aws:lambda:ca-central-1:"
               - Ref: AuditAccountID
-              - !Sub ":function:${OrganizationName}gc11_check_monitoring_use_cases"
+              - !Sub ":function:${OrganizationName}gc11_check_monitoring_use_cases${PartitionSuffix}"
         SourceDetails:
           - EventSource: "aws.config"
             MessageType: "ScheduledNotification"
@@ -1365,7 +1245,7 @@ Resources:
     Type: "AWS::Config::ConfigRule"
     Properties:
       ConfigRuleName: gc11_check_monitoring_all_users
-      Description: Confirms whether monitoring and auditing is implemented for all users
+      Description: "Confirms that CloudTrail-based monitoring is enabled for all users. Remediate by configuring a CloudTrail trail that logs management events for all users. Source: https://github.com/canada-ca/cloud-guardrails/blob/master/EN/11_Logging-and-Monitoring.md"
       InputParameters:
         ExecutionRoleName:
           Fn::If:
@@ -1388,7 +1268,7 @@ Resources:
             - ""
             - - "arn:aws:lambda:ca-central-1:"
               - Ref: AuditAccountID
-              - !Sub ":function:${OrganizationName}gc11_check_monitoring_all_users"
+              - !Sub ":function:${OrganizationName}gc11_check_monitoring_all_users${PartitionSuffix}"
         SourceDetails:
           - EventSource: "aws.config"
             MessageType: "ScheduledNotification"
@@ -1396,7 +1276,7 @@ Resources:
     Type: "AWS::Config::ConfigRule"
     Properties:
       ConfigRuleName: gc11_check_policy_event_logging
-      Description: Confirms that the policy for event logging is implemented
+      Description: "Confirms that CloudTrail follows best practices including S3 data event logging. Remediate by enabling data events and updating CloudTrail settings. Source: https://github.com/canada-ca/cloud-guardrails/blob/master/EN/11_Logging-and-Monitoring.md"
       InputParameters:
         ExecutionRoleName:
           Fn::If:
@@ -1419,7 +1299,7 @@ Resources:
             - ""
             - - "arn:aws:lambda:ca-central-1:"
               - Ref: AuditAccountID
-              - !Sub ":function:${OrganizationName}gc11_check_policy_event_logging"
+              - !Sub ":function:${OrganizationName}gc11_check_policy_event_logging${PartitionSuffix}"
         SourceDetails:
           - EventSource: "aws.config"
             MessageType: "ScheduledNotification"
@@ -1427,7 +1307,7 @@ Resources:
     Type: "AWS::Config::ConfigRule"
     Properties:
       ConfigRuleName: gc11_check_timezone
-      Description: Confirms the appropriate timezone has been set
+      Description: "Confirms that the account's operating timezone is set as required. Remediate by configuring the appropriate timezone for the account. Source: https://github.com/canada-ca/cloud-guardrails/blob/master/EN/11_Logging-and-Monitoring.md"
       InputParameters:
         ExecutionRoleName:
           Fn::If:
@@ -1450,7 +1330,7 @@ Resources:
             - ""
             - - "arn:aws:lambda:ca-central-1:"
               - Ref: AuditAccountID
-              - !Sub ":function:${OrganizationName}gc11_check_timezone"
+              - !Sub ":function:${OrganizationName}gc11_check_timezone${PartitionSuffix}"
         SourceDetails:
           - EventSource: "aws.config"
             MessageType: "ScheduledNotification"
@@ -1458,7 +1338,7 @@ Resources:
     Type: "AWS::Config::ConfigRule"
     Properties:
       ConfigRuleName: gc11_check_trail_logging
-      Description: Confirms that the AWS CloudTrail trails are logging
+      Description: "Confirms that CloudTrail trails are created and actively logging. Remediate by creating/enabling a CloudTrail trail and confirming IsLogging is true. Source: https://github.com/canada-ca/cloud-guardrails/blob/master/EN/11_Logging-and-Monitoring.md"
       InputParameters:
         ExecutionRoleName:
           Fn::If:
@@ -1481,38 +1361,17 @@ Resources:
             - ""
             - - "arn:aws:lambda:ca-central-1:"
               - Ref: AuditAccountID
-              - !Sub ":function:${OrganizationName}gc11_check_trail_logging"
+              - !Sub ":function:${OrganizationName}gc11_check_trail_logging${PartitionSuffix}"
         SourceDetails:
           - EventSource: "aws.config"
             MessageType: "ScheduledNotification"
-  # GC11 - Cloud Trail check with AWS Managed rules CLOUD_TRAIL_ENABLED, CLOUDTRAIL_S3_DATAEVENTS_ENABLED, CLOUDTRAIL_SECURITY_TRAIL_ENABLED
-  GC11CheckCloudTrailEnabledConfigRule:
-    Type: "AWS::Config::ConfigRule"
-    Properties:
-      ConfigRuleName: gc11_check_cloud_trail_enabled
-      Source:
-        Owner: AWS
-        SourceIdentifier: CLOUD_TRAIL_ENABLED
-  GC11CheckCloudTrailS3DataEventsEnabledConfigRule:
-    Type: "AWS::Config::ConfigRule"
-    Properties:
-      ConfigRuleName: gc11_check_cloudtrail_s3_dataevents_enabled
-      Source:
-        Owner: AWS
-        SourceIdentifier: CLOUDTRAIL_S3_DATAEVENTS_ENABLED
-  GC11CheckCloudTrailSecurityTrailEnabledConfigRule:
-    Type: "AWS::Config::ConfigRule"
-    Properties:
-      ConfigRuleName: gc11_check_cloudtrail_security_trail_enabled
-      Source:
-        Owner: AWS
-        SourceIdentifier: CLOUDTRAIL_SECURITY_TRAIL_ENABLED
+  
   # GC12 - Check Trail Logging
   GC12CheckPrivateMarketplaceConfigRule:
     Type: "AWS::Config::ConfigRule"
     Properties:
       ConfigRuleName: gc12_check_private_marketplace
-      Description: Confirms that the account has access to an AWS Private Marketplace
+      Description: "Confirms that a Private Marketplace restricts third-party AWS Marketplace products. Remediate by configuring a Private Marketplace for the AWS Organization. Source: https://github.com/canada-ca/cloud-guardrails/blob/master/EN/12_Cloud-Marketplace-Config.md"
       InputParameters:
         ExecutionRoleName:
           Fn::If:
@@ -1535,7 +1394,7 @@ Resources:
             - ""
             - - "arn:aws:lambda:ca-central-1:"
               - Ref: AuditAccountID
-              - !Sub ":function:${OrganizationName}gc12_check_private_marketplace"
+              - !Sub ":function:${OrganizationName}gc12_check_private_marketplace${PartitionSuffix}"
         SourceDetails:
           - EventSource: "aws.config"
             MessageType: "ScheduledNotification"
@@ -1545,7 +1404,7 @@ Resources:
     Type: "AWS::Config::ConfigRule"
     Properties:
       ConfigRuleName: gc13_check_emergency_account_management
-      Description: Checks S3 bucket for the account management procedure
+      Description: "Confirms that an Emergency Account Management Procedures document is present in S3. Remediate by uploading the document to the configured S3 path. Source: https://github.com/canada-ca/cloud-guardrails/blob/master/EN/13_Plan-for-Continuity.md"
       InputParameters:
         s3ObjectPath:
           Fn::If:
@@ -1573,7 +1432,7 @@ Resources:
             - ""
             - - "arn:aws:lambda:ca-central-1:"
               - Ref: AuditAccountID
-              - !Sub ":function:${OrganizationName}gc13_check_emergency_account_management"
+              - !Sub ":function:${OrganizationName}gc13_check_emergency_account_management${PartitionSuffix}"
         SourceDetails:
           - EventSource: "aws.config"
             MessageType: "ScheduledNotification"
@@ -1582,7 +1441,7 @@ Resources:
     Type: "AWS::Config::ConfigRule"
     Properties:
       ConfigRuleName: gc13_check_emergency_account_mgmt_approvals
-      Description: Checks S3 bucket for the account management procedure approvals
+      Description: "Confirms that an Emergency Account Management Approvals document is present in S3. Remediate by uploading the CIO/DOCS-approved document to the S3 path. Source: https://github.com/canada-ca/cloud-guardrails/blob/master/EN/13_Plan-for-Continuity.md"
       InputParameters:
         s3ObjectPath:
           Fn::If:
@@ -1610,7 +1469,7 @@ Resources:
             - ""
             - - "arn:aws:lambda:ca-central-1:"
               - Ref: AuditAccountID
-              - !Sub ":function:${OrganizationName}gc13_check_emergency_account_mgmt_approvals"
+              - !Sub ":function:${OrganizationName}gc13_check_emergency_account_mgmt_approvals${PartitionSuffix}"
         SourceDetails:
           - EventSource: "aws.config"
             MessageType: "ScheduledNotification"
@@ -1619,7 +1478,7 @@ Resources:
     Type: "AWS::Config::ConfigRule"
     Properties:
       ConfigRuleName: gc13_check_emergency_account_alerts
-      Description: Checks for the existence of alerts that are in place to report any use of emergency accounts
+      Description: "Confirms that EventBridge rules alert on any use of emergency accounts. Remediate by creating EventBridge rules that notify authorized personnel. Source: https://github.com/canada-ca/cloud-guardrails/blob/master/EN/13_Plan-for-Continuity.md"
       InputParameters:
         s3ObjectPath:
           Fn::If:
@@ -1636,6 +1495,16 @@ Resources:
             - auditAccountID
             - Ref: AuditAccountID
             - Ref: AWS::NoValue
+        LogSourceNonComplianceAttestationFilePath:
+          Fn::If:
+            - logSourceNonComplianceAttestationFilePath
+            - Ref: LogSourceNonComplianceAttestationFilePath
+            - Ref: AWS::NoValue
+        ExternalAlertsNonComplianceAttestationFilePath:
+          Fn::If:
+            - externalAlertsNonComplianceAttestationFilePath
+            - Ref: ExternalAlertsNonComplianceAttestationFilePath
+            - Ref: AWS::NoValue
       Scope:
         ComplianceResourceTypes:
           - AWS::Account
@@ -1647,7 +1516,7 @@ Resources:
             - ""
             - - "arn:aws:lambda:ca-central-1:"
               - Ref: AuditAccountID
-              - !Sub ":function:${OrganizationName}gc13_check_emergency_account_alerts"
+              - !Sub ":function:${OrganizationName}gc13_check_emergency_account_alerts${PartitionSuffix}"
         SourceDetails:
           - EventSource: "aws.config"
             MessageType: "ScheduledNotification"
@@ -1656,7 +1525,7 @@ Resources:
     Type: "AWS::Config::ConfigRule"
     Properties:
       ConfigRuleName: gc13_check_emergency_account_testing
-      Description: Verifies that testing of emergency accounts took place and that periodic testing is included
+      Description: "Confirms that emergency account testing has occurred and is scheduled periodically. Remediate by executing and documenting emergency account tests. Source: https://github.com/canada-ca/cloud-guardrails/blob/master/EN/13_Plan-for-Continuity.md"
       InputParameters:
         ExecutionRoleName:
           Fn::If:
@@ -1678,6 +1547,17 @@ Resources:
             - bgUser2
             - Ref: BGA2
             - Ref: AWS::NoValue
+        BgUser3:
+          Fn::If:
+            - bgUser3
+            - Ref: BGA3
+            - Ref: AWS::NoValue
+        BgUser4:
+          Fn::If:
+            - bgUser4
+            - Ref: BGA4
+            - Ref: AWS::NoValue
+
       Scope:
         ComplianceResourceTypes:
           - AWS::Account
@@ -1689,7 +1569,7 @@ Resources:
             - ""
             - - "arn:aws:lambda:ca-central-1:"
               - Ref: AuditAccountID
-              - !Sub ":function:${OrganizationName}gc13_check_emergency_account_testing"
+              - !Sub ":function:${OrganizationName}gc13_check_emergency_account_testing${PartitionSuffix}"
         SourceDetails:
           - EventSource: "aws.config"
             MessageType: "ScheduledNotification"
@@ -1721,6 +1601,16 @@ Conditions:
       - Fn::Equals:
           - ""
           - Ref: BGA2
+  bgUser3:
+    Fn::Not:
+      - Fn::Equals:
+          - ""
+          - Ref: BGA3
+  bgUser4:
+    Fn::Not:
+      - Fn::Equals:
+          - ""
+          - Ref: BGA4
   # GC01
   s3AttestationLetterPath:
     Fn::Not:
@@ -1787,6 +1677,16 @@ Conditions:
       - Fn::Equals:
           - ""
           - Ref: NonPrivilegedUsersFilePath
+  logSourceAttestationFilePath:
+    Fn::Not:
+      - Fn::Equals:
+          - ""
+          - Ref: LogSourceAttestationFilePath
+  externalAlertsAttestationFilePath:
+    Fn::Not:
+      - Fn::Equals:
+          - ""
+          - Ref: ExternalAlertsAttestationFilePath
   # GC02
   s3AccountManagementPlanPath:
     Fn::Not:
@@ -1836,6 +1736,11 @@ Conditions:
       - Fn::Equals:
           - ""
           - Ref: S3SecureNetworkTransmissionPolicyPath
+  s3NonComplianceOptoutFilePath:
+    Fn::Not:
+      - Fn::Equals:
+          - ""
+          - Ref: S3NonComplianceOptoutFilePath
   # GC08
   s3TargetNetworkArchitecturePath:
     Fn::Not:
@@ -1891,3 +1796,13 @@ Conditions:
       - Fn::Equals:
           - ""
           - Ref: S3EmergencyAccountAlertsRuleNamesPath
+  logSourceNonComplianceAttestationFilePath:
+    Fn::Not:
+      - Fn::Equals:
+          - ""
+          - Ref: LogSourceNonComplianceAttestationFilePath
+  externalAlertsNonComplianceAttestationFilePath:
+    Fn::Not:
+      - Fn::Equals:
+          - ""
+          - Ref: ExternalAlertsNonComplianceAttestationFilePath

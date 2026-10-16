@@ -10,7 +10,7 @@ from utils import is_scheduled_notification, check_required_parameters, check_gu
 from boto_util.organizations import get_account_tags
 from boto_util.client import get_client, is_throttling_exception
 from boto_util.config import build_evaluation, submit_evaluations
-from boto_util.s3 import list_all_s3_buckets
+from boto_util.s3 import list_all_s3_buckets, check_s3_object_exists
 from boto_util.api_gateway import list_all_api_gateway_resources
 from boto_util.cloud_front import list_all_cloud_front_distributions
 
@@ -65,6 +65,7 @@ def assess_s3_buckets_ssl_enforcement(s3_client, event: dict):
                                 bucket.get("Name", ""),
                                 ex,
                             )
+                
                 if bucket_policy:
                     for statement in bucket_policy.get("Statement"):
                         statement_condition = statement.get("Condition")
@@ -216,6 +217,66 @@ def assess_redshift_clusters_ssl_enforcement(redshift_client, event: dict):
     # logger.info("Redshift - reporting %s evaluations.", len(local_evaluations))
     return local_evaluations
 
+def get_target_group_details(elb_v2_client, target_group_arn: str) -> dict:
+    """
+    Return target group details for a given target group ARN.
+    """
+    try:
+        resp = elb_v2_client.describe_target_groups(TargetGroupArns=[target_group_arn])
+        target_groups = resp.get("TargetGroups", [])
+        return target_groups[0] if target_groups else {}
+    except botocore.exceptions.ClientError as ex:
+        logger.error("ELBv2 - Error describing target group %s: %s", target_group_arn, ex)
+        return {}
+
+
+def is_nlb_tcp_443_passthrough_listener(elb_v2_client, load_balancer: dict, listener: dict) -> bool:
+    """
+    Return True for NLB TCP:443 listeners that appear to be TLS passthrough.
+    """
+    if load_balancer.get("Type", "").lower() != "network":
+        return False
+
+    if listener.get("Protocol", "").upper() != "TCP" or listener.get("Port") != 443:
+        return False
+
+    target_group_arns = []
+    for action in listener.get("DefaultActions", []):
+        if action.get("Type") != "forward":
+            continue
+
+        target_group_arn = action.get("TargetGroupArn")
+        if target_group_arn:
+            target_group_arns.append(target_group_arn)
+
+        for target_group in action.get("ForwardConfig", {}).get("TargetGroups", []):
+            nested_target_group_arn = target_group.get("TargetGroupArn")
+            if nested_target_group_arn:
+                target_group_arns.append(nested_target_group_arn)
+
+    if not target_group_arns:
+        return False
+
+    for target_group_arn in target_group_arns:
+        target_group = get_target_group_details(elb_v2_client, target_group_arn)
+        if not target_group:
+            return False
+
+        target_type = target_group.get("TargetType", "").lower()
+        target_protocol = target_group.get("Protocol", "").upper()
+        target_port = target_group.get("Port", 0)
+
+        # Accept documented passthrough patterns to TLS-capable backends.
+        if target_type == "alb":
+            continue
+        if target_protocol == "TLS":
+            continue
+        if target_protocol == "TCP" and target_port == 443:
+            continue
+
+        return False
+
+    return True
 
 def assess_elb_v2_ssl_enforcement(elb_v2_client, event: dict):
     """
@@ -235,6 +296,7 @@ def assess_elb_v2_ssl_enforcement(elb_v2_client, event: dict):
                         {
                             "LoadBalancerArn": load_balancer.get("LoadBalancerArn"),
                             "LoadBalancerName": load_balancer.get("LoadBalancerName"),
+                            "Type": load_balancer.get("Type"),  # Added type to identify NLB vs ALB
                         }
                     )
                 if next_marker:
@@ -263,8 +325,10 @@ def assess_elb_v2_ssl_enforcement(elb_v2_client, event: dict):
         try:
             response = elb_v2_client.describe_listeners(
                 LoadBalancerArn=load_balancer.get("LoadBalancerArn", ""),
+                
                 PageSize=PAGE_SIZE,
             )
+            
             b_more_data = True
             i_retries = 0
             while b_more_data and (i_retries < MAXIMUM_API_RETRIES):
@@ -274,12 +338,45 @@ def assess_elb_v2_ssl_enforcement(elb_v2_client, event: dict):
                         listener_compliance = ""
                         listener_annotation = ""
                         listener_protocol = listener.get("Protocol", "")
+
+                        listener_port = listener.get("Port")  # NEW
+
+                        is_nlb_tcp_443_passthrough = is_nlb_tcp_443_passthrough_listener(
+                            elb_v2_client, load_balancer, listener
+                        )
+
                         if listener_protocol.lower() not in ["https", "tls"]:
-                            listener_compliance = "NON_COMPLIANT"
-                            listener_annotation = "Non HTTPS/TLS listener protocol - {}".format(listener_protocol)
+                            if is_nlb_tcp_443_passthrough:
+                                listener_compliance = "COMPLIANT"
+                                listener_annotation = (
+                                    f"NLB TCP:443 listener using TLS passthrough to backend - "
+                                    f"{listener.get('ListenerArn', '')}"
+                                )
+                            else:
+                                redirect_flag = False
+                                for action in listener.get("DefaultActions", []):
+                                    if (
+                                        action.get("Type") == "redirect"
+                                        and action.get("RedirectConfig", {}).get("Protocol") == "HTTPS"
+                                    ):
+                                        redirect_flag = True
+                                        break
+
+                                if redirect_flag:
+                                    listener_compliance = "COMPLIANT"
+                                    listener_annotation = (
+                                        f"HTTP listener with HTTPS redirection - {listener.get('ListenerArn', '')}"
+                                    )
+                                else:
+                                    listener_compliance = "NON_COMPLIANT"
+                                    listener_annotation = (
+                                        f"Non HTTPS/TLS listener protocol - {listener_protocol}"
+                                    )
                         else:
                             listener_compliance = "COMPLIANT"
-                            listener_annotation = f"Listener uses HTTPS/TLS - {listener.get("ListenerArn", "")}"
+                            listener_annotation = (
+                                f"Listener uses HTTPS/TLS - {listener.get('ListenerArn', '')}"
+                            )
                         local_evaluations.append(
                             build_evaluation(
                                 listener.get("ListenerArn", ""),
@@ -289,6 +386,7 @@ def assess_elb_v2_ssl_enforcement(elb_v2_client, event: dict):
                                 annotation=listener_annotation,
                             )
                         )
+
                     if next_marker:
                         time.sleep(INTERVAL_BETWEEN_API_CALLS)
                         try:
@@ -371,6 +469,7 @@ def assess_elb_v1_ssl_enforcement(elb_client, event: dict):
                 listener_protocol = listener.get("Listener", {}).get("Protocol", "")
                 
                 if listener_protocol.lower() not in ["https", "ssl"]:
+                    #Classic Load Balancers don't support HTTP to HTTPS redirection at the load balancer level
                     listener_compliance = "NON_COMPLIANT"
                     listener_annotation = f"Port {listener_port} uses non TLS 1.2 compliant listener protocol {listener_protocol}"
                 else:
@@ -504,7 +603,7 @@ def assess_rest_api_stages_ssl_enforcement(api_gw_client, event: dict):
                                         if response3:
                                             stages = response3.get("item")
                                             if len(stages) <= 0:
-                                                logger.error(
+                                                logger.info(
                                                     "APIGW - No stages found for API %s and deployment ID %s",
                                                     api_name,
                                                     deployment_id,
@@ -526,8 +625,16 @@ def assess_rest_api_stages_ssl_enforcement(api_gw_client, event: dict):
                                                         compliance_annotation = "REST API stage has an associated client certificate but no integration type."
                                                 else:
                                                     if HTTP or (HTTP and AWS):
-                                                        compliance_status = "NON_COMPLIANT"
-                                                        compliance_annotation = "REST API stage does not have an associated client certificate and an HTTP integration type."
+                                                        custom_domains = fetch_custom_domain_names(api_gw_client)
+                                                        logger.info("###Custom domains : %s ", str(custom_domains))
+                                                        if api_id in custom_domains:
+                                                            logger.info("###REST API Found in Custom domains : %s ", api_id)
+                                                            compliance_status = "COMPLIANT"
+                                                            compliance_annotation = "REST API has custom domain with mTLS enabled"
+                                                        else:
+                                                            compliance_status = "NON_COMPLIANT"
+                                                            compliance_annotation = "REST API stage does not have an associated client certificate and an HTTP integration type."
+                                                   
                                                     elif AWS:
                                                         compliance_status = "NOT_APPLICABLE"
                                                         compliance_annotation = "REST API stage does not have an associated client certificate and lambda integration type."
@@ -612,6 +719,58 @@ def assess_rest_api_stages_ssl_enforcement(api_gw_client, event: dict):
     return local_evaluations
 
 
+def fetch_custom_domain_names(api_gw_client):
+
+     # Get custom domain names for checking later
+    custom_domain_names = {}
+    try:
+        domain_response = api_gw_client.get_domain_names(limit=PAGE_SIZE)
+        b_more_domain_data = True
+        i_domain_retries = 0
+        while b_more_domain_data and i_domain_retries < MAXIMUM_API_RETRIES:
+            if domain_response:
+                position = domain_response.get("position", "")
+                for domain in domain_response.get("items", []):
+                    
+                    
+
+                   
+                    domain_name = domain.get("domainName")
+                    mTLsflag = domain.get("mutualTlsAuthentication")
+                    if domain_name and mTLsflag:
+                        # Get the API mappings for this domain
+                        try:
+                            mapping_response = api_gw_client.get_base_path_mappings(domainName=domain_name, limit=PAGE_SIZE)
+                            if mapping_response and "items" in mapping_response:
+                                for mapping in mapping_response.get("items", []):
+                                    api_id = mapping.get("restApiId")
+                                    if api_id:
+                                        if api_id not in custom_domain_names:
+                                            custom_domain_names[api_id] = []
+                                        custom_domain_names[api_id].append(domain_name)
+                        except botocore.exceptions.ClientError as ex:
+                            logger.error(f"Error getting base path mappings for domain {domain_name}: {ex}")
+                
+                if position:
+                    time.sleep(INTERVAL_BETWEEN_API_CALLS)
+                    try:
+                        domain_response = api_gw_client.get_domain_names(position=position, limit=PAGE_SIZE)
+                    except botocore.exceptions.ClientError as ex:
+                        i_domain_retries += 1
+                        if is_throttling_exception(ex):
+                            time.sleep(THROTTLE_BACKOFF)
+                        else:
+                            raise ex
+                else:
+                    b_more_domain_data = False
+            else:
+                b_more_domain_data = False
+    except botocore.exceptions.ClientError as ex:
+        logger.error(f"Error getting domain names: {ex}")
+
+    return custom_domain_names
+
+
 def assess_open_search_node_to_node_ssl_enforcement(open_search_client, event: dict) -> list[dict]:
     """
     This function evaluates the Node to Node SSL Enforcement compliance
@@ -680,7 +839,7 @@ def assess_cloud_front_ssl_enforcement(cloud_front_client, event: dict) -> list[
             continue
 
         min_protocol_version = viewer_certificate.get("MinimumProtocolVersion", None)
-        if min_protocol_version.startswith("TLSv1.2"):
+        if min_protocol_version[:7] in ["TLSv1.2", "TLSv1.3"]:
             annotation = f"Distribution has a minimum protocol version of TLS1.2. ({min_protocol_version})"
             local_evaluations.append(build_evaluation(resource_id, "COMPLIANT", event, resource_type, annotation))
         else:
@@ -728,10 +887,11 @@ def lambda_handler(event, context):
         logger.error("Skipping assessments as this is not a scheduled invocation")
         return
 
-    rule_parameters = check_required_parameters(json.loads(event.get("ruleParameters", "{}")), ["ExecutionRoleName"])
+    rule_parameters = check_required_parameters(json.loads(event.get("ruleParameters", "{}")), ["ExecutionRoleName", "S3NonComplianceOptoutFilePath"])
     execution_role_name = rule_parameters.get("ExecutionRoleName")
     audit_account_id = rule_parameters.get("AuditAccountID", "")
     aws_account_id = event["accountId"]
+    optout_file_path = rule_parameters.get("S3NonComplianceOptoutFilePath", "")
     logger.info(f"AWS Account ID: {aws_account_id}, Audit Account ID: {audit_account_id}")
     is_not_audit_account = aws_account_id != audit_account_id
 
@@ -748,13 +908,15 @@ def lambda_handler(event, context):
     THROTTLE_BACKOFF = 2
 
     aws_config_client = get_client("config", aws_account_id, execution_role_name, is_not_audit_account)
-    aws_s3_client = get_client("s3", aws_account_id, execution_role_name, is_not_audit_account)
+    aws_cloud_front_client = get_client("cloudfront", aws_account_id, execution_role_name, is_not_audit_account)
+    # Updated boolean value to True as in audit account, s3_client was not able to access buckets created outside of ca-central-1 region
+    aws_s3_client = get_client("s3", aws_account_id, execution_role_name, True)
     aws_redshift_client = get_client("redshift", aws_account_id, execution_role_name, is_not_audit_account)
     aws_elb_v1_client = get_client("elb", aws_account_id, execution_role_name, is_not_audit_account)
     aws_elb_v2_client = get_client("elbv2", aws_account_id, execution_role_name, is_not_audit_account)
     aws_api_gw_client = get_client("apigateway", aws_account_id, execution_role_name, is_not_audit_account)
     aws_open_search_client = get_client("opensearch", aws_account_id, execution_role_name, is_not_audit_account)
-    aws_cloud_front_client = get_client("cloudfront", aws_account_id, execution_role_name, is_not_audit_account)
+    
     
 
     compliance_details = get_all_compliance_details_by_config_rule(aws_config_client, event["configRuleName"], ["NON_COMPLIANT"])
@@ -795,11 +957,25 @@ def lambda_handler(event, context):
 
     compliance_type = "COMPLIANT"
     annotation = "No non-compliant resources found"
+    # added check for opt out file. if file exists, change the non-compliance to compliant status only for both ELB v1 and v2
+    for evaluation in evaluations:
+        if evaluation.get("ComplianceType", "") == "NON_COMPLIANT" and (evaluation.get("ComplianceResourceType", "") == "AWS::ElasticLoadBalancingV2::Listener" or evaluation.get("ComplianceResourceType", "") == "AWS::ElasticLoadBalancing::LoadBalancer") :
+            # add the check for if file exists in an evidence bucket, 
+            # addeded new client to avoid AccessDenied exception
+            s3_client = get_client("s3")
+            optout_file_exists_flag = check_s3_object_exists(s3_client, optout_file_path)  
+            # if file exists, change status to compliant
+            if optout_file_exists_flag:
+                evaluation["ComplianceType"] = "COMPLIANT"
+                evaluation["Annotation"] = "Compliant owing to opt out file found"     
+            
+
+    
 
     for evaluation in evaluations:
         if evaluation.get("ComplianceType", "") == "NON_COMPLIANT":
             compliance_type = "NON_COMPLIANT"
-            annotation = "Non-compliant resources in scope found"
+            annotation = "Non-compliant resources in scope found"    
             break
 
     logger.info(f"{compliance_type}: {annotation}")

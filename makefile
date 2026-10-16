@@ -140,16 +140,6 @@ setup-admin-delegate:
 		--service-principal config.amazonaws.com \
 		--account-id $(AUDIT_ACCOUNT)
 
-deploy-config-aggregator:
-	$(info --- Deploying Config Aggregator ---)
-	@aws cloudformation deploy \
-		--template-file ./arch/templates/config-aggregator.yaml \
-		--stack-name "$(STACK)-config-aggregator-$(ENV_NAME)" \
-		--parameter-overrides $(shell $(PARAMETERS_STRING)) "PipelineBucket"="$(PIPELINE_BUCKET)"\
-		--s3-bucket $(PIPELINE_BUCKET) \
-		--capabilities CAPABILITY_NAMED_IAM \
-		--disable-rollback
-
 deploy-stack:
 	$(info --- Deploying Stack ---)
 	@{ \
@@ -178,7 +168,7 @@ deploy-stack:
 
 ss1:
 	$(info --- Updating StackSet #1 ---)
-	@echo "Updating: GC01CheckAttestationLetter, GC02CheckAccountManagementPlan"
+	@echo "Updating: AuditAccountPreRequisitesPart1.yaml"
 	@aws cloudformation update-stack-set \
 		--stack-set-name $(ORGANIZATION_NAME)-GC-AuditAccount-PreReqs-Part1 \
 		--template-body file://arch/templates/build/AuditAccountPreRequisitesPart1.yaml \

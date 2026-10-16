@@ -281,7 +281,16 @@ def check_identity_center_admin_group(
 
 def policy_doc_gives_admin_access(policy_doc: str) -> bool:
 
-    document_dict = json.loads(policy_doc)
+    # Handle both string and dictionary inputs 
+    if isinstance(policy_doc, str):
+        try:
+            document_dict = json.loads(policy_doc)
+        except json.JSONDecodeError:
+            # if the string is not valid, return False
+            return False
+    else:
+        document_dict = policy_doc
+
     statements = document_dict.get("Statement", [])
 
     for statement_component in statements:
@@ -424,7 +433,11 @@ def lambda_handler(event, context):
     # Identity Center Check
     if identity_center_enabled:
         if aws_account_id != management_account_id:
-            return
+            logger.info("Not a management account, Identity center check not applicable for account %s", aws_account_id)
+            return submit_evaluations(
+            aws_config_client,
+            event,
+            [build_evaluation(aws_account_id, "NOT_APPLICABLE", event, annotation="NOT applicable in this account")])
 
         for i in instances:
             has_non_admin_group = False

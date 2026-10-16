@@ -2,3 +2,15 @@ _temp/
 **/build/
 **/build.toml
 out.yaml
+
+# Python bytecode
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Virtual environment
+.venv/
+
+# Rendered docs
+*.docx

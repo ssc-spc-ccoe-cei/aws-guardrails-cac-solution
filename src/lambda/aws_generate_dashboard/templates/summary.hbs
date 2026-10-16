@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Compliance Check - High Level Summary</title>
+    <style>
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; margin: 40px; background-color: #f4f6f8; color: #333; }
+        .container { max-width: 1400px; margin: 0 auto; background-color: white; padding: 20px 40px; border-radius: 8px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
+        h1 { color: #2c3e50; border-bottom: 2px solid #ecf0f1; padding-bottom: 10px; }
+        .summary { margin: 20px 0; padding: 15px; background-color: #e8f4f8; border-left: 4px solid #3498db; border-radius: 4px; }
+        table { width: 100%; border-collapse: collapse; margin-top: 20px; }
+        th, td { padding: 12px 15px; border-bottom: 1px solid #ddd; text-align: left; vertical-align: middle; }
+        th { background-color: #f8f9fa; font-weight: 600; color: #2c3e50; }
+        tr:hover { background-color: #f5f7fa; }
+        .status-badge { display: inline-block; padding: 6px 12px; border-radius: 12px; font-size: 0.85em; font-weight: bold; text-align: center; min-width: 80px; }
+        .status-Compliant { color: #155724; background-color: #d4edda; border: 1px solid #c3e6cb; }
+        .status-NON-COMPLIANT { color: #721c24; background-color: #f8d7da; border: 1px solid #f5c6cb; }
+        .status-PENDING { color: #856404; background-color: #fff3cd; border: 1px solid #ffeeba; }
+        .group-header { background-color: #e2e8f0; font-weight: bold; color: #495057; font-size: 1.1em; }
+        .filter-label { font-weight: 600; color: #2c3e50; margin-right: 8px; display: inline-block; }
+        .filter-input { position: absolute; opacity: 0; pointer-events: none; }
+        .filter-pill { border: 1px solid #cbd5e1; padding: 6px 10px; border-radius: 999px; cursor: pointer; background: #f8fafc; font-size: 0.9em; margin: 4px 6px 4px 0; display: inline-block; }
+        .filter-input:checked + .filter-pill { background: #2563eb; color: white; border-color: #2563eb; }
+        .filter-break { display: block; height: 0; margin-bottom: 12px; }
+        .content-wrapper { display: flex; gap: 30px; align-items: flex-start; }
+        .table-section { flex: 1; min-width: 0; }
+        .pie-chart-container { flex-shrink: 0; width: 250px; text-align: center; background: #f8f9fa; padding: 20px; border-radius: 8px; border: 1px solid #e2e8f0; position: sticky; top: 20px; }
+        .pie-chart-container h3 { margin: 0 0 15px 0; font-size: 1em; color: #2c3e50; }
+        .pie-chart { width: 180px; height: 180px; margin: 0 auto; }
+        .pie-legend { margin-top: 15px; text-align: left; }
+        .legend-item { display: flex; align-items: center; margin: 8px 0; font-size: 0.9em; }
+        .legend-color { width: 16px; height: 16px; border-radius: 3px; margin-right: 8px; border: 2px solid; flex-shrink: 0; }
+        .legend-label { color: #495057; }
+        .pie-total { margin-top: 15px; font-weight: 600; color: #2c3e50; font-size: 0.9em; padding-top: 10px; border-top: 1px solid #dee2e6; }
+        #filter-all:checked ~ .content-wrapper .table-section table tbody tr { display: table-row; }
+        #filter-compliant:checked ~ .content-wrapper .table-section table tbody tr { display: none; }
+        #filter-compliant:checked ~ .content-wrapper .table-section table tbody tr.status-overall-compliant { display: table-row; }
+        #filter-compliant:checked ~ .content-wrapper .table-section table tbody tr.group-header { display: none; }
+        #filter-noncompliant:checked ~ .content-wrapper .table-section table tbody tr { display: none; }
+        #filter-noncompliant:checked ~ .content-wrapper .table-section table tbody tr.status-overall-noncompliant { display: table-row; }
+        #filter-noncompliant:checked ~ .content-wrapper .table-section table tbody tr.group-header { display: none; }
+        #filter-pending:checked ~ .content-wrapper .table-section table tbody tr { display: none; }
+        #filter-pending:checked ~ .content-wrapper .table-section table tbody tr.status-overall-pending { display: table-row; }
+        #filter-pending:checked ~ .content-wrapper .table-section table tbody tr.group-header { display: none; }
+        {{filterCss}}
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Compliance Check - High Level Summary</h1>
+        <div class="summary">
+            <strong>Organization:</strong> {{orgName}} |
+            <strong>App Version:</strong> {{cacVersion}} |
+            <strong>Date:</strong> {{reportDate}}
+        </div>
+
+        <span class="filter-label">Status Filter:</span>
+        <input class="filter-input" type="radio" name="filter" id="filter-all" checked>
+        <label class="filter-pill" for="filter-all">All</label>
+        <input class="filter-input" type="radio" name="filter" id="filter-compliant">
+        <label class="filter-pill" for="filter-compliant">Compliant</label>
+        <input class="filter-input" type="radio" name="filter" id="filter-noncompliant">
+        <label class="filter-pill" for="filter-noncompliant">Non-compliant</label>
+        <input class="filter-input" type="radio" name="filter" id="filter-pending">
+        <label class="filter-pill" for="filter-pending">Pending</label>
+        <div class="filter-break"></div>
+        <span class="filter-label">Guardrail Filter:</span>
+        {{#each guardrailNumbers}}
+        <input class="filter-input" type="radio" name="filter" id="filter-guardrail-{{this}}">
+        <label class="filter-pill" for="filter-guardrail-{{this}}">{{this}}</label>
+        {{/each}}
+        <div class="filter-break"></div>
+
+        <div class="content-wrapper">
+            <div class="table-section">
+                <table>
+                    <thead>
+                        <tr>
+                            <th style="width: 10%;">Guardrail</th>
+                            <th style="width: 10%;">Validation</th>
+                            <th>Description</th>
+                            <th style="width: 15%; text-align: center;">Compliance Status</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {{#each guardrails}}
+                        {{#if showHeader}}
+                        <tr class="group-header guardrail-{{guardrailNum}}">
+                            <td colspan="4">Guardrail {{guardrailNum}}</td>
+                        </tr>
+                        {{/if}}
+                        <tr class="guardrail-{{guardrailNum}} {{overallClass}}">
+                            <td><strong>{{guardrailNum}}</strong></td>
+                            <td>{{validation}}</td>
+                            <td>{{description}}</td>
+                            <td style="text-align: center;"><span class="status-badge {{complianceClass}}">{{compliance}}</span></td>
+                        </tr>
+                        {{/each}}
+                    </tbody>
+                </table>
+            </div>
+
+            <div class="pie-chart-container">
+                <h3>Guardrail Compliance Overview</h3>
+                <svg viewBox="0 0 200 200" class="pie-chart">
+                    {{{pieSvg}}}
+                </svg>
+                <div class="pie-legend">
+                    {{#each legend}}
+                    <div class="legend-item">
+                        <span class="legend-color" style="background:{{fill}};border-color:{{stroke}};"></span>
+                        <span class="legend-label">{{label}}: {{count}} ({{pct}}%)</span>
+                    </div>
+                    {{/each}}
+                </div>
+                <div class="pie-total">Total Guardrails: {{totalGuardrails}}</div>
+            </div>
+        </div>
+    </div>
+</body>
+</html>

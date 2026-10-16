@@ -1,0 +1,45 @@
+name: LZA PR Validation
+ 
+on:
+  pull_request:
+ 
+permissions:
+  contents: read
+ 
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+ 
+    steps:
+      - name: Checkout pull request
+        uses: actions/checkout@v4
+ 
+      - name: Install validation dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install aws-sam-cli cfn-lint pyyaml
+          sam --version
+          cfn-lint --version
+ 
+      - name: Build Lambda artifacts
+        run: |
+          chmod +x tools/buildsam.sh tools/samclean.sh
+          ./tools/samclean.sh -p src/
+          ./tools/buildsam.sh -p src/
+ 
+      - name: Validate CloudFormation templates
+        # E3033 is an existing overlong ConformancePack rule description.
+        # Existing warnings do not fail PRs; new errors print the full report.
+        run: |
+          if ! cfn-lint \
+            --non-zero-exit-code error \
+            --ignore-checks E3033 \
+            -- arch/templates/*.yaml > cfn-lint.log 2>&1; then
+            cat cfn-lint.log
+            exit 1
+          fi
+ 
+      - name: Validate partitioned templates
+        run: |
+          python tools/validate_parts.py
+          python tools/validate_partition_sync.py

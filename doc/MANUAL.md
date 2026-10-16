@@ -24,7 +24,7 @@ To redeploy specific StackSets (note: GC Guardrails are deployed as part of the 
 ```sh
 # BUILD, PACKAGE, AND REDEPLOY CHILD STACKSETS (1-8)
 
-# SS1 RULES = GC01CheckAttestationLetter, GC02CheckAccountManagementPlan
+# SS1 RULES = GC02CheckAccountManagementPlan
 make update-ss1
 
 # S2 RULES = GC02CheckIAMUsersMFAL, GC02CheckIAMPasswordPolicy

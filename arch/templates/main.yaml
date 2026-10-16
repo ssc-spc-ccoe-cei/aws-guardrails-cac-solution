@@ -12,6 +12,8 @@ Metadata:
           - AuditAccountID
           - BGA1
           - BGA2
+          - BGA3
+          - BGA4
           - ExecutionName
           - ExecutionName2
           - OrganizationId
@@ -22,15 +24,18 @@ Metadata:
           - SecurityOUID
           - TenantId
           - DefaultCloudProfile
+          - LogArchiveAccountName
+          
       - Label:
           default: Optional Parameters
         Parameters:
-          - AdditionalAssessmentAdminRoleARN
           - AWSConfigConformsBucketName
           - DeployRoles
           - DeployVersion
           - DestBucketName
           - EvidenceBucketName
+          - MaxAccountsPerPartition
+          - MaxPartitions
     ParameterLabels:
       OrganizationName:
         default: The name of the organization
@@ -52,6 +57,12 @@ Metadata:
         default: First Breakglass Account
       BGA2:
         default: Second Breakglass Account
+      BGA3:
+        default: Third Breakglass Account
+      BGA4:
+        default: Fourth Breakglass Account
+      LogArchiveAccountName:
+        default: Log Archive Account Name
       SecurityOUID:
         default: ID of the AWS Organizations Security OU
       RolePrefix:
@@ -66,8 +77,6 @@ Metadata:
         default: Name for the S3 Evidence bucket
       AWSConfigConformsBucketName:
         default: Name for the S3 AWS Config Conformance Pack assets bucket
-      AdditionalAssessmentAdminRoleARN:
-        default: Additional Audit Manager Assessment Admin Role ARN
       DestBucketName:
         default: Name of the S3 bucket (leave as is unless instructed otherwise)
       DeployRoles:
@@ -80,6 +89,10 @@ Metadata:
         default: GC04 Enterprise Monitoring IAM Trusted Principal
       PythonRuntime:
         default: Python Runtime
+      MaxAccountsPerPartition:
+        default: Max accounts per partition (Account Partitioner)
+      MaxPartitions:
+        default: Max number of partitions (Account Partitioner)
 
 Parameters:
   OrganizationName:
@@ -122,6 +135,19 @@ Parameters:
     Type: String
     Default: "bgUser2"
     Description: Second breakglass account name
+  BGA3:
+    Type: String
+    Default: "bgUser3"
+    Description: Third breakglass account name
+  BGA4:
+    Type: String
+    Default: "bgUser4"
+    Description: Fourth breakglass account name
+  LogArchiveAccountName:
+    Type: String
+    Default: "LogArchive"
+    Description: Name of Log Archive account
+    
   SecurityOUID:
     Type: String
     Default: ""
@@ -155,11 +181,6 @@ Parameters:
     Default: ""
     Description: >-
       Bucket will store AWS Config Conformance Pack assets. If not provided, a name will be generated. (name must start with awsconfigconforms- ).
-  AdditionalAssessmentAdminRoleARN:
-    Type: String
-    Default: ""
-    Description: >-
-      ARN of any additional role that should be configured as owners of the Assessment in Audit Manager
   DestBucketName:
     Type: String
     Default: "*GCDestBucketName*"
@@ -182,6 +203,37 @@ Parameters:
     Type: String
     Default: "python3.12"
     Description: The python runtime to use for the compliance dashboard
+  MaxAccountsPerPartition:
+    Type: Number
+    Default: 60
+    MinValue: 1
+    MaxValue: 200
+    Description: >-
+      Maximum number of accounts assigned to each partition by the Account
+      Partitioner Lambda. Keeps each guardrail Lambda's resource-based policy
+      under the 20 KB IAM limit. Adjust only if the underlying policy size
+      assumption changes.
+  MaxPartitions:
+    Type: Number
+    Default: 3
+    MinValue: 1
+    MaxValue: 3
+    Description: >-
+      Maximum number of partitions the Account Partitioner Lambda is allowed
+      to create. Hard-capped at 3 because the AuditAccountPreRequisitesPart*
+      templates and ConformancePackPartitions only define conditional clones for
+      partitions 1, 2, and 3. Total addressable accounts =
+      MaxAccountsPerPartition x MaxPartitions (default 60 x 3 = 180).
+  RootStackName:
+    Type: String
+    Description: >-
+      Name of the root CloudFormation stack (passed in from root.yaml). The
+      partition-sync Step Function calls cloudformation:UpdateStack against
+      this stack to cascade fresh AccountsInP1/P2/P3 values into the
+      ConformancePackStack nested stack and PartitionCount into the Part1-8
+      StackSets when the partitioner reports accountsChanged=true. Nested
+      stacks cannot be updated directly, so the state machine has to target
+      the root.
 
 Conditions:
   GenerateEvidenceBucketName: !Equals [!Ref EvidenceBucketName, ""]
@@ -253,7 +305,13 @@ Resources:
       TrustPrincipal: !Sub arn:${AWS::Partition}:iam::${AuditAccountID}:root
       SwitchRole: !Ref AcceleratorRole
       RoleName: !Sub ${AccelRolePrefix}GCLambdaExecutionRole
-      PolicyPackage: !Sub
+      # YAML anchor: this block is the canonical source of truth for
+      # the GCLambdaExecutionRole policy package. It is aliased into
+      # ManagementAccountOrgRoleGenerator's Parameters below so the
+      # steady-state new-account path in OrgRoleGenerator.yaml uses the
+      # exact same policy (no drift between the bootstrap path here and
+      # the EventBridge target Input over there).
+      PolicyPackage: &gcLambdaExecutionRolePolicyPackage !Sub
         - |
           {
             "Docs": [{
@@ -401,7 +459,12 @@ Resources:
       TrustPrincipal: !Sub arn:${AWS::Partition}:iam::${AuditAccountID}:root
       SwitchRole: !Ref AcceleratorRole
       RoleName: !Sub ${AccelRolePrefix}GCLambdaExecutionRole2
-      PolicyPackage: |
+      # YAML anchor: canonical source of truth for the
+      # GCLambdaExecutionRole2 policy package. Aliased below into
+      # ManagementAccountOrgRoleGenerator's Parameters so the
+      # EventBridge new-account path in OrgRoleGenerator.yaml stays in
+      # lockstep with this bootstrap path. See InvokeCustomLambda above.
+      PolicyPackage: &gcLambdaExecutionRole2PolicyPackage |
         {
           "Docs": [{
             "Version": "2012-10-17",
@@ -549,7 +612,6 @@ Resources:
 
   AWSConfigSetupLambda:
     DependsOn:
-      - SetupAWSAuditManagerLambdaExecutionRole
       - ConfigLambdaExecutionRolePolicy
     Type: AWS::Lambda::Function
     Properties:
@@ -568,81 +630,6 @@ Resources:
     DependsOn:
       - AWSConfigSetupLambda
 
-  # AWS Audit Manager setup requirements
-  AuditManagerLambdaExecutionRolePolicy:
-    Type: AWS::IAM::Policy
-    Properties:
-      PolicyDocument:
-        Version: "2012-10-17"
-        Statement:
-          - Sid: AllowCreateLogGroup
-            Action:
-              - "logs:CreateLogGroup"
-            Resource:
-              - !Sub "arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:*"
-            Effect: Allow
-          - Sid: AllowLogging
-            Action:
-              - "logs:CreateLogGroup"
-              - "logs:CreateLogStream"
-              - "logs:PutLogEvents"
-            Resource:
-              - !Sub "arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/lambda/${OrganizationName}gc*"
-            Effect: Allow
-          - Sid: AllowOrganizationsSetup
-            Action:
-              - "organizations:EnableAWSServiceAccess"
-              - "organizations:RegisterDelegatedAdministrator"
-              - "organizations:Describe*"
-              - "organizations:List*"
-              - "iam:Simulate*"
-              - "iam:GetContextKeysForPrincipalPolicy"
-            Resource: "*"
-            Effect: Allow
-      PolicyName: !Sub "${OrganizationName}setup_auditmanager_lambda_execution_role_policy"
-      Roles:
-        - !Ref SetupAWSAuditManagerLambdaExecutionRole
-
-  SetupAWSAuditManagerLambdaExecutionRole:
-    Type: AWS::IAM::Role
-    Properties:
-      AssumeRolePolicyDocument:
-        Version: "2012-10-17"
-        Statement:
-          - Effect: "Allow"
-            Principal:
-              Service:
-                - "lambda.amazonaws.com"
-            Action:
-              - "sts:AssumeRole"
-      Description: "Setup AWS Audit Manager"
-      ManagedPolicyArns:
-        - !Sub arn:${AWS::Partition}:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
-        - !Sub arn:${AWS::Partition}:iam::aws:policy/AWSAuditManagerAdministratorAccess
-      Path: "/"
-      RoleName: !Sub ${RolePrefix}setup_auditmanager_role
-      Tags:
-        - Key: "Source"
-          Value: "ProServe Delivery Kit"
-
-  AWSAuditManagerSetupLambda:
-    Type: AWS::Lambda::Function
-    Properties:
-      FunctionName: !Sub "${OrganizationName}aws_auditmanager_setup"
-      Code: "../../src/lambda/aws_auditmanager_setup/build/AWSAuditManagerSetupLambda/"
-      Handler: app.lambda_handler
-      Role: !GetAtt SetupAWSAuditManagerLambdaExecutionRole.Arn
-      Runtime: !Ref PythonRuntime
-      Timeout: 90
-
-  AWSAuditManagerOrganizationsSetup:
-    Type: Custom::AWSAuditManagerOrganizationsSetup
-    Properties:
-      ServiceToken: !Sub "arn:${AWS::Partition}:lambda:${AWS::Region}:${AWS::AccountId}:function:${OrganizationName}aws_auditmanager_setup"
-      AuditAccountId: !Ref AuditAccountID
-    DependsOn:
-      - AWSAuditManagerSetupLambda
-
   # Generate names for the evidence and AWS Config Conforms buckets
   GenerateEvidenceBucketNameLambda:
     Type: AWS::Lambda::Function
@@ -651,7 +638,7 @@ Resources:
       FunctionName: !Sub "${OrganizationName}aws_generate_bucket_name"
       Code: "../../src/lambda/aws_generate_bucket_name/build/GenerateEvidenceBucketNameLambda/"
       Handler: app.lambda_handler
-      Role: !GetAtt SetupAWSAuditManagerLambdaExecutionRole.Arn
+      Role: !GetAtt SetupAWSConfigLambdaExecutionRole.Arn
       Runtime: !Ref PythonRuntime
       Timeout: 90
 
@@ -726,6 +713,104 @@ Resources:
         ]
 
   ##################################################
+  # Partition State — DynamoDB Table + Partitioner
+  ##################################################
+
+  PartitionStateTable:
+    Type: AWS::DynamoDB::Table
+    DeletionPolicy: Retain          # survive a `cfn delete-stack` on the root
+    UpdateReplacePolicy: Retain     # survive a replacement update
+    Properties:
+      TableName: !Sub "${OrganizationName}-gc-guardrails-partition-state"
+      BillingMode: PAY_PER_REQUEST
+      DeletionProtectionEnabled: true   # block accidental console / CLI deletes
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true   # 35-day continuous backup
+      AttributeDefinitions:
+        - AttributeName: AccountId
+          AttributeType: S
+      KeySchema:
+        - AttributeName: AccountId
+          KeyType: HASH
+      # Cross-account read access for the audit-account permissions Lambda `aws_lambda_permissions_setup`.
+      ResourcePolicy:
+        PolicyDocument:
+          Version: "2012-10-17"
+          Statement:
+            - Sid: AllowAuditAccountPermissionsLambdaRead
+              Effect: Allow
+              Principal:
+                AWS:
+                  - !Sub "arn:${AWS::Partition}:iam::${AuditAccountID}:root"
+              Action:
+                - "dynamodb:Scan"
+                - "dynamodb:GetItem"
+              Resource: "*"
+
+  AccountPartitionerRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub "${OrganizationName}AccountPartitionerRole"
+      ManagedPolicyArns:
+        - !Sub arn:${AWS::Partition}:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action:
+              - sts:AssumeRole
+      Path: "/"
+      Policies:
+        - PolicyName: AllowOrganizationsRead
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Sid: AllowOrganizationsRead
+                Effect: Allow
+                Action:
+                  - "organizations:ListAccounts"
+                  - "organizations:DescribeOrganization"
+                Resource: "*"
+        - PolicyName: AllowDynamoDBAccess
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Sid: AllowDynamoDBAccess
+                Effect: Allow
+                Action:
+                  - "dynamodb:PutItem"
+                  - "dynamodb:DeleteItem"
+                  - "dynamodb:Scan"
+                  - "dynamodb:GetItem"
+                Resource:
+                  - !GetAtt PartitionStateTable.Arn
+
+  AccountPartitionerLambda:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub "${OrganizationName}aws_account_partitioner"
+      Description: Partitions organization accounts into groups of ≤MaxAccountsPerPartition for guardrail Lambda cloning
+      Handler: app.lambda_handler
+      Runtime: !Ref PythonRuntime
+      Timeout: 180
+      MemorySize: 128
+      Role: !GetAtt AccountPartitionerRole.Arn
+      Code: "../../src/lambda/aws_account_partitioner/build/AccountPartitionerLambda/"
+      Environment:
+        Variables:
+          PARTITION_TABLE_NAME: !Ref PartitionStateTable
+          MAX_ACCOUNTS_PER_PARTITION: !Ref MaxAccountsPerPartition
+          MAX_PARTITIONS: !Ref MaxPartitions
+
+  InvokeAccountPartitioner:
+    Type: Custom::AccountPartitioner
+    Properties:
+      ServiceToken: !GetAtt AccountPartitionerLambda.Arn
+      InvokeUpdate: !Ref InvokeUpdate
+
+  ##################################################
   # Part 2 - Audit Account Pre-requisites
   ##################################################
   AuditAccountPreRequisitesPart1:
@@ -780,6 +865,8 @@ Resources:
           ParameterValue: !Ref DeployVersion
         - ParameterKey: InvokeUpdate
           ParameterValue: !Ref InvokeUpdate
+        - ParameterKey: PartitionCount
+          ParameterValue: !GetAtt InvokeAccountPartitioner.PartitionCount
       PermissionModel: SERVICE_MANAGED
       StackInstancesGroup:
         - DeploymentTargets:
@@ -821,6 +908,8 @@ Resources:
           ParameterValue: !Ref RolePrefix
         - ParameterKey: DefaultCloudProfile
           ParameterValue: !Ref DefaultCloudProfile
+        - ParameterKey: PartitionCount
+          ParameterValue: !GetAtt InvokeAccountPartitioner.PartitionCount
       PermissionModel: SERVICE_MANAGED
       StackInstancesGroup:
         - DeploymentTargets:
@@ -862,6 +951,8 @@ Resources:
           ParameterValue: !Ref RolePrefix
         - ParameterKey: DefaultCloudProfile
           ParameterValue: !Ref DefaultCloudProfile
+        - ParameterKey: PartitionCount
+          ParameterValue: !GetAtt InvokeAccountPartitioner.PartitionCount
       PermissionModel: SERVICE_MANAGED
       StackInstancesGroup:
         - DeploymentTargets:
@@ -903,6 +994,8 @@ Resources:
           ParameterValue: !Ref RolePrefix
         - ParameterKey: DefaultCloudProfile
           ParameterValue: !Ref DefaultCloudProfile
+        - ParameterKey: PartitionCount
+          ParameterValue: !GetAtt InvokeAccountPartitioner.PartitionCount
       PermissionModel: SERVICE_MANAGED
       StackInstancesGroup:
         - DeploymentTargets:
@@ -945,6 +1038,8 @@ Resources:
           ParameterValue: !Ref RolePrefix
         - ParameterKey: DefaultCloudProfile
           ParameterValue: !Ref DefaultCloudProfile
+        - ParameterKey: PartitionCount
+          ParameterValue: !GetAtt InvokeAccountPartitioner.PartitionCount
       PermissionModel: SERVICE_MANAGED
       StackInstancesGroup:
         - DeploymentTargets:
@@ -986,6 +1081,8 @@ Resources:
           ParameterValue: !Ref RolePrefix
         - ParameterKey: DefaultCloudProfile
           ParameterValue: !Ref DefaultCloudProfile
+        - ParameterKey: PartitionCount
+          ParameterValue: !GetAtt InvokeAccountPartitioner.PartitionCount
       PermissionModel: SERVICE_MANAGED
       StackInstancesGroup:
         - DeploymentTargets:
@@ -1027,6 +1124,8 @@ Resources:
           ParameterValue: !Ref RolePrefix
         - ParameterKey: DefaultCloudProfile
           ParameterValue: !Ref DefaultCloudProfile
+        - ParameterKey: PartitionCount
+          ParameterValue: !GetAtt InvokeAccountPartitioner.PartitionCount
       PermissionModel: SERVICE_MANAGED
       StackInstancesGroup:
         - DeploymentTargets:
@@ -1068,6 +1167,8 @@ Resources:
           ParameterValue: !Ref RolePrefix
         - ParameterKey: DefaultCloudProfile
           ParameterValue: !Ref DefaultCloudProfile
+        - ParameterKey: PartitionCount
+          ParameterValue: !GetAtt InvokeAccountPartitioner.PartitionCount
       PermissionModel: SERVICE_MANAGED
       StackInstancesGroup:
         - DeploymentTargets:
@@ -1092,6 +1193,7 @@ Resources:
       - AuditAccountPreRequisitesPart6
       - AuditAccountPreRequisitesPart7
       - AuditAccountPreRequisitesPart8
+      - PartitionSyncStack
     Properties:
       AutoDeployment:
         Enabled: true
@@ -1114,6 +1216,16 @@ Resources:
           ParameterValue: !Ref AuditAccountID
         - ParameterKey: RolePrefix
           ParameterValue: !Ref RolePrefix
+        - ParameterKey: PartitionStateTableName
+          ParameterValue: !Ref PartitionStateTable
+        # Added for permissions lambda to access Mgmt Acct DynamoDB partition-state table
+        - ParameterKey: PartitionStateTableAccountId
+          ParameterValue: !Ref AWS::AccountId
+        # Forwarded so the LambdaPermissionsSetup Custom Resource is re-invoked
+        # with RequestType: Update on every deploy and on every partition-sync
+        # cascade (the root stack's InvokeUpdate UUID is bumped in both cases).
+        - ParameterKey: InvokeUpdate
+          ParameterValue: !Ref InvokeUpdate
       PermissionModel: SERVICE_MANAGED
       StackInstancesGroup:
         - DeploymentTargets:
@@ -1308,6 +1420,8 @@ Resources:
           - Sid: AllowCreateLogGroup
             Action:
               - "logs:CreateLogGroup"
+              - "logs:DescribeLogGroups"
+              - "logs:DescribeMetricFilters"
             Resource:
               - !Sub "arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:*"
             Effect: Allow
@@ -1346,6 +1460,7 @@ Resources:
               - "iam:ListAttachedGroupPolicies"
               - "iam:ListGroupPolicies"
               - "iam:GetPolicyVersion"
+              - "identitystore:ListGroupMemberships"
             Resource: "*"
             Effect: Allow
           - Sid: AllowCloudWatchAlarmQueries
@@ -1423,6 +1538,7 @@ Resources:
               - "sso:ListCustomerManagedPolicyReferencesInPermissionSet"
               - "sso:ListPermissionSetsProvisionedToAccount"
               - "sso:ListAccountAssignments"
+              - "sso:ListPermissionSets"
               - "sns:GetSubscriptionAttributes"
               - "sns:GetTopicAttributes"
               - "sns:ListSubscriptionsByTopic"
@@ -1562,9 +1678,19 @@ Resources:
         - !Ref GCLambdaExecutionRole2
 
   #######################################################
-  # Part 4 - Conformance Pack
+  # Part 4 - Conformance Pack (partitioned)
   #######################################################
-  ConformancePack:
+  # Up to 3 Organization Conformance Packs are deployed, one per
+  # partition produced by ``aws_account_partitioner``. Each pack reuses
+  # ConformancePack.yaml in S3 with a different ``PartitionSuffix``
+  # (``""`` / ``"_p2"`` / ``"_p3"``) so its Config rules invoke the
+  # matching guardrail Lambda clones. The ``ExcludedAccounts`` list on
+  # each pack guarantees every org account receives exactly one pack —
+  # the one for the partition it is assigned to. See
+  # ConformancePackPartitions.yaml for the full set of resources and
+  # conditions.
+  ConformancePackStack:
+    Type: AWS::CloudFormation::Stack
     DependsOn:
       - AuditAccountPreRequisitesPart1
       - AuditAccountPreRequisitesPart2
@@ -1576,240 +1702,85 @@ Resources:
       - AuditAccountPreRequisitesPart8
       - AuditAccountPreRequisitesPartN
       #- AllAccountPreRequisites
-    Type: AWS::Config::OrganizationConformancePack
     Properties:
-      ConformancePackInputParameters:
-        - ParameterName: UpdateTriggerVersion
-          ParameterValue: !Ref InvokeUpdate
-        - ParameterName: GCLambdaExecutionRoleName
-          ParameterValue: !Sub "${AccelRolePrefix}GCLambdaExecutionRole"
-        - ParameterName: GCLambdaExecutionRoleName2
-          ParameterValue: !Sub ${AccelRolePrefix}GCLambdaExecutionRole2
-        - ParameterName: AuditAccountID
-          ParameterValue: !Ref AuditAccountID
-        - ParameterName: DeployVersion
-          ParameterValue: !Ref DeployVersion
-        - ParameterName: BGA1
-          ParameterValue: !Ref BGA1
-        - ParameterName: BGA2
-          ParameterValue: !Ref BGA2
-        - ParameterName: OrganizationName
-          ParameterValue: !Ref OrganizationName
-        - ParameterName: GC03AlarmList
-          ParameterValue: "AWS-IAM-Authentication-From-Unapproved-IP,AWS-SSO-Authentication-From-Unapproved-IP,AWS-Console-SignIn-Without-MFA"
-        - ParameterName: EnterpriseMonitoringIAMRoleName
-          ParameterValue: !Ref GC04EnterpriseMonitoringIAMRoleName
-        - ParameterName: EnterpriseMonitoringIAMTrustedPrincipal
-          ParameterValue: !Ref GC04EnterpriseMonitoringIAMTrustedPrincipal
-        - ParameterName: S3AttestationLetterPath
-          ParameterValue: !Sub
-            - "s3://${ClientEvidenceBucket}/gc-01/attestation_letter.pdf"
-            - ClientEvidenceBucket:
-                !If [
-                  GenerateEvidenceBucketName,
-                  !GetAtt GenerateEvidenceBucketName.EvidenceBucketName,
-                  !Ref EvidenceBucketName,
-                ]
-        - ParameterName: RuleNamingConventionFilePath
-          ParameterValue: !Sub
-            - "s3://${ClientEvidenceBucket}/gc-01/rule_naming_convention.txt"
-            - ClientEvidenceBucket:
-                !If [
-                  GenerateEvidenceBucketName,
-                  !GetAtt GenerateEvidenceBucketName.EvidenceBucketName,
-                  !Ref EvidenceBucketName,
-                ]
-        - ParameterName: PrivilegedUsersFilePath
-          ParameterValue: !Sub
-            - "s3://${ClientEvidenceBucket}/gc-01/privileged_users.txt"
-            - ClientEvidenceBucket:
-                !If [
-                  GenerateEvidenceBucketName,
-                  !GetAtt GenerateEvidenceBucketName.EvidenceBucketName,
-                  !Ref EvidenceBucketName,
-                ]
-        - ParameterName: NonPrivilegedUsersFilePath
-          ParameterValue: !Sub
-            - "s3://${ClientEvidenceBucket}/gc-01/non_privileged_users.txt"
-            - ClientEvidenceBucket:
-                !If [
-                  GenerateEvidenceBucketName,
-                  !GetAtt GenerateEvidenceBucketName.EvidenceBucketName,
-                  !Ref EvidenceBucketName,
-                ]
-        - ParameterName: S3AccountManagementPlanPath
-          ParameterValue: !Sub
-            - "s3://${ClientEvidenceBucket}/gc-02/account_management_plan.pdf"
-            - ClientEvidenceBucket:
-                !If [
-                  GenerateEvidenceBucketName,
-                  !GetAtt GenerateEvidenceBucketName.EvidenceBucketName,
-                  !Ref EvidenceBucketName,
-                ]
-        - ParameterName: S3RoleAssignmentReviewDocumentPath
-          ParameterValue: !Sub
-            - "s3://${ClientEvidenceBucket}/gc-02/access_reviews_privileged_roles.pdf"
-            - ClientEvidenceBucket:
-                !If [
-                  GenerateEvidenceBucketName,
-                  !GetAtt GenerateEvidenceBucketName.EvidenceBucketName,
-                  !Ref EvidenceBucketName,
-                ]
-        - ParameterName: S3AccessManagementAttestationDocumentPath
-          ParameterValue: !Sub
-            - "s3://${ClientEvidenceBucket}/gc-02/access_management_attestation.pdf"
-            - ClientEvidenceBucket:
-                !If [
-                  GenerateEvidenceBucketName,
-                  !GetAtt GenerateEvidenceBucketName.EvidenceBucketName,
-                  !Ref EvidenceBucketName,
-                ]
-        - ParameterName: S3AdminAccountListPath
-          ParameterValue: !Sub
-            - "s3://${ClientEvidenceBucket}/gc-02/admin_accounts.txt"
-            - ClientEvidenceBucket:
-                !If [
-                  GenerateEvidenceBucketName,
-                  !GetAtt GenerateEvidenceBucketName.EvidenceBucketName,
-                  !Ref EvidenceBucketName,
-                ]
-        - ParameterName: S3VpnIpRangesPath
-          ParameterValue: !Sub
-            - "s3://${ClientEvidenceBucket}/gc-03/vpn_ip_ranges.txt"
-            - ClientEvidenceBucket:
-                !If [
-                  GenerateEvidenceBucketName,
-                  !GetAtt GenerateEvidenceBucketName.EvidenceBucketName,
-                  !Ref EvidenceBucketName,
-                ]
-        - ParameterName: S3CasCurrentlyInUsePath
-          ParameterValue: !Sub
-            - "s3://${ClientEvidenceBucket}/gc-07/cas_currently_in_use.txt"
-            - ClientEvidenceBucket:
-                !If [
-                  GenerateEvidenceBucketName,
-                  !GetAtt GenerateEvidenceBucketName.EvidenceBucketName,
-                  !Ref EvidenceBucketName,
-                ]
-        - ParameterName: S3SecureNetworkTransmissionPolicyPath
-          ParameterValue: !Sub
-            - "s3://${ClientEvidenceBucket}/gc-07/secure_network_transmission.pdf"
-            - ClientEvidenceBucket:
-                !If [
-                  GenerateEvidenceBucketName,
-                  !GetAtt GenerateEvidenceBucketName.EvidenceBucketName,
-                  !Ref EvidenceBucketName,
-                ]
-        - ParameterName: S3TargetNetworkArchitecturePath
-          ParameterValue: !Sub
-            - "s3://${ClientEvidenceBucket}/gc-08/target_network_architecture.pdf"
-            - ClientEvidenceBucket:
-                !If [
-                  GenerateEvidenceBucketName,
-                  !GetAtt GenerateEvidenceBucketName.EvidenceBucketName,
-                  !Ref EvidenceBucketName,
-                ]
-        - ParameterName: S3TargetCloudDeploymentGuideDocumentPath
-          ParameterValue: !Sub
-            - "s3://${ClientEvidenceBucket}/gc-08/cloud_deployment_guide.pdf"
-            - ClientEvidenceBucket:
-                !If [
-                  GenerateEvidenceBucketName,
-                  !GetAtt GenerateEvidenceBucketName.EvidenceBucketName,
-                  !Ref EvidenceBucketName,
-                ]
-        - ParameterName: S3TargetCloudSegmentationDesignDocumentPath
-          ParameterValue: !Sub
-            - "s3://${ClientEvidenceBucket}/gc-08/cloud_segmentation_design.pdf"
-            - ClientEvidenceBucket:
-                !If [
-                  GenerateEvidenceBucketName,
-                  !GetAtt GenerateEvidenceBucketName.EvidenceBucketName,
-                  !Ref EvidenceBucketName,
-                ]
-        - ParameterName: S3NetworkArchitectureDocumentPath
-          ParameterValue: !Sub
-            - "s3://${ClientEvidenceBucket}/gc-09/network_security_architecture.pdf"
-            - ClientEvidenceBucket:
-                !If [
-                  GenerateEvidenceBucketName,
-                  !GetAtt GenerateEvidenceBucketName.EvidenceBucketName,
-                  !Ref EvidenceBucketName,
-                ]
-        - ParameterName: S3LogBucketsPath
-          ParameterValue: !Sub
-            - "s3://${ClientEvidenceBucket}/gc-10/log_buckets.txt"
-            - ClientEvidenceBucket:
-                !If [
-                  GenerateEvidenceBucketName,
-                  !GetAtt GenerateEvidenceBucketName.EvidenceBucketName,
-                  !Ref EvidenceBucketName,
-                ]
-        - ParameterName: S3MonitoringUseCasesPath
-          ParameterValue: !Sub
-            - "s3://${ClientEvidenceBucket}/gc-11/monitoring_usecases.pdf"
-            - ClientEvidenceBucket:
-                !If [
-                  GenerateEvidenceBucketName,
-                  !GetAtt GenerateEvidenceBucketName.EvidenceBucketName,
-                  !Ref EvidenceBucketName,
-                ]
-        - ParameterName: S3AccountManagementProcedurePath
-          ParameterValue: !Sub
-            - "s3://${ClientEvidenceBucket}/gc-13/emergency_account_management_procedures.pdf"
-            - ClientEvidenceBucket:
-                !If [
-                  GenerateEvidenceBucketName,
-                  !GetAtt GenerateEvidenceBucketName.EvidenceBucketName,
-                  !Ref EvidenceBucketName,
-                ]
-        - ParameterName: S3AccountMgmtApprovalsPath
-          ParameterValue: !Sub
-            - "s3://${ClientEvidenceBucket}/gc-13/emergency_account_management_approvals.pdf"
-            - ClientEvidenceBucket:
-                !If [
-                  GenerateEvidenceBucketName,
-                  !GetAtt GenerateEvidenceBucketName.EvidenceBucketName,
-                  !Ref EvidenceBucketName,
-                ]
-        - ParameterName: S3EmergencyAccountAlertsRuleNamesPath
-          ParameterValue: !Sub
-            - "s3://${ClientEvidenceBucket}/gc-13/rule_names.txt"
-            - ClientEvidenceBucket:
-                !If [
-                  GenerateEvidenceBucketName,
-                  !GetAtt GenerateEvidenceBucketName.EvidenceBucketName,
-                  !Ref EvidenceBucketName,
-                ]
-      OrganizationConformancePackName: !Sub "${OrganizationName}-GC-CP-Guardrails"
-      TemplateS3Uri: !Sub s3://${PipelineBucket}/${DeployVersion}/ConformancePack.yaml
+      TemplateURL: !Sub https://${PipelineBucket}.s3.${AWS::Region}.amazonaws.com/${DeployVersion}/ConformancePackPartitions.yaml
+      Parameters:
+        # Per-partition account lists from the partitioner. Each pack's
+        # presence is driven entirely by whether its list is non-empty;
+        # the parent ``PartitionCount`` is not consumed here.
+        AccountsInP1: !GetAtt InvokeAccountPartitioner.AccountsInP1
+        AccountsInP2: !GetAtt InvokeAccountPartitioner.AccountsInP2
+        AccountsInP3: !GetAtt InvokeAccountPartitioner.AccountsInP3
+        # Wiring / packaging
+        PipelineBucket: !Ref PipelineBucket
+        DeployVersion: !Ref DeployVersion
+        InvokeUpdate: !Ref InvokeUpdate
+        # Shared inputs forwarded to each pack
+        OrganizationName: !Ref OrganizationName
+        AccelRolePrefix: !Ref AccelRolePrefix
+        AuditAccountID: !Ref AuditAccountID
+        BGA1: !Ref BGA1
+        BGA2: !Ref BGA2
+        BGA3: !Ref BGA3
+        BGA4: !Ref BGA4
+        LogArchiveAccountName: !Ref LogArchiveAccountName
+        ClientEvidenceBucket:
+          !If [
+            GenerateEvidenceBucketName,
+            !GetAtt GenerateEvidenceBucketName.EvidenceBucketName,
+            !Ref EvidenceBucketName,
+          ]
+        GC04EnterpriseMonitoringIAMRoleName: !Ref GC04EnterpriseMonitoringIAMRoleName
+        GC04EnterpriseMonitoringIAMTrustedPrincipal: !Ref GC04EnterpriseMonitoringIAMTrustedPrincipal
+        # GC03AlarmList is intentionally not passed in here — the nested
+        # stack defaults it to the canonical alarm-name list. Override
+        # there if it ever needs to change.
 
   #######################################################
-  # Part 5 - Audit Manager Components
+  # Part 4b - AWS Config Organization Aggregator
   #######################################################
-  AuditAccountAuditManager:
+  # Deploys the org-wide AWS Config Aggregator into the Audit account so
+  # operators (and the audit-account ``aws_compile_audit_report`` Lambda,
+  # which reads the aggregator directly) have a single-pane view of GC
+  # guardrail Config rule compliance and Config-recorded resource
+  # inventory across every account in the organization.
+  ConfigAggregatorStackSetAdminRole:
+    # Dedicated SELF_MANAGED StackSet administration role for the
+    # ConfigAggregator StackSet. This role is scoped to assume ONLY
+    # the accelerator role in the Audit account.
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub "${OrganizationName}ConfigAggregatorStackSetAdminRole"
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: cloudformation.amazonaws.com
+            Action: sts:AssumeRole
+      Path: "/"
+      Policies:
+        - PolicyName: AssumeAcceleratorRoleInAudit
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action: sts:AssumeRole
+                Resource:
+                  - !Sub "arn:${AWS::Partition}:iam::${AuditAccountID}:role/${AcceleratorRole}"
+
+  ConfigAggregator:
     Type: AWS::CloudFormation::StackSet
     DependsOn:
-      - AWSAuditManagerOrganizationsSetup
-      - ConformancePack
-      - AuditAccountPreRequisitesPart1
-      - AuditAccountPreRequisitesPart2
-      - AuditAccountPreRequisitesPart3
-      - AuditAccountPreRequisitesPart4
-      - AuditAccountPreRequisitesPart5
-      - AuditAccountPreRequisitesPart6
-      - AuditAccountPreRequisitesPart7
-      - AuditAccountPreRequisitesPart8
-      - AuditAccountPreRequisitesPartN
-      #- AllAccountPreRequisites
+      # Aggregator requires Config trusted access + Audit as delegated
+      # admin, both of which are established by AWSConfigOrganizationsSetup.
+      - AWSConfigOrganizationsSetup
+      - ConfigAggregatorStackSetAdminRole
     Properties:
-      AutoDeployment:
-        Enabled: true
-        RetainStacksOnAccountRemoval: false
       Capabilities:
         - CAPABILITY_IAM
         - CAPABILITY_NAMED_IAM
-      Description: GC Guardrails Assessment - Audit Manager resources
+      Description: GC Guardrails Assessment - Org AWS Config Aggregator (Audit account)
       ManagedExecution:
         Active: true
       OperationPreferences:
@@ -1820,41 +1791,51 @@ Resources:
       Parameters:
         - ParameterKey: OrganizationName
           ParameterValue: !Ref OrganizationName
-        - ParameterKey: AuditAccountID
-          ParameterValue: !Ref AuditAccountID
-        - ParameterKey: EvidenceBucketName
-          ParameterValue:
-            !If [
-              GenerateEvidenceBucketName,
-              !GetAtt GenerateEvidenceBucketName.EvidenceBucketName,
-              !Ref EvidenceBucketName,
-            ]
-        - ParameterKey: AdditionalAssessmentAdminRoleARN
-          ParameterValue: !Ref AdditionalAssessmentAdminRoleARN
-        - ParameterKey: RolePrefix
-          ParameterValue: !Ref RolePrefix
-        - ParameterKey: DeployVersion
-          ParameterValue: !Ref DeployVersion
-      PermissionModel: SERVICE_MANAGED
+        # Comma-delimited list. Extend if visibility into additional
+        # regions is required — remember the guardrail rules themselves
+        # only exist in ca-central-1.
+        - ParameterKey: AggregatedRegions
+          ParameterValue: "ca-central-1"
+        - ParameterKey: AggregatorName
+          ParameterValue: !Sub "${OrganizationName}GC-Guardrails-Aggregator"
+      # SELF_MANAGED (instead of SERVICE_MANAGED) so we can pin the
+      # in-account execution role to the accelerator role that the
+      # customer's SCP allowlists (LZA: OrganizationAccountAccessRole /
+      # AWSAccelerator*).
+      PermissionModel: SELF_MANAGED
+      AdministrationRoleARN: !GetAtt ConfigAggregatorStackSetAdminRole.Arn
+      ExecutionRoleName: !Ref AcceleratorRole
       StackInstancesGroup:
         - DeploymentTargets:
-            OrganizationalUnitIds:
-              - !Ref SecurityOUID
+            # SELF_MANAGED targets accounts directly (no OU / no
+            # AccountFilterType). Aggregator only needs the Audit account.
+            Accounts:
+              - !Ref AuditAccountID
           Regions:
             - ca-central-1
-      StackSetName: !Sub "${OrganizationName}-GC-AuditAccount-AuditManager"
+      StackSetName: !Sub "${OrganizationName}-GC-ConfigAggregator"
       Tags:
         - Key: Source
           Value: "ProServe Delivery Kit"
-      TemplateURL: !Sub https://${PipelineBucket}.s3.${AWS::Region}.amazonaws.com/${DeployVersion}/AuditAccountAuditManager.yaml
+      TemplateURL: !Sub https://${PipelineBucket}.s3.${AWS::Region}.amazonaws.com/${DeployVersion}/config-aggregator.yaml
 
   #######################################################
-  # Part 6 - Evidence Collection Components
+  # Part 5 - Evidence Collection Components
   #######################################################
   EvidenceCollectionComponents:
     Type: AWS::CloudFormation::StackSet
     DependsOn:
-      - AuditAccountAuditManager
+      - ConfigAggregator
+      - ConformancePackStack
+      - AuditAccountPreRequisitesPart1
+      - AuditAccountPreRequisitesPart2
+      - AuditAccountPreRequisitesPart3
+      - AuditAccountPreRequisitesPart4
+      - AuditAccountPreRequisitesPart5
+      - AuditAccountPreRequisitesPart6
+      - AuditAccountPreRequisitesPart7
+      - AuditAccountPreRequisitesPart8
+      - AuditAccountPreRequisitesPartN
     Properties:
       AutoDeployment:
         Enabled: true
@@ -1902,7 +1883,7 @@ Resources:
           Value: "ProServe Delivery Kit"
       TemplateURL: !Sub https://${PipelineBucket}.s3.${AWS::Region}.amazonaws.com/${DeployVersion}/EvidenceCollectionComponents.yaml
   #######################################################
-  # Part 7 - Role creation components
+  # Part 6 - Role creation components
   #######################################################
   ManagementAccountOrgRoleGenerator:
     Type: AWS::CloudFormation::StackSet
@@ -1928,26 +1909,26 @@ Resources:
           ParameterValue: !Ref OrganizationName
         - ParameterKey: AuditAccountID
           ParameterValue: !Ref AuditAccountID
-        - ParameterKey: ClientEvidenceBucket
-          ParameterValue:
-            !If [
-              GenerateEvidenceBucketName,
-              !GetAtt GenerateEvidenceBucketName.EvidenceBucketName,
-              !Ref EvidenceBucketName,
-            ]
-        - ParameterKey: AWSConfigConformsBucketName
-          ParameterValue:
-            !If [
-              GenerateAWSConfigConformsBucketName,
-              !GetAtt GenerateEvidenceBucketName.AWSConfigBucketName,
-              !Ref AWSConfigConformsBucketName,
-            ]
         - ParameterKey: AccelRolePrefix
           ParameterValue: !Ref AccelRolePrefix
         - ParameterKey: RolePrefix
           ParameterValue: !Ref RolePrefix
         - ParameterKey: AcceleratorRole
           ParameterValue: !Ref AcceleratorRole
+        # YAML-alias the SAME policy package values used by
+        # InvokeCustomLambda / InvokeCustomLambda2 above. The CFN engine
+        # resolves both the bootstrap (this stack) and steady-state
+        # (EventBridge target Input in OrgRoleGenerator.yaml) paths from
+        # one source — eliminating the drift that previously left newly
+        # onboarded accounts with a strictly weaker GCLambdaExecutionRole.
+        # Bucket-specific ARNs (${ClientEvidenceBucket} /
+        # ${AWSConfigConformsBucketName}) are already `!Sub`-resolved
+        # inside the anchored block, so OrgRoleGenerator.yaml no longer
+        # needs to receive the bucket names separately.
+        - ParameterKey: GCLambdaExecutionRolePolicyPackage
+          ParameterValue: *gcLambdaExecutionRolePolicyPackage
+        - ParameterKey: GCLambdaExecutionRole2PolicyPackage
+          ParameterValue: *gcLambdaExecutionRole2PolicyPackage
       PermissionModel: SELF_MANAGED # SERVICE_MANAGED
       StackInstancesGroup:
         - DeploymentTargets:
@@ -1956,6 +1937,275 @@ Resources:
           Regions:
             - us-east-1
       StackSetName: !Sub "${OrganizationName}-Compliance-Role-Generator"
+
+  #######################################################
+  # Partition-sync orchestration (factored out)
+  #
+  # Post-deployment, an EventBridge cron fires every 6 hours and starts
+  # the gc-guardrails-partition-sync Step Function defined in
+  # PartitionSyncStateMachine.yaml. See PartitionSyncStateMachine.yaml and
+  # doc/RESOURCE_POLICY_FIX.md for the full state-machine design.
+  #######################################################
+
+  # CloudFormation service role handed to UpdateStack by the partition-sync Step Function. 
+  CloudFormationDeploymentRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub "${OrganizationName}CloudFormationDeploymentRole"
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: cloudformation.amazonaws.com
+            Action: sts:AssumeRole
+            Condition:
+              StringEquals:
+                aws:SourceAccount: !Ref AWS::AccountId
+      Path: "/"
+      Policies:
+        # ------------------------------------------------------------------
+        # 1) CloudFormation + S3 (nested stacks, StackSets, template fetch)
+        # ------------------------------------------------------------------
+        - PolicyName: StacksAndTemplates
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Sid: CfnRootAndNestedStacks
+                Effect: Allow
+                Action:
+                  - "cloudformation:*"
+                Resource:
+                  - !Sub "arn:${AWS::Partition}:cloudformation:${AWS::Region}:${AWS::AccountId}:stack/${RootStackName}/*"
+                  - !Sub "arn:${AWS::Partition}:cloudformation:${AWS::Region}:${AWS::AccountId}:stack/${RootStackName}-*/*"
+              - Sid: CfnStackSets
+                Effect: Allow
+                Action:
+                  - "cloudformation:*"
+                Resource:
+                  - !Sub "arn:${AWS::Partition}:cloudformation:*:${AWS::AccountId}:stackset/${OrganizationName}*"
+                  - !Sub "arn:${AWS::Partition}:cloudformation:*:${AWS::AccountId}:stackset-target/${OrganizationName}*"
+                  - !Sub "arn:${AWS::Partition}:cloudformation:*::type/resource/*"
+              - Sid: CfnMisc
+                Effect: Allow
+                Action:
+                  - "cloudformation:ListStackSetAutoDeploymentTargets"
+                  - "cloudformation:DescribeType"
+                  - "cloudformation:ListTypes"
+                  - "cloudformation:ValidateTemplate"
+                  - "cloudformation:GetTemplateSummary"
+                Resource: "*"
+              - Sid: PipelineBucketRead
+                # CFN fetches nested stack templates and packaged Lambda code from the
+                # pipeline bucket using the caller's (this role's) credentials.
+                Effect: Allow
+                Action:
+                  - "s3:GetObject"
+                  - "s3:GetObjectVersion"
+                  - "s3:ListBucket"
+                Resource:
+                  - !Sub "arn:${AWS::Partition}:s3:::${PipelineBucket}"
+                  - !Sub "arn:${AWS::Partition}:s3:::${PipelineBucket}/*"
+        # ------------------------------------------------------------------
+        # 2) IAM (roles + attached inline/managed policies + PassRole)
+        # ------------------------------------------------------------------
+        - PolicyName: IamRolesAndPolicies
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Sid: ManageStackRoles
+                Effect: Allow
+                Action:
+                  - "iam:GetRole"
+                  - "iam:CreateRole"
+                  - "iam:DeleteRole"
+                  - "iam:UpdateRole"
+                  - "iam:UpdateAssumeRolePolicy"
+                  - "iam:PutRolePolicy"
+                  - "iam:GetRolePolicy"
+                  - "iam:DeleteRolePolicy"
+                  - "iam:ListRolePolicies"
+                  - "iam:AttachRolePolicy"
+                  - "iam:DetachRolePolicy"
+                  - "iam:ListAttachedRolePolicies"
+                  - "iam:TagRole"
+                  - "iam:UntagRole"
+                  - "iam:ListRoleTags"
+                  - "iam:PutRolePermissionsBoundary"
+                  - "iam:DeleteRolePermissionsBoundary"
+                Resource:
+                  - !Sub "arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${RootStackName}*"
+                  - !Sub "arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${OrganizationName}*"
+                  - !Sub "arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${RolePrefix}*"
+                  - !Sub "arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${AccelRolePrefix}*"
+                  # Legacy unprefixed role names created by main.yaml today:
+                  - !Sub "arn:${AWS::Partition}:iam::${AWS::AccountId}:role/GCLambdaExecutionRoleAccountPolicy"
+              - Sid: ReadAwsManagedPolicies
+                Effect: Allow
+                Action:
+                  - "iam:GetPolicy"
+                  - "iam:GetPolicyVersion"
+                  - "iam:ListPolicyVersions"
+                Resource:
+                  - !Sub "arn:${AWS::Partition}:iam::aws:policy/*"
+                  - !Sub "arn:${AWS::Partition}:iam::aws:policy/service-role/*"
+              - Sid: PassRolesCreatedByThisStack
+                # PassRole is required for Lambda functions (Role property),
+                # Step Functions (RoleArn), EventBridge rules (RoleArn),
+                # and the state machine handing this very role back to CFN.
+                Effect: Allow
+                Action:
+                  - "iam:PassRole"
+                Resource:
+                  - !Sub "arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${OrganizationName}*"
+                  - !Sub "arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${RolePrefix}*"
+                  - !Sub "arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${AccelRolePrefix}*"
+                Condition:
+                  StringEquals:
+                    "iam:PassedToService":
+                      - lambda.amazonaws.com
+                      - states.amazonaws.com
+                      - events.amazonaws.com
+                      - cloudformation.amazonaws.com
+              - Sid: ServiceLinkedRolesForStackSets
+                # SERVICE_MANAGED StackSets rely on org-wide SLRs. CFN may
+                # need to create the AWSServiceRoleForCloudFormationStackSets
+                # variants on first use.
+                Effect: Allow
+                Action:
+                  - "iam:CreateServiceLinkedRole"
+                Resource: "*"
+                Condition:
+                  StringLike:
+                    "iam:AWSServiceName":
+                      - "stacksets.cloudformation.amazonaws.com"
+                      - "member.org.stacksets.cloudformation.amazonaws.com"
+                      - "config.amazonaws.com"
+                      - "config-multiaccountsetup.amazonaws.com"
+              - Sid: EnableTrustedAccessForConfig
+                Effect: Allow
+                Action:
+                  - "organizations:EnableAWSServiceAccess"
+                  - "organizations:ListAWSServiceAccessForOrganization"
+                Resource: "*"
+                Condition:
+                  StringEquals:
+                    "organizations:ServicePrincipal":
+                      - "config.amazonaws.com"
+                      - "config-multiaccountsetup.amazonaws.com"
+        # ------------------------------------------------------------------
+        # 3) Compute + data plane (Lambda, DynamoDB, Logs, StepFn, Events)
+        # ------------------------------------------------------------------
+        - PolicyName: ComputeAndData
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Sid: ManageStackLambdas
+                Effect: Allow
+                Action:
+                  - "lambda:*"
+                Resource:
+                  - !Sub "arn:${AWS::Partition}:lambda:*:${AWS::AccountId}:function:${OrganizationName}*"
+              - Sid: ManagePartitionStateTable
+                # DeletionPolicy: Retain means CreateTable/DeleteTable are not
+                # expected on updates — only Describe/Update/Tag/PITR ops.
+                Effect: Allow
+                Action:
+                  - "dynamodb:*"
+                Resource:
+                  - !Sub "arn:${AWS::Partition}:dynamodb:*:${AWS::AccountId}:table/${OrganizationName}-gc-guardrails-partition-state"
+              - Sid: ManageStackLogGroups
+                Effect: Allow
+                Action:
+                  - "logs:*"
+                Resource:
+                  - !Sub "arn:${AWS::Partition}:logs:*:${AWS::AccountId}:log-group:/aws/lambda/${OrganizationName}*"
+                  - !Sub "arn:${AWS::Partition}:logs:*:${AWS::AccountId}:log-group:/aws/lambda/${OrganizationName}*:*"
+                  - !Sub "arn:${AWS::Partition}:logs:*:${AWS::AccountId}:log-group:/aws/vendedlogs/states/${OrganizationName}*"
+                  - !Sub "arn:${AWS::Partition}:logs:*:${AWS::AccountId}:log-group:/aws/vendedlogs/states/${OrganizationName}*:*"
+              - Sid: DescribeLogs
+                Effect: Allow
+                Action:
+                  - "logs:DescribeLogGroups"
+                  - "logs:DescribeLogStreams"
+                Resource: "*"
+              - Sid: ManageStepFunctions
+                Effect: Allow
+                Action:
+                  - "states:*"
+                Resource:
+                  - !Sub "arn:${AWS::Partition}:states:*:${AWS::AccountId}:stateMachine:${OrganizationName}*"
+              - Sid: ManageEventBridgeRules
+                Effect: Allow
+                Action:
+                  - "events:*"
+                Resource:
+                  - !Sub "arn:${AWS::Partition}:events:*:${AWS::AccountId}:rule/${OrganizationName}*"
+        # ------------------------------------------------------------------
+        # 4) Config + SSM + Organizations reads (needed by StackSet SERVICE_MANAGED)
+        # ------------------------------------------------------------------
+        - PolicyName: ConfigSsmAndOrgs
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Sid: ManageOrganizationConformancePacks
+                # Config doesn't support resource-level scoping for these APIs.
+                Effect: Allow
+                Action:
+                  - "config:DescribeOrganizationConformancePacks"
+                  - "config:DescribeOrganizationConformancePackStatuses"
+                  - "config:GetOrganizationConformancePackDetailedStatus"
+                  - "config:PutOrganizationConformancePack"
+                  - "config:DeleteOrganizationConformancePack"
+                  - "config:TagResource"
+                  - "config:UntagResource"
+                  - "config:ListTagsForResource"
+                Resource: "*"
+              - Sid: ManageStackSsmParams
+                Effect: Allow
+                Action:
+                  - "ssm:GetParameter"
+                  - "ssm:GetParameters"
+                  - "ssm:PutParameter"
+                  - "ssm:DeleteParameter"
+                  - "ssm:DescribeParameters"
+                  - "ssm:AddTagsToResource"
+                  - "ssm:RemoveTagsFromResource"
+                  - "ssm:ListTagsForResource"
+                Resource:
+                  - !Sub "arn:${AWS::Partition}:ssm:*:${AWS::AccountId}:parameter/gc_guardrails/*"
+              - Sid: OrganizationsReadForStackSets
+                # SERVICE_MANAGED StackSets and OrganizationConformancePacks
+                # both call these to enumerate target accounts and OUs.
+                Effect: Allow
+                Action:
+                  - "organizations:DescribeOrganization"
+                  - "organizations:ListAccounts"
+                  - "organizations:ListAccountsForParent"
+                  - "organizations:ListRoots"
+                  - "organizations:ListParents"
+                  - "organizations:ListChildren"
+                  - "organizations:ListOrganizationalUnitsForParent"
+                  - "organizations:DescribeAccount"
+                  - "organizations:DescribeOrganizationalUnit"
+                  - "organizations:ListDelegatedAdministrators"
+                  - "organizations:ListDelegatedServicesForAccount"
+                  - "organizations:ListAWSServiceAccessForOrganization"
+                Resource: "*"
+  PartitionSyncStack:
+    Type: AWS::CloudFormation::Stack
+    DependsOn:
+      - AccountPartitionerLambda
+    Properties:
+      TemplateURL: !Sub https://${PipelineBucket}.s3.${AWS::Region}.amazonaws.com/${DeployVersion}/PartitionSyncStateMachine.yaml
+      Parameters:
+        OrganizationName: !Ref OrganizationName
+        RootStackName: !Ref RootStackName
+        # Needed for State Machine to construct the cross-account ARN for the permissions Lambda's lambda:InvokeFunction.
+        AuditAccountID: !Ref AuditAccountID
+        # Passed to UpdateStack as RoleARN so CFN uses this admin-scoped
+        # service role for resource ops, not the narrow state machine role.
+        CloudFormationDeploymentRoleArn: !GetAtt CloudFormationDeploymentRole.Arn
 
 Outputs:
   ClientEvidenceBucket:
