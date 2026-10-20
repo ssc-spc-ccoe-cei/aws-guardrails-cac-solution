@@ -292,6 +292,7 @@ def policy_doc_gives_admin_access(policy_doc: str) -> bool:
         document_dict = policy_doc
 
     statements = document_dict.get("Statement", [])
+    statements = statements if isinstance(statements, list) else [statements]
 
     for statement_component in statements:
         if statement_component.get("Effect", "") == "Allow":
