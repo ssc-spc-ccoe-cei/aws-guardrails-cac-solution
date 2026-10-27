@@ -15,12 +15,16 @@ Parameters:
       - ""
       - "_p2"
       - "_p3"
+      - "_p4"
     Description: >-
-      Suffix appended to every guardrail Config rule name and to the Lambda
-      function name referenced by each rule. Empty for partition 1 (the base
-      / "P1" pack); ``_p2`` and ``_p3`` are used by the partition-2 and
-      partition-3 packs created by ConformancePackPartitions.yaml when the
-      organization grows beyond ``MaxAccountsPerPartition`` accounts.
+      Suffix appended to the Lambda function name referenced by each
+      guardrail Config rule. (ConfigRuleName is deliberately left as a
+      static literal — AWS Config's conformance-pack template engine
+      ignores Fn::Sub there — so rule names are identical across packs.)
+      Empty for partition 1 (the base / "P1" pack); ``_p2``, ``_p3`` and
+      ``_p4`` are used by the partition-2, -3 and -4 packs created by
+      ConformancePackPartitions.yaml when the organization grows beyond
+      ``MaxAccountsPerPartition`` accounts.
   GCLambdaExecutionRoleName:
     Type: String
   GCLambdaExecutionRoleName2:

@@ -33,17 +33,37 @@ Partition the organization's accounts into groups of **≤60** and create **one 
 | 1–60     | 1          | 1 (no change)               |
 | 61–120   | 2          | 2                           |
 | 121–180  | 3          | 3                           |
+| 181–240  | 4          | 4                           |
 
 > **Note on partition size.** The original design used a
 > `MaxAccountsPerPartition` of **70**. Client testing showed that 70
 > `AddPermission` statements still overflowed the 20 KB resource-policy
 > limit on some guardrail Lambdas, so the default was lowered to **60**
-> for safety headroom. The consequence is that total addressable
-> accounts drops from 210 to **180** (60 × 3). Organizations larger than
-> 180 accounts require `MaxPartitions` to be raised above 3, which also
-> requires adding `_p4` clone conditions to
-> `AuditAccountPreRequisitesPart1–8.yaml` and a `ConformancePackP4`
-> resource to `ConformancePackPartitions.yaml`.
+> for safety headroom.
+>
+> **Note on partition count.** The design originally shipped with
+> `MaxPartitions = 3` (180 addressable accounts). It was raised to
+> **4** (**240** addressable accounts) to cover a 200-account
+> requirement. Each additional partition requires: a
+> `CreatePartitionN` / `IsAuditAccountAndCreatePartitionN` condition
+> pair plus a `_pN` clone of all 37 guardrail Lambdas in
+> `AuditAccountPreRequisitesPart1–8.yaml`, a `ConformancePackPN`
+> resource and its `ExcludedAccounts` `!If` ladder in
+> `ConformancePackPartitions.yaml`, an `AccountsInPN` pass-through in
+> `main.yaml`, and a `_pN` entry in `ConformancePack.yaml`'s
+> `PartitionSuffix` `AllowedValues`.
+>
+> **4 is the practical ceiling for this design.** At 240 accounts the
+> CloudFormation Custom Resource response that carries
+> `AccountsInP1..P4` measures ~3.75 KB against a **4096 byte hard
+> limit** — a 5th partition does not fit. The partitioner enforces this
+> at runtime (see `assert_cfn_response_fits`) and fails the Custom
+> Resource with an explicit message rather than letting CloudFormation
+> reject an oversized response after state has already been written to
+> DynamoDB. Going beyond 240 accounts requires moving the per-partition
+> account lists out-of-band (e.g. an S3 object or SSM parameter read by
+> `ConformancePackPartitions.yaml`) — **raising `MaxPartitions` alone
+> makes the response larger, not smaller.**
 
 ### Naming Convention
 
@@ -51,6 +71,7 @@ Partition the organization's accounts into groups of **≤60** and create **one 
 <org_name>gc01_check_root_mfa          ← partition 1 (or sole partition)
 <org_name>gc01_check_root_mfa_p2       ← partition 2
 <org_name>gc01_check_root_mfa_p3       ← partition 3
+<org_name>gc01_check_root_mfa_p4       ← partition 4
 ```
 
 ---
@@ -66,7 +87,7 @@ A single DynamoDB table stores the account-to-partition mapping. The schema is i
 | Attribute | Type | Description |
 |-----------|------|-------------|
 | `AccountId` (PK) | String | 12-digit AWS Account ID |
-| `PartitionId` | Number | Partition number (1, 2, or 3) |
+| `PartitionId` | Number | Partition number (1, 2, 3, or 4) |
 
 **Example items:**
 ```
@@ -77,7 +98,7 @@ A single DynamoDB table stores the account-to-partition mapping. The schema is i
 
 Consumers can:
 - **Get partition for an account:** `GetItem(AccountId)`.
-- **Get all accounts in a partition:** `Scan` with `FilterExpression: PartitionId = :p` (≤180 items total, scan is fine).
+- **Get all accounts in a partition:** `Scan` with `FilterExpression: PartitionId = :p` (≤240 items total, scan is fine).
 - **Count accounts per partition:** Aggregate at runtime.
 - **Get total partition count:** `max(PartitionId)` from a full scan.
 
@@ -102,8 +123,9 @@ A new Lambda function responsible for **managing partition state**. It runs in t
 4. **Greedily** assigns new (sorted) accounts to the lowest-numbered partition with room (< `MAX_ACCOUNTS_PER_PARTITION`), opening a new partition as needed up to `MAX_PARTITIONS`.
 5. Removes entries for inactive/deleted accounts.
 6. **Stable assignment:** existing rows in DynamoDB are never re-balanced — only new accounts are placed.
-7. If a *trailing* partition becomes empty (e.g. every P3 account leaves), `partitionCount` is reduced to the highest occupied partition. Non-trailing partitions are **not** collapsed (an empty P2 with P3 still occupied leaves `partitionCount=3`).
+7. If a *trailing* partition becomes empty (e.g. every P4 account leaves), `partitionCount` is reduced to the highest occupied partition. Non-trailing partitions are **not** collapsed (an empty P2 with P3 still occupied leaves `partitionCount=3`).
 8. Writes updated state back to DynamoDB.
+9. **Measures its own Custom Resource response** before returning it (`assert_cfn_response_fits`) and fails the resource with an explicit, actionable message if it would exceed CloudFormation's 4 KB cap — see below.
 
 **Return shape (identical in both CFN Custom Resource and Step Function contexts):**
 
@@ -115,10 +137,53 @@ A new Lambda function responsible for **managing partition state**. It runs in t
 | `AccountsInP1` | string | Comma-separated 12-digit account IDs in partition 1. Empty string if unused. |
 | `AccountsInP2` | string | As above for partition 2. |
 | `AccountsInP3` | string | As above for partition 3. |
+| `AccountsInP4` | string | As above for partition 4. |
 
 The per-partition account lists are consumed downstream by `ConformancePackPartitions.yaml` (see Section 4) to build each Organization Conformance Pack's `ExcludedAccounts`.
 
-**CloudFormation 4 KB response-body cap.** Custom Resource response bodies are capped at 4096 bytes. With `MAX_ACCOUNTS_PER_PARTITION × MAX_PARTITIONS = 60 × 3 = 180` account IDs at ~14 bytes each (12-digit + comma), the combined `AccountsInPx` payload at 180 accounts is ~2.4 KB plus envelope — fits comfortably. Raising either limit further would require revisiting this.
+#### CloudFormation 4 KB response-body cap — and the graceful failure
+
+Custom Resource response bodies are capped at **4096 bytes** (the whole
+JSON envelope, not just `Data`). The `AccountsInPx` strings dominate
+that budget at roughly 13 bytes per account (12 digits + separator).
+Measured end-to-end response sizes:
+
+| Active accounts | `partitionCount` | Response body |
+|---:|:---:|---:|
+| 1 | 1 | 633 B |
+| 60 | 1 | 1.4 KB |
+| 120 | 2 | 2.2 KB |
+| 180 | 3 | 2.9 KB |
+| **240 (max supported)** | **4** | **3.74 KB** |
+| 320 | — | 4.8 KB → **rejected** |
+
+At the supported maximum there is only ~350 bytes of headroom, which is
+precisely why `MaxPartitions` is capped at 4.
+
+Rather than letting CloudFormation reject an oversized body — which
+surfaces as an opaque stack timeout *after* DynamoDB has already been
+written, and is miserable to diagnose — the partitioner measures the
+serialized response itself:
+
+- **Hard limit:** `CFN_RESPONSE_MAX_BYTES = 4096`.
+- **Usable budget:** hard limit minus `CFN_RESPONSE_SAFETY_MARGIN_BYTES`
+  (128), so the guard always trips before CloudFormation does while
+  still leaving a supported 240-account deployment comfortable room.
+- **Early warning:** once the body passes `CFN_RESPONSE_WARN_RATIO`
+  (85%) of the hard limit, a `WARNING` is logged to CloudWatch so
+  operators get notice *before* the next account onboarding breaks the
+  deployment.
+- **Over budget:** a `RuntimeError` is raised naming the measured size,
+  the account count, the budget, the hard limit, and the remediation
+  options. The handler catches it and sends a `FAILED` Custom Resource
+  response with that message as the `Reason`, so it appears directly in
+  the CloudFormation **Events** tab. The `Reason` is itself truncated to
+  1024 characters so a long message can never be the thing that pushes
+  the failure response over the cap.
+
+The message explicitly calls out that **raising `MaxPartitions` will not
+help** — it makes the response larger — and points at the real fix
+(publishing the per-partition lists out-of-band via S3/SSM).
 
 ---
 
@@ -129,27 +194,46 @@ Each template receives `PartitionCount` as a parameter. Using CloudFormation `Co
 ```yaml
 Conditions:
   CreatePartition2: !Not [!Equals [!Ref PartitionCount, "1"]]
-  CreatePartition3: !Equals [!Ref PartitionCount, "3"]
+  # Note the !Or: CreatePartition3 must hold for BOTH "3" and "4",
+  # otherwise raising PartitionCount to 4 would delete every _p3 clone
+  # out from under the live P3 conformance pack's Config rules.
+  CreatePartition3: !Or
+    - !Equals [!Ref PartitionCount, "3"]
+    - !Equals [!Ref PartitionCount, "4"]
+  CreatePartition4: !Equals [!Ref PartitionCount, "4"]
 
 Resources:
   GC01CheckRootMFALambda:          # always created (partition 1)
     ...
   GC01CheckRootMFALambdaP2:        # created if PartitionCount >= 2
-    Condition: CreatePartition2
+    Condition: IsAuditAccountAndCreatePartition2
     ...
-  GC01CheckRootMFALambdaP3:        # created if PartitionCount == 3
-    Condition: CreatePartition3
+  GC01CheckRootMFALambdaP3:        # created if PartitionCount >= 3
+    Condition: IsAuditAccountAndCreatePartition3
+    ...
+  GC01CheckRootMFALambdaP4:        # created if PartitionCount == 4
+    Condition: IsAuditAccountAndCreatePartition4
     ...
 ```
 
+(Each `CreatePartitionN` is `!And`-ed with `IsAuditAccount` to produce
+the `IsAuditAccountAndCreatePartitionN` condition actually attached to
+the resources — the guardrail Lambdas only exist in the audit account.)
+
 All clones share the same code package and IAM execution role — only the `FunctionName` differs.
+
+`tools/validate_parts.py` enforces this structure across all 8
+templates: equal clone counts per partition (37 each), correct
+conditions and `_pN` suffixes, `PartitionCount` `AllowedValues`
+covering every slot, and the monotonicity of `CreatePartitionN` (that
+raising the count never deletes a lower partition's clones).
 
 ---
 
 ### 4. Modified `ConformancePack.yaml` + new `ConformancePackPartitions.yaml` — One Pack Per Partition
 
 The original design considered deploying one Organization Conformance Pack containing
-**three copies** of each Config rule (conditionally created per partition), with all
+**one copy of each Config rule per partition** (conditionally created), with all
 copies deployed to every account and the un-permitted ones failing closed.
 **This was abandoned** because:
 
@@ -158,17 +242,24 @@ copies deployed to every account and the un-permitted ones failing closed.
   produced by `aws_account_partitioner` cannot drive `Conditions` inside `main.yaml`.
 - Fail-closed evaluations would muddy Config and Audit Manager evidence.
 
-The adopted approach instead deploys **up to three separate `AWS::Config::OrganizationConformancePack` resources** — one per non-empty partition — each running the **same 37-rule template** (`ConformancePack.yaml`) but parameterised with a different Lambda-clone target. Per-pack `ExcludedAccounts` ensures every org account receives **exactly one** pack.
+The adopted approach instead deploys **up to four separate `AWS::Config::OrganizationConformancePack` resources** — one per non-empty partition — each running the **same 37-rule template** (`ConformancePack.yaml`) but parameterised with a different Lambda-clone target. Per-pack `ExcludedAccounts` ensures every org account receives **exactly one** pack.
+
+> **Service-limit headroom.** AWS Config allows **50 organization
+> conformance packs per organization** (hard limit) and **1000
+> `ExcludedAccounts` entries per pack** (hard limit). At 4 packs and a
+> maximum of 180 excluded accounts per pack, both are far from binding —
+> the constraint on this design is the CloudFormation Custom Resource
+> response cap described in Section 2.
 
 #### 4a. `ConformancePack.yaml` — single `PartitionSuffix` parameter
 
-Rather than duplicating every rule three times, a single new input parameter is added:
+Rather than duplicating every rule once per partition, a single new input parameter is added:
 
 ```yaml
 PartitionSuffix:
   Type: String
   Default: ""
-  AllowedValues: ["", "_p2", "_p3"]
+  AllowedValues: ["", "_p2", "_p3", "_p4"]
 ```
 
 …and appended to the Lambda function name in every `SourceIdentifier` (37
@@ -192,7 +283,7 @@ SourceIdentifier:
 ```
 
 When the P2 pack passes `PartitionSuffix: "_p2"`, the deployed rule stays named
-`gc01_check_root_mfa` (identical across all 3 packs) and targets the
+`gc01_check_root_mfa` (identical across all 4 packs) and targets the
 `<org>gc01_check_root_mfa_p2` Lambda clone. Per-account uniqueness is guaranteed
 because `ExcludedAccounts` ensures each account ever sees exactly one pack.
 
@@ -209,9 +300,17 @@ was `AWS::Config::OrganizationConformancePack`, the new one is
 
 | Resource | Condition | `PartitionSuffix` | `ExcludedAccounts` |
 |---|---|---|---|
-| `ConformancePackP1` (`${OrganizationName}-GC-CP-Guardrails-P1`) | `HasAccountsInP1` | `""`    | union of P2 ∪ P3 (whichever are non-empty), or `AWS::NoValue` |
-| `ConformancePackP2` (`${OrganizationName}-GC-CP-Guardrails-P2`) | `HasAccountsInP2` | `"_p2"` | union of P1 ∪ P3 (whichever are non-empty), or `AWS::NoValue` |
-| `ConformancePackP3` (`${OrganizationName}-GC-CP-Guardrails-P3`) | `HasAccountsInP3` | `"_p3"` | union of P1 ∪ P2 (whichever are non-empty), or `AWS::NoValue` |
+| `ConformancePackP1` (`${OrganizationName}-GC-CP-Guardrails-P1`) | `HasAccountsInP1` | `""`    | union of P2 ∪ P3 ∪ P4 (whichever are non-empty), or `AWS::NoValue` |
+| `ConformancePackP2` (`${OrganizationName}-GC-CP-Guardrails-P2`) | `HasAccountsInP2` | `"_p2"` | union of P1 ∪ P3 ∪ P4 (whichever are non-empty), or `AWS::NoValue` |
+| `ConformancePackP3` (`${OrganizationName}-GC-CP-Guardrails-P3`) | `HasAccountsInP3` | `"_p3"` | union of P1 ∪ P2 ∪ P4 (whichever are non-empty), or `AWS::NoValue` |
+| `ConformancePackP4` (`${OrganizationName}-GC-CP-Guardrails-P4`) | `HasAccountsInP4` | `"_p4"` | union of P1 ∪ P2 ∪ P3 (whichever are non-empty), or `AWS::NoValue` |
+
+With 4 partitions each pack's ladder enumerates all 7 non-empty subsets
+of the other three partitions (plus the `AWS::NoValue` fallback), which
+needs 14 conditions in total: 4 `HasAccountsInPn`, 6 pairwise
+`HasAccountsInPnAndPm`, and 4 triples. Note this grows as 2^(N-1)
+branches per pack — another reason 4 is a sensible stopping point for
+hand-maintained YAML.
 
 Each pack's `ExcludedAccounts` is built with a nested `!If` ladder so empty
 `AccountsInP*` strings are never `!Split` into the list (which would produce
@@ -231,7 +330,7 @@ base `<org>gc*` Lambdas only — the upgrade path requires no manual configurati
 ### 5. Audit Manager custom framework — one `controlMappingSources` entry per control
 
 Because Audit Manager controls reference Config rules by *name* (not ARN), and
-the deployed Config rule name is identical across all three partitions
+the deployed Config rule name is identical across all four partitions
 (`PartitionSuffix` only flows into Lambda ARNs, not into `ConfigRuleName`),
 each control keeps a single `controlMappingSources` entry that covers every
 partition automatically.
@@ -245,7 +344,7 @@ partition automatically.
 Key properties:
 
 - One keyword per control matches the (identically-named) deployed rule in
-  every account across all 3 partitions, so evidence aggregation is automatic.
+  every account across all 4 partitions, so evidence aggregation is automatic.
 - Applies to **37 of 38 controls**; `gc01_check_attestation_letter` is documentation-only
   and stays at one mapping.
 - Audit Manager's per-control limit of 5 `controlMappingSources` is well above the 1 used.
@@ -299,7 +398,7 @@ A Step Function provides **observability** and **orchestration** for the ongoing
 │  │  accountsChanged:   T/F │  (gates Step 2)                │
 │  │  partitionCount:    N   │                                │
 │  │  partitionsChanged: T/F │  (observability only)          │
-│  │  AccountsInP1/P2/P3     │                                │
+│  │  AccountsInP1/P2/P3/P4  │                                │
 │  └────────────┬────────────┘                                │
 │               │                                             │
 │               ▼                                             │
@@ -365,7 +464,7 @@ separately below.
 Runs once per `aws cloudformation deploy` of `root.yaml`. The partitioner
 runs as a CloudFormation Custom Resource, populates the
 `gc-guardrails-partition-state` DynamoDB table, and returns
-`PartitionCount` + `AccountsInP1/P2/P3` as Custom Resource attributes
+`PartitionCount` + `AccountsInP1/P2/P3/P4` as Custom Resource attributes
 that the rest of the template `!GetAtt`s into the StackSets and the
 nested `ConformancePack` stack. The Step Function and its EventBridge
 rule are created here but do not fire until 6 hours after deployment.
@@ -382,7 +481,7 @@ flowchart TB
         partLambda["aws_account_partitioner\n(Lambda)"]
         partCR["InvokeAccountPartitioner\n(CFN Custom Resource)"]
 
-        parts["AuditAccountPreRequisitesPart1..8\n(StackSets — base gc* Lambdas\n+ conditional _p2 / _p3 clones)"]
+        parts["AuditAccountPreRequisitesPart1..8\n(StackSets — base gc* Lambdas\n+ conditional _p2 / _p3 / _p4 clones)"]
         partN["AuditAccountPreRequisitesPartN\n(StackSet)"]
         permLambda["aws_lambda_permissions_setup\n(Lambda + CFN Custom Resource —\ninitial policy sync)"]
 
@@ -403,10 +502,10 @@ flowchart TB
         main --> partCR
         partCR -->|"invokes once"| partLambda
         partLambda -->|"PutItem per\nactive account"| ddb
-        partCR -.->|"PartitionCount,\nAccountsInP1/P2/P3"| main
+        partCR -.->|"PartitionCount,\nAccountsInP1/P2/P3/P4"| main
 
         main -->|"PartitionCount"| parts
-        main -->|"AccountsInP1/P2/P3"| nested
+        main -->|"AccountsInP1/P2/P3/P4"| nested
         nested --> packs
 
         main --> psStack
@@ -444,7 +543,7 @@ changed (any account added to or removed from the table) — calls
 `cloudformation:UpdateStack` on the root with a bumped `InvokeUpdate`
 parameter. That re-runs the `InvokeAccountPartitioner` Custom Resource
 (which has `InvokeUpdate: !Ref InvokeUpdate` as a property), cascading
-fresh `AccountsInP1/P2/P3` into the nested `ConformancePack` stack and
+fresh `AccountsInP1/P2/P3/P4` into the nested `ConformancePack` stack and
 fresh `PartitionCount` into the Part1-8 StackSets. The state machine
 polls the root stack until `UPDATE_COMPLETE`, then invokes the
 permissions Lambda to bring each clone's resource-based policy in line
@@ -497,7 +596,7 @@ flowchart TB
         cr["InvokeAccountPartitioner\nCustom Resource\n(property change → re-runs)"]
         parts["Part1..8 StackSets"]
         nested["ConformancePackPartitions\nnested stack"]
-        clones["Lambda clones:\ngc*  /  gc*_p2  /  gc*_p3"]
+        clones["Lambda clones:\ngc*  /  gc*_p2  /  gc*_p3  /  gc*_p4"]
         packs["1..3 OrganizationConformancePacks"]
 
         cron -->|"triggers"| SF
@@ -508,10 +607,10 @@ flowchart TB
         s3 -->|"UpdateStack"| root
         root -->|"re-runs"| cr
         cr -->|"invoke"| partLambda
-        cr -.->|"new PartitionCount,\nAccountsInP1/P2/P3"| root
+        cr -.->|"new PartitionCount,\nAccountsInP1/P2/P3/P4"| root
         root -->|"new PartitionCount"| parts
         parts -->|"create / destroy"| clones
-        root -->|"new AccountsInP1/P2/P3"| nested
+        root -->|"new AccountsInP1/P2/P3/P4"| nested
         nested -->|"create / destroy"| packs
 
         s5 -->|"invoke"| permLambda
@@ -549,7 +648,8 @@ The **key requirement** is that after initial deployment, when new accounts join
 | 1–60 | 1 | `…-GC-CP-Guardrails` only | **Indistinguishable from pre-fix deployment.** No `ExcludedAccounts`. Every account targets base `<org>gc*` Lambdas. |
 | 61–120 | 2 | `…` + `…-P2` | Each pack lists the *other* partition's accounts in `ExcludedAccounts`, so every account receives exactly one pack. P1 accounts target base Lambdas; P2 accounts target `_p2` clones. |
 | 121–180 | 3 | `…` + `…-P2` + `…-P3` | Each pack excludes the union of the other two partitions' accounts. Three sets of Lambda clones, three packs, every account in exactly one of them. |
-| >180 | — | (failure) | Partitioner raises and the Custom Resource / Step Function step fails. Manual intervention required (raise `MaxAccountsPerPartition`, `MaxPartitions`, or both — but mind the CFN 4 KB response cap). |
+| 181–240 | 4 | `…` + `…-P2` + `…-P3` + `…-P4` | Maximum supported scale. Each pack excludes the union of the other three partitions' accounts. The Custom Resource response is ~3.74 KB — within ~350 bytes of CloudFormation's 4 KB cap, and the partitioner logs a WARNING above 85% utilisation. |
+| >240 | — | (failure) | Partitioner raises and the Custom Resource / Step Function step fails with an explicit message. Raising `MaxPartitions` past 4 is **not** a valid remediation (it makes the CFN response larger); the per-partition account lists must be moved out-of-band first. |
 
 Existing account-to-partition assignments are **stable**: they are never re-balanced, only new accounts are placed.
 
@@ -559,16 +659,17 @@ Existing account-to-partition assignments are **stable**: they are never re-bala
 |----------|------------------------|
 | **No change** (steady state) | Partitioner sees no diff vs. DynamoDB. `accountsChanged=false` (and `partitionsChanged=false`). UpdateRootStack branch skipped. Permissions Lambda still runs and is a no-op on the resource policies. |
 | **New account, partition has room** | Partitioner assigns account to a partition that's still under 60 and writes to DynamoDB. `accountsChanged=true` (`partitionsChanged=false`, since count is unchanged), so the UpdateRootStack branch fires. The root-stack update re-renders `ConformancePackPartitions` with fresh `ExcludedAccounts` lists for every pack (the new account appears in the OTHER packs' exclusion lists so it only receives its own partition's pack). Permissions Lambda then calls `AddPermission` for the new account on the relevant clone. |
-| **New account, all partitions full** | Partitioner opens a new partition and writes to DynamoDB. `accountsChanged=true` (and `partitionsChanged=true`, logged for observability). UpdateRootStack branch fires; the StackSet update creates the new Lambda clones, the root re-renders `ConformancePackPartitions` which adds the new `ConformancePackP2`/`P3`. Permissions Lambda then adds permissions for all accounts in the new partition. |
+| **New account, all partitions full** | Partitioner opens a new partition and writes to DynamoDB. `accountsChanged=true` (and `partitionsChanged=true`, logged for observability). UpdateRootStack branch fires; the StackSet update creates the new Lambda clones, the root re-renders `ConformancePackPartitions` which adds the new `ConformancePackP2`/`P3`/`P4`. Permissions Lambda then adds permissions for all accounts in the new partition. |
 | **Account removed/suspended** | Partitioner removes the account from DynamoDB. `accountsChanged=true` (and `partitionsChanged=true` if the removal empties a *trailing* partition and drops `partitionCount`, otherwise `partitionsChanged=false`). UpdateRootStack branch fires; `ConformancePackPartitions` re-renders with the removed account stripped from every `ExcludedAccounts` list. Permissions Lambda calls `RemovePermission` for the stale account on the relevant clone. |
-| **>180 accounts** | Partitioner raises and the Custom Resource / Step Function step fails. CloudWatch alarm fires. Manual intervention required. |
+| **>240 accounts** | Partitioner raises `RuntimeError` from `assign_partitions` (no 5th partition slot) and the Custom Resource / Step Function step fails. CloudWatch alarm fires. Manual intervention required. |
+| **Response nearing the 4 KB CFN cap** | At ≥85% utilisation the partitioner logs a `WARNING` naming the measured size and the remediation path. Above the usable budget it fails the Custom Resource with that message as the CloudFormation `Reason`, *before* CloudFormation can reject the oversized body. |
 | **Step Function step fails** | Built-in retry (configurable). Execution history shows exactly which step failed. Next cron in 6h retries from scratch. |
 
 ### Deployment-Time vs. Post-Deployment
 
 | Phase | What runs | How |
 |-------|-----------|-----|
-| **Initial deploy** | `aws_account_partitioner` as CFN Custom Resource → outputs `PartitionCount` + `AccountsInP1/P2/P3` → StackSets and `ConformancePackPartitions` nested stack consume them → `aws_lambda_permissions_setup` runs as CFN Custom Resource in PartN | CloudFormation orchestrates everything |
+| **Initial deploy** | `aws_account_partitioner` as CFN Custom Resource → outputs `PartitionCount` + `AccountsInP1/P2/P3/P4` → StackSets and `ConformancePackPartitions` nested stack consume them → `aws_lambda_permissions_setup` runs as CFN Custom Resource in PartN | CloudFormation orchestrates everything |
 | **Post-deploy (cron)** | Step Function: partitioner → (optional StackSet update) → permissions sync | EventBridge → Step Function |
 
 ---
@@ -634,7 +735,7 @@ Existing account-to-partition assignments are **stable**: they are never re-bala
   Effect: Allow
 - Sid: AllowParentStackUpdate
   # Needed to re-render the ConformancePackPartitions nested stack
-  # when AccountsInP1/P2/P3 change.
+  # when AccountsInP1/P2/P3/P4 change.
   Action:
     - "cloudformation:UpdateStack"
     - "cloudformation:DescribeStacks"
@@ -686,14 +787,14 @@ pre-fix deployment".**
 - DynamoDB table exists with `DeletionProtectionEnabled=true`, PITR
   enabled, and one item per active account, all with `PartitionId=1`.
 - For every guardrail base Lambda `<org>gc*`:
-  - **Only** the base version exists — no `_p2` or `_p3` clones.
+  - **Only** the base version exists — no `_p2`, `_p3` or `_p4` clones.
   - `aws lambda get-policy` returns one statement per active
     account ID; policy size is well under 20 KB.
 - Exactly **one** `AWS::Config::OrganizationConformancePack` resource:
   `<org>-GC-CP-Guardrails`, with **no** `ExcludedAccounts`.
 - `InvokeAccountPartitioner` Custom-Resource `Data` shows:
   `PartitionCount=1`, `AccountsInP1=<CSV of all active account IDs>`,
-  `AccountsInP2=""`, `AccountsInP3=""`.
+  `AccountsInP2=""`, `AccountsInP3=""`, `AccountsInP4=""`.
 - Audit Manager custom framework deployed; each of the 37 controls
   has 1 `controlMappingSources` entry keying `Custom_<gc..>-conformance-pack`;
   `gc01_check_attestation_letter` also has 1.
@@ -730,7 +831,7 @@ greedily without opening partition 2 while there is still room.
   `AccountsInP1` lists all 60 IDs.
 - Step Function choice took the `MembershipChanged?=True` branch and
   executed `UpdateRootStack` (because `accountsChanged=True`).
-- Still **only base Lambdas** exist (no `_p2`/`_p3`); base Lambda
+- Still **only base Lambdas** exist (no `_p2`/`_p3`/`_p4`); base Lambda
   resource policies now list all 60 accounts.
 - Still **one** Conformance Pack, still no `ExcludedAccounts`.
 
@@ -754,7 +855,7 @@ there; StackSet update must create the `_p2` Lambda clones; nested
 - Partitioner output: `partitionCount=2`, `partitionsChanged=True`,
   `accountsChanged=True`.
 - For every guardrail: both `<org>gc*` *and* `<org>gc*_p2` Lambdas
-  exist. `_p3` clones still do **not** exist.
+  exist. `_p3` and `_p4` clones still do **not** exist.
 - `<org>gc*` resource policy lists 60 accounts; `<org>gc*_p2`
   resource policy lists 1 account.
 - **Two** Conformance Packs deployed:
@@ -779,7 +880,7 @@ capacity without opening P3.
 - DDB: **60 in P1, 60 in P2**.
 - Partitioner: `partitionCount=2`, `partitionsChanged=False`,
   `accountsChanged=True`.
-- Still only base + `_p2` clones (no `_p3`).
+- Still only base + `_p2` clones (no `_p3`/`_p4`).
 - Base Lambda resource policy: 60 accounts; `_p2` policy: 60 accounts.
 - Both packs' `ExcludedAccounts` lists are exact mirrors of the
   *other* partition (60 IDs each).
@@ -805,8 +906,9 @@ test this path without further account churn.
 **Success criteria:**
 - New DDB table created, 120 items, **60 in P1, 60 in P2**.
 - Partitioner Custom-Resource succeeds; `Data` includes both
-  `AccountsInP1` and `AccountsInP2`, `AccountsInP3=""`.
-- Base Lambdas + `_p2` clones created; no `_p3`.
+  `AccountsInP1` and `AccountsInP2`, `AccountsInP3=""`,
+  `AccountsInP4=""`.
+- Base Lambdas + `_p2` clones created; no `_p3`/`_p4`.
 - Two Conformance Packs deployed with correct `ExcludedAccounts`.
 - Audit Manager framework redeployed with 3 mapping sources per
   control.
@@ -826,20 +928,59 @@ wait for `Succeeded`.
 - DDB: **60 in P1, 60 in P2, 1 in P3**.
 - Partitioner: `partitionCount=3`, `partitionsChanged=True`,
   `accountsChanged=True`.
-- Base + `_p2` + `_p3` clones all exist for every guardrail.
+- Base + `_p2` + `_p3` clones all exist for every guardrail; no `_p4`.
 - `<org>gc*_p3` resource policy lists exactly 1 account.
 - **Three** Conformance Packs deployed; each one's
   `ExcludedAccounts` is the union of the other two partitions'
   members.
 
-#### T7 — Grow to 180 accounts (4 KB CFN cap during *update* path)
+#### T6b — Grow to 180 accounts (fill P3)
 
-**Goal:** Stress-test the partitioner Custom Resource at near-maximum
-load over the Step Function's `UpdateRootStack` update path.
-Confirms the combined `AccountsInP1/P2/P3` payload fits under the
-4096-byte CloudFormation Custom-Resource response cap.
+**Goal:** Confirm new accounts continue filling P3 to capacity
+without opening P4.
 
-**Account op:** Create **59** accounts (total = 180). Recommend doing
+**Account op:** Create **59** accounts (total = 180).
+
+**Steps:** Create the accounts, manually start the Step Function,
+wait for `Succeeded`.
+
+**Success criteria:**
+- DDB: **60 in P1, 60 in P2, 60 in P3**.
+- Partitioner: `partitionCount=3`, `partitionsChanged=False`,
+  `accountsChanged=True`.
+- Still no `_p4` clones; `AccountsInP4=""`.
+- Each of the three packs excludes the other two partitions'
+  120 members.
+
+#### T6c — Add 181st account (cross the 3→4 boundary)
+
+**Goal:** Boundary test for opening partition **4** — the final
+partition supported by this design.
+
+**Account op:** Create **1** account (total = 181).
+
+**Steps:** Create the account, manually start the Step Function,
+wait for `Succeeded`.
+
+**Success criteria:**
+- DDB: **60 in P1, 60 in P2, 60 in P3, 1 in P4**.
+- Partitioner: `partitionCount=4`, `partitionsChanged=True`,
+  `accountsChanged=True`.
+- `_p4` clones now exist for every guardrail; `<org>gc*_p4`
+  resource policy lists exactly 1 account.
+- **Four** Conformance Packs deployed; each one's
+  `ExcludedAccounts` is the union of the *other three* partitions'
+  members.
+- The 181st account receives **exactly one** pack (P4).
+
+#### T7 — Grow to 240 accounts (4 KB CFN cap during *update* path)
+
+**Goal:** Stress-test the partitioner Custom Resource at **maximum
+supported load** over the Step Function's `UpdateRootStack` update
+path. Confirms the combined `AccountsInP1/P2/P3/P4` payload fits
+under the 4096-byte CloudFormation Custom-Resource response cap.
+
+**Account op:** Create **59** accounts (total = 240). Recommend doing
 this in **one** large batch and triggering the Step Function **once**
 afterward, rather than after every account, to compress the
 ~30 min update cascade into a single execution.
@@ -852,12 +993,15 @@ afterward, rather than after every account, to compress the
    CloudWatch logs for the line where it logs the response body).
 
 **Success criteria:**
-- DDB: **60 in P1, 60 in P2, 60 in P3**.
+- DDB: **60 in P1, 60 in P2, 60 in P3, 60 in P4**.
 - Partitioner Custom-Resource response body **< 4096 bytes**.
-  (180 accounts × ~14 B + envelope ≈ 2.4 KB — well within the cap.)
-- All three sets of clones exist; resource-policy sizes for each
+  (Measured: **3737 bytes** at 240 accounts — roughly 350 bytes of
+  headroom. Expect a WARNING log line, because this exceeds the
+  85 % utilisation threshold; that warning is expected at full scale
+  and is not a failure.)
+- All four sets of clones exist; resource-policy sizes for each
   clone remain well under 20 KB.
-- All 180 accounts are covered by exactly one of the three packs.
+- All 240 accounts are covered by exactly one of the four packs.
 
 #### T8 — Account-stability spot check (no account ops)
 
@@ -878,7 +1022,7 @@ re-balanced** existing assignments — only placed new accounts.
 
 ---
 
-### Phase 3 — Redeploy validation at 3 partitions (no account changes)
+### Phase 3 — Redeploy validation at 4 partitions (no account changes)
 
 #### T9 — Tear-down + redeploy with DynamoDB retained
 
@@ -903,10 +1047,10 @@ subsequent `make deploy` must preserve every prior assignment.
   the live org list).
 - No Lambda resource-policy churn (the permissions Lambda finds
   every account already permitted on the correct clone).
-- All three packs come back with the same `ExcludedAccounts` they
+- All four packs come back with the same `ExcludedAccounts` they
   had before tear-down.
 
-#### T10 — Tear-down + clear DDB + redeploy at 180 (initial deploy at 3 partitions)
+#### T10 — Tear-down + clear DDB + redeploy at 240 (initial deploy at 4 partitions)
 
 **Goal:** Validate the **initial-deploy code path at maximum scale**
 — specifically the 4 KB Custom-Resource response cap during the
@@ -972,70 +1116,87 @@ branch entirely, and that the permissions Lambda is a no-op.
   `RemovePermission` calls.
 - Execution duration < 30 s.
 
-#### T12 — Empty non-trailing partition P1 (`partitionCount` stays at 3)
+#### T12 — Empty non-trailing partition P1 (`partitionCount` stays at 4)
 
 **Goal:** Validate the *non-trailing* emptying rule — a non-trailing
 empty partition does **not** collapse `partitionCount`; the
-"hole" is preserved so existing P2/P3 accounts keep their
+"hole" is preserved so existing P2/P3/P4 accounts keep their
 assignments.
 
 **Account op:** Close **all 60 accounts in P1** (use the projection
-above to get the list). Total active: 180 → 120.
+above to get the list). Total active: 240 → 180.
 
 **Steps:**
 1. `aws organizations close-account --account-id <id>` for each P1
    member. Wait ~1–2 min for `Status='SUSPENDED'` to propagate
    across all of them.
 2. Confirm `list-accounts --query "Accounts[?Status=='ACTIVE'].Id"`
-   returns exactly 120 IDs.
+   returns exactly 180 IDs.
 3. Manually start the Step Function; wait for `Succeeded`.
 
 **Success criteria:**
 - DDB: **0 items with `PartitionId=1`**, 60 with `PartitionId=2`,
-  60 with `PartitionId=3`. Total items: 130.
-- Partitioner output: **`partitionCount=3`** (unchanged because P3
+  60 with `PartitionId=3`, 60 with `PartitionId=4`.
+- Partitioner output: **`partitionCount=4`** (unchanged because P4
   is still occupied), `partitionsChanged=False`,
   `accountsChanged=True`.
-- All three sets of Lambda clones **still exist** (the StackSet is
+- All four sets of Lambda clones **still exist** (the StackSet is
   not asked to destroy any clones because `PartitionCount` did not
   change).
 - `<org>gc*` (base/P1) resource policy is now **empty** (or holds
   only the AddPermission sids that were never removed — verify the
   permissions Lambda issued `RemovePermission` for all 60).
-- **All three** Conformance Packs are still deployed.
+- **All four** Conformance Packs are still deployed.
   - `<org>-GC-CP-Guardrails` (P1) has no live targets but is **not
     deleted** — `ConformancePackP1`'s `HasAccountsInP1` condition is
     based on `AccountsInP1` being non-empty; with `AccountsInP1=""`
     the pack is **destroyed**. (Either outcome is acceptable as long
-    as no account is multi-targeted; verify by spot-checking a P2
-    and a P3 account in the Config console — each should still show
-    exactly one pack.)
-- The T7-recorded P2 and P3 account IDs still have their
+    as no account is multi-targeted; verify by spot-checking a P2,
+    a P3 and a P4 account in the Config console — each should still
+    show exactly one pack.)
+- The T7-recorded P2, P3 and P4 account IDs still have their
   original `PartitionId` (stability across the scale-down).
 
-#### T13 — Empty trailing partition P3 (collapse `partitionCount` to 2)
+#### T13 — Empty trailing partitions P4 then P3 (collapse `partitionCount` to 2)
 
 **Goal:** Validate the *trailing* collapse rule — when the
 highest-numbered partition empties, `partitionCount` drops to the
-new highest occupied partition.
+new highest occupied partition. Run it twice to confirm the
+collapse is repeatable, not a one-off 4→3 special case.
 
-**Account op:** Close **all 60 accounts in P3**. Total active: 120 → 60.
+**Account op:** Close **all 60 accounts in P4** (240 → 180 active
+became 180 → 120 here), then **all 60 accounts in P3**
+(120 → 60 active).
 
-**Steps:**
+**Steps (round 1 — collapse 4 → 3):**
+1. Close each P4 account (`close-account`).
+2. Wait for `SUSPENDED` propagation; confirm 120 active accounts.
+3. Manually start the Step Function; wait for `Succeeded`.
+
+**Round 1 success criteria:**
+- DDB: 0 items in P1, 60 in P2, 60 in P3, **0 items with
+  `PartitionId=4`**.
+- Partitioner output: **`partitionCount=3`** (collapsed from 4
+  because P4 was trailing), `partitionsChanged=True`,
+  `accountsChanged=True`.
+- StackSet update **destroys** every `<org>gc*_p4` Lambda clone.
+- `ConformancePackP4` is **destroyed** by the nested-stack update.
+
+**Steps (round 2 — collapse 3 → 2):**
 1. Close each P3 account (`close-account`).
 2. Wait for `SUSPENDED` propagation; confirm 60 active accounts.
 3. Manually start the Step Function; wait for `Succeeded`.
 
-**Success criteria:**
-- DDB: 0 items in P1, 60 in P2, **0 items with `PartitionId=3`**.
-  Total items: 70.
+**Round 2 success criteria:**
+- DDB: 0 items in P1, 60 in P2, **0 items with `PartitionId=3`**,
+  0 in P4.
 - Partitioner output: **`partitionCount=2`** (collapsed from 3
-  because P3 was trailing), `partitionsChanged=True`,
+  because P3 was now trailing), `partitionsChanged=True`,
   `accountsChanged=True`.
 - StackSet update **destroys** every `<org>gc*_p3` Lambda clone.
 - `ConformancePackP3` is **destroyed** by the nested-stack update.
 - `<org>gc*_p2` resource policy still lists its 60 P2 accounts —
-  unchanged by the trailing collapse.
+  unchanged by either trailing collapse.
 - P2 account → partition mapping is unchanged (stability).
 
 ---
@@ -1046,8 +1207,8 @@ new highest occupied partition.
 
 **Goal:** Re-validate the 1-partition initial-deploy path with a
 moderate (not tiny) account count, and confirm that a **clear-DDB
-redeploy** re-denses the previously-sparse P1/P2/P3 layout back into
-a dense P1.
+redeploy** re-denses the previously-sparse P1/P2/P3/P4 layout back
+into a dense P1.
 
 **Account op:** None.
 
@@ -1060,7 +1221,7 @@ a dense P1.
 - DDB has exactly **60 items, all `PartitionId=1`** (re-densed —
   the previously-empty "P1 hole" from T12 has been backfilled by
   the partitioner reassigning from scratch).
-- Only base `<org>gc*` Lambdas exist; no `_p2` or `_p3` clones.
+- Only base `<org>gc*` Lambdas exist; no `_p2`, `_p3` or `_p4` clones.
 - Only **one** Conformance Pack: `<org>-GC-CP-Guardrails`, no
   `ExcludedAccounts`.
 - Steady-state behaviour from this point is **indistinguishable from

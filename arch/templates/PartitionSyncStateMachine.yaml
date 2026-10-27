@@ -5,7 +5,7 @@ Description: >-
   navigated alongside the rest of the deployment template. The state
   machine invokes aws_account_partitioner, optionally calls UpdateStack
   on the root (when accountsChanged is true) to cascade fresh
-  AccountsInP1/P2/P3 and PartitionCount through the rest of the stack,
+  AccountsInP1/P2/P3/P4 and PartitionCount through the rest of the stack,
   then invokes aws_lambda_permissions_setup. Full design: see
   doc/RESOURCE_POLICY_FIX.md.
 
@@ -23,7 +23,7 @@ Parameters:
     Description: >-
       Name of the root CloudFormation stack. The state machine calls
       cloudformation:UpdateStack against this stack to cascade fresh
-      AccountsInP1/P2/P3 values into the ConformancePackStack nested stack
+      AccountsInP1/P2/P3/P4 values into the ConformancePackStack nested stack
       and PartitionCount into the Part1-8 StackSets whenever the
       partitioner reports membership or partition-count changes. Nested
       stacks cannot be updated directly, so the state machine has to
@@ -264,7 +264,7 @@ Resources:
             "UpdateRootStack": {
               "Type": "Task",
               "Resource": "arn:aws:states:::aws-sdk:cloudformation:updateStack",
-              "Comment": "Bumps InvokeUpdate on the root stack so the Custom::AccountPartitioner re-runs and refreshes !GetAtt AccountsInP1/P2/P3 (which feed the ConformancePackStack nested stack) and PartitionCount (which feeds the Part1-8 StackSets). UsePreviousTemplate=true reuses the previous template body; parameter values are pinned by the array built in BuildUpdateParams, since UpdateStack resets any omitted parameter to its template default.",
+              "Comment": "Bumps InvokeUpdate on the root stack so the Custom::AccountPartitioner re-runs and refreshes !GetAtt AccountsInP1/P2/P3/P4 (which feed the ConformancePackStack nested stack) and PartitionCount (which feeds the Part1-8 StackSets). UsePreviousTemplate=true reuses the previous template body; parameter values are pinned by the array built in BuildUpdateParams, since UpdateStack resets any omitted parameter to its template default.",
               "Parameters": {
                 "StackName": "${RootStackName}",
                 "UsePreviousTemplate": true,

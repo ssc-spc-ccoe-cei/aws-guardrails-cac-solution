@@ -5,9 +5,9 @@ This document describes how to add new rules to the solution.
 > **Partition-aware deployment.** Since the resource-policy size fix
 > (see [`RESOURCE_POLICY_FIX.md`](./RESOURCE_POLICY_FIX.md) and
 > [`CONFORMANCE_PACK_IMPLEMENTATION.md`](./CONFORMANCE_PACK_IMPLEMENTATION.md)),
-> every guardrail Lambda may exist in **up to three partition variants**
-> — `<org>gcXX_check_<name>`, `<org>gcXX_check_<name>_p2`, and
-> `<org>gcXX_check_<name>_p3` — to keep each clone's resource-based
+> every guardrail Lambda may exist in **up to four partition variants**
+> — `<org>gcXX_check_<name>`, `…_p2`, `…_p3`, and
+> `…_p4` — to keep each clone's resource-based
 > policy under Lambda's 20 KB limit at >60 accounts. The instructions
 > below were updated accordingly.
 
@@ -21,12 +21,12 @@ This document describes how to add new rules to the solution.
   - **Guardrail** lambdas start with `gcXX_check_` where `XX` is the
     two-digit guardrail family number (`01` through `13`).
 
-## Step 1 — Add the Lambda (base + two partition clones) to a `Part*.yaml`
+## Step 1 — Add the Lambda (base + three partition clones) to a `Part*.yaml`
 
 Pick the `AuditAccountPreRequisitesPart1.yaml` … `Part8.yaml` template
 that owns the guardrail family (e.g. `gc02_*` Lambdas live in
 `Part1.yaml` alongside the other `gc01`/`gc02` rules). Inside it,
-declare **three** Lambda resources sharing the same code package and
+declare **four** Lambda resources sharing the same code package and
 execution role — the partition conditions are already declared at the
 top of every Part template:
 
@@ -34,16 +34,24 @@ top of every Part template:
 Conditions:
   # ... existing conditions ...
   CreatePartition2: !Not [!Equals [!Ref PartitionCount, "1"]]
-  CreatePartition3: !Equals [!Ref PartitionCount, "3"]
+  # CreatePartition3 must be true for PartitionCount 3 AND 4, otherwise
+  # raising the count to 4 would delete every _p3 clone.
+  CreatePartition3: !Or
+    - !Equals [!Ref PartitionCount, "3"]
+    - !Equals [!Ref PartitionCount, "4"]
+  CreatePartition4: !Equals [!Ref PartitionCount, "4"]
   IsAuditAccountAndCreatePartition2: !And
     - !Condition IsAuditAccount
     - !Condition CreatePartition2
   IsAuditAccountAndCreatePartition3: !And
     - !Condition IsAuditAccount
     - !Condition CreatePartition3
+  IsAuditAccountAndCreatePartition4: !And
+    - !Condition IsAuditAccount
+    - !Condition CreatePartition4
 ```
 
-Then add the three Lambda resources (example using a hypothetical
+Then add the four Lambda resources (example using a hypothetical
 `gc02_check_new_thing`):
 
 ```yaml
@@ -79,19 +87,32 @@ GC02CheckNewThingLambdaP3:
   Properties:
     FunctionName: !Sub "${OrganizationName}gc02_check_new_thing_p3"
     # ...identical to the base resource above except FunctionName...
+
+GC02CheckNewThingLambdaP4:
+  Condition: IsAuditAccountAndCreatePartition4
+  Type: AWS::Lambda::Function
+  Properties:
+    FunctionName: !Sub "${OrganizationName}gc02_check_new_thing_p4"
+    # ...identical to the base resource above except FunctionName...
 ```
 
 Rules of thumb:
 
-- **Code path is identical** for all three clones — they share the
+- **Code path is identical** for all four clones — they share the
   build output directory.
 - **IAM role is shared** — every clone references the same
   `GCDefaultLambdaExecutionRole` (or `GCLambdaExecutionRole2` for the
   privileged Lambdas), so any new permissions added in Step 5 cover
-  all three automatically.
+  all four automatically.
 - **Conditions are pre-declared.** Do not redefine them — every
   `Part*.yaml` already carries `CreatePartition2`, `CreatePartition3`,
-  and the two `IsAuditAccountAndCreatePartition*` composites.
+  `CreatePartition4`, and the three `IsAuditAccountAndCreatePartition*`
+  composites.
+- **All four clones must be added together.** `tools/validate_parts.py`
+  enforces that every guardrail has exactly one resource in each of the
+  four partition slots across the Part templates; omitting the `_p4`
+  clone will fail validation and would leave accounts in partition 4
+  with a Config rule pointing at a non-existent Lambda.
 - Adding a brand-new `Part9.yaml` (rather than extending an existing
   Part) requires copying the same `PartitionCount` parameter +
   conditions block, plus a new `AWS::CloudFormation::StackSet`
@@ -113,10 +134,11 @@ GUARDRAIL_LAMBDA_SUFFIXES = [
 
 That single entry causes `aws_lambda_permissions_setup` to sync the
 resource-based policy on `<org>gc02_check_new_thing`,
-`<org>gc02_check_new_thing_p2`, and `<org>gc02_check_new_thing_p3`
+`<org>gc02_check_new_thing_p2`, `<org>gc02_check_new_thing_p3`, and
+`<org>gc02_check_new_thing_p4`
 for every account in the corresponding DynamoDB partition. **Do not
-add `_p2` or `_p3` entries here** — the partition fan-out is handled
-inside the Lambda.
+add `_p2`, `_p3` or `_p4` entries here** — the partition fan-out is
+handled inside the Lambda.
 
 ## Step 3 — Add the Config rule to `ConformancePack.yaml`
 
@@ -180,7 +202,7 @@ If the Lambda needs an API that isn't already allowed, there are
 - **Execute-as role (audit account).**
   `GCDefaultLambdaExecutionRole` in
   `arch/templates/AuditAccountPreRequisitesPart1.yaml`. This is the
-  role every guardrail Lambda (including all `_p2` / `_p3` clones)
+  role every guardrail Lambda (including all `_p2` / `_p3` / `_p4` clones)
   *runs as* in the audit account. Update the embedded
   `GCDefaultLambdaExecutionRolePolicy` statement here for actions the
   Lambda performs against audit-account resources or the org-level
@@ -199,7 +221,7 @@ If the Lambda needs an API that isn't already allowed, there are
   `…MarketPlacePolicy` /
   `…InTransitEncryptionPolicy` for a narrowly-scoped grant.
 
-Because all three partition clones share the same execute-as role,
+Because all four partition clones share the same execute-as role,
 adding a permission once covers the base Lambda and both clones.
 
 **Keep `doc/PERMISSIONS.md` in sync.** Any action added to either of

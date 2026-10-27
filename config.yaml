@@ -26,7 +26,9 @@ Parameters:
   BGA3: "N/A"
   BGA4: "N/A"
   # Account Partitioner Lambda tuning (defaults match main.yaml/root.yaml).
-  # Increase MaxPartitions if the org grows beyond MaxAccountsPerPartition x MaxPartitions accounts.
+  # Max supported = MaxAccountsPerPartition x MaxPartitions (60 x 4 = 240).
+  # MaxPartitions is hard-capped at 4 by the templates and the 4 KB
+  # CloudFormation Custom Resource response limit - see doc/RESOURCE_POLICY_FIX.md.
   MaxAccountsPerPartition: 60
-  MaxPartitions: 3
+  MaxPartitions: 4
   
