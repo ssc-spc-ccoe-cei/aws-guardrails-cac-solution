@@ -21,6 +21,10 @@ AUDIT_ACCOUNT := $(shell yq ".Parameters.AuditAccountID" ./$(CONFIG_FILE))
 PARAMETERS_STRING := jq -r '.Parameters[] | [ .ParameterKey, .ParameterValue ] | "\"\(.[0])\"=\"\(.[1])\""' ./build/params.json | tr "\n" " "
 ORGANIZATION_NAME := $(shell yq ".Parameters.OrganizationName" ./$(CONFIG_FILE))
 ORGANIZATION_ID := $(shell yq ".Parameters.OrganizationId" ./$(CONFIG_FILE))
+# Optional CloudFormation service role (e.g. ${OrganizationName}CloudFormationDeploymentRole).
+# When set, `aws cloudformation deploy` performs all resource operations under this
+# role instead of the caller's credentials.
+CFN_ROLE_ARN ?=
 SS_PARAMS := ParameterKey="AuditAccountID",UsePreviousValue=true ParameterKey="OrganizationName",UsePreviousValue=true ParameterKey="RolePrefix",UsePreviousValue=true
 CLOUD_SHELL := $(shell echo $$(if [ "$$(whoami)" = "cloudshell-user" ]; then echo true; else echo false; fi))
 
@@ -149,12 +153,14 @@ deploy-stack:
 		API_URL=$$(echo "$$RESPONSE" | jq -r '.api_url' -) ; \
 		EVIDENCE_BUCKET_NAME=$$(echo "$$RESPONSE" | jq -r '.evidence_bucket_name' -) ; \
 		UUID=$$(uuidgen) ; \
+		if [ -n "$(CFN_ROLE_ARN)" ]; then ROLE_ARG=(--role-arn "$(CFN_ROLE_ARN)"); else ROLE_ARG=(); fi ; \
 		aws cloudformation deploy \
 			--template-file ./arch/templates/build/root.yaml \
 			--stack-name "$(STACK)-$(ENV_NAME)" \
 			--parameter-overrides $(shell $(PARAMETERS_STRING)) "PipelineBucket"="$(PIPELINE_BUCKET)" "ApiUrl"="$$API_URL" "ApiKey"="$$API_KEY" "DestBucketName"="$$EVIDENCE_BUCKET_NAME" "InvokeUpdate"="$$UUID" "DeployVersion"="$(DEPLOY_VERSION)" \
 			--s3-bucket $(PIPELINE_BUCKET) \
 			--capabilities CAPABILITY_NAMED_IAM \
+			"$${ROLE_ARG[@]}" \
 			--disable-rollback; \
 		status=$$?; \
 		if [ $$status -ne 0 ]; then \
