@@ -153,7 +153,7 @@ The following actions are allowed across various AWS services:
 `${RolePrefix}default_assessment_role` (logical id `GCDefaultLambdaExecutionRole`)
 
 ## Description
-The **execute-as** role every guardrail Lambda runs as in the audit account, including all `_p2` / `_p3` partition clones. Defined in `arch/templates/AuditAccountPreRequisitesPart1.yaml`. Distinct from the two roles above, which are the **assume-into** identities created in each member account by `OrgRoleGenerator.yaml`; this role's only cross-account permission is `sts:AssumeRole` into those two roles.
+The **execute-as** role every guardrail Lambda runs as in the audit account, including all `_p2` / `_p3` / `_p4` partition clones. Defined in `arch/templates/AuditAccountPreRequisitesPart1.yaml`. Distinct from the two roles above, which are the **assume-into** identities created in each member account by `OrgRoleGenerator.yaml`; this role's only cross-account permission is `sts:AssumeRole` into those two roles.
 
 ### TrustPrincipal
 - `arn:aws:iam::${AuditAccountID}:root`

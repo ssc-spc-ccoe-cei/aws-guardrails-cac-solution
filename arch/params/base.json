@@ -73,6 +73,6 @@
   },
   {
     "ParameterKey": "MaxPartitions",
-    "ParameterValue": "3"
+    "ParameterValue": "4"
   }
 ]

@@ -215,21 +215,21 @@ Parameters:
       assumption changes.
   MaxPartitions:
     Type: Number
-    Default: 3
+    Default: 4
     MinValue: 1
-    MaxValue: 3
+    MaxValue: 4
     Description: >-
       Maximum number of partitions the Account Partitioner Lambda is allowed
-      to create. Hard-capped at 3 because the AuditAccountPreRequisitesPart*
+      to create. Hard-capped at 4 because the AuditAccountPreRequisitesPart*
       templates and ConformancePackPartitions only define conditional clones for
-      partitions 1, 2, and 3. Total addressable accounts =
-      MaxAccountsPerPartition x MaxPartitions (default 60 x 3 = 180).
+      partitions 1, 2, 3, and 4. Total addressable accounts =
+      MaxAccountsPerPartition x MaxPartitions (default 60 x 4 = 240).
   RootStackName:
     Type: String
     Description: >-
       Name of the root CloudFormation stack (passed in from root.yaml). The
       partition-sync Step Function calls cloudformation:UpdateStack against
-      this stack to cascade fresh AccountsInP1/P2/P3 values into the
+      this stack to cascade fresh AccountsInP1/P2/P3/P4 values into the
       ConformancePackStack nested stack and PartitionCount into the Part1-8
       StackSets when the partitioner reports accountsChanged=true. Nested
       stacks cannot be updated directly, so the state machine has to target
@@ -1680,13 +1680,13 @@ Resources:
   #######################################################
   # Part 4 - Conformance Pack (partitioned)
   #######################################################
-  # Up to 3 Organization Conformance Packs are deployed, one per
+  # Up to 4 Organization Conformance Packs are deployed, one per
   # partition produced by ``aws_account_partitioner``. Each pack reuses
   # ConformancePack.yaml in S3 with a different ``PartitionSuffix``
-  # (``""`` / ``"_p2"`` / ``"_p3"``) so its Config rules invoke the
-  # matching guardrail Lambda clones. The ``ExcludedAccounts`` list on
-  # each pack guarantees every org account receives exactly one pack —
-  # the one for the partition it is assigned to. See
+  # (``""`` / ``"_p2"`` / ``"_p3"`` / ``"_p4"``) so its Config rules
+  # invoke the matching guardrail Lambda clones. The ``ExcludedAccounts``
+  # list on each pack guarantees every org account receives exactly one
+  # pack — the one for the partition it is assigned to. See
   # ConformancePackPartitions.yaml for the full set of resources and
   # conditions.
   ConformancePackStack:
@@ -1711,6 +1711,7 @@ Resources:
         AccountsInP1: !GetAtt InvokeAccountPartitioner.AccountsInP1
         AccountsInP2: !GetAtt InvokeAccountPartitioner.AccountsInP2
         AccountsInP3: !GetAtt InvokeAccountPartitioner.AccountsInP3
+        AccountsInP4: !GetAtt InvokeAccountPartitioner.AccountsInP4
         # Wiring / packaging
         PipelineBucket: !Ref PipelineBucket
         DeployVersion: !Ref DeployVersion

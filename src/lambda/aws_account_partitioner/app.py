@@ -2,7 +2,8 @@
 
 Manages partition state for guardrail Lambda cloning. Partitions organize
 accounts into groups of ≤60 so each Lambda clone's resource-based policy
-stays under the 20 KB limit.
+stays under the 20 KB limit. Up to 4 partitions are supported
+(4 x 60 = 240 addressable accounts).
 
 Invocation contexts:
   - CloudFormation Custom Resource (Create/Update/Delete)
@@ -32,7 +33,33 @@ logger.setLevel(logging.INFO)
 # Configuration from environment variables
 PARTITION_TABLE_NAME = os.environ.get("PARTITION_TABLE_NAME", "gc-guardrails-partition-state")
 MAX_ACCOUNTS_PER_PARTITION = int(os.environ.get("MAX_ACCOUNTS_PER_PARTITION", "60"))
-MAX_PARTITIONS = int(os.environ.get("MAX_PARTITIONS", "3"))
+MAX_PARTITIONS = int(os.environ.get("MAX_PARTITIONS", "4"))
+
+# CloudFormation hard-caps the Custom Resource response body at 4096
+# bytes (the whole JSON envelope, not just ``Data``). The per-partition
+# ``AccountsInPx`` strings are by far the largest contributor, so the
+# response is measured before it is sent and the resource is failed with
+# an explicit, actionable message rather than being silently truncated /
+# rejected by the S3 pre-signed PUT.
+#
+# Budget at the supported maximum: 4 partitions x 60 accounts = 240 IDs
+# at 13 bytes each (12 digits + separator). Measured end-to-end response
+# body at that size is ~3.75 KB, i.e. ~350 bytes under the cap. That thin
+# margin is exactly why MAX_PARTITIONS is capped at 4 — a 5th partition
+# would not fit (see doc/RESOURCE_POLICY_FIX.md).
+CFN_RESPONSE_MAX_BYTES = 4096
+
+# Headroom reserved below the hard cap so the guard trips before
+# CloudFormation does, leaving room for a readable failure Reason. Kept
+# deliberately small: at the supported maximum of 240 accounts the body
+# is already ~3.75 KB, so a large margin would reject a supported
+# configuration.
+CFN_RESPONSE_SAFETY_MARGIN_BYTES = 128
+
+# Emit a warning once the response passes this fraction of the hard cap,
+# so operators get advance notice in CloudWatch before a future account
+# onboarding actually breaks the deployment.
+CFN_RESPONSE_WARN_RATIO = 0.85
 
 
 def get_active_accounts():
@@ -220,8 +247,8 @@ def build_partition_account_lists(state, partition_count):
 
     The returned dict has an entry for every partition slot from 1 to
     ``MAX_PARTITIONS`` (not just the populated ones) so the caller can
-    safely look up ``AccountsInP1`` / ``AccountsInP2`` / ``AccountsInP3``
-    regardless of how many partitions are currently in use. Slots above
+    safely look up ``AccountsInP1`` ... ``AccountsInP4`` regardless of
+    how many partitions are currently in use. Slots above
     ``partition_count`` map to empty lists.
 
     :param state: dict mapping AccountId -> PartitionId
@@ -324,9 +351,34 @@ def send(event, context, response_status, response_data, physical_resource_id=No
     response_url = event["ResponseURL"]
     logger.info("Response URL: %s", response_url)
 
-    response_body = {
+    json_response_body = json.dumps(
+        _build_response_body(
+            event, context, response_status, response_data, physical_resource_id, no_echo, reason
+        )
+    )
+    logger.info("Response body: %s", json_response_body)
+    logger.info("Response body size: %d bytes (CloudFormation limit: %d)",
+                len(json_response_body.encode("utf-8")), CFN_RESPONSE_MAX_BYTES)
+
+    headers = {"content-type": "", "content-length": str(len(json_response_body))}
+    try:
+        response = http.request("PUT", response_url, headers=headers, body=json_response_body)
+        logger.info("Status code: %s", response.status)
+    except (ValueError, TypeError, urllib3.exceptions.HTTPError) as err:
+        logger.error("send(..) failed executing http.request(..): %s", err)
+
+
+def _build_response_body(event, context, response_status, response_data,
+                         physical_resource_id=None, no_echo=False, reason=None):
+    """Builds the CloudFormation Custom Resource response envelope."""
+    reason = reason or f"See the details in CloudWatch Log Stream: {context.log_stream_name}"
+    # Keep the Reason bounded so a long failure message can never be the
+    # thing that pushes the response over CloudFormation's 4 KB cap.
+    if len(reason) > 1024:
+        reason = reason[:1021] + "..."
+    return {
         "Status": response_status,
-        "Reason": reason or f"See the details in CloudWatch Log Stream: {context.log_stream_name}",
+        "Reason": reason,
         "PhysicalResourceId": physical_resource_id or context.log_stream_name,
         "StackId": event["StackId"],
         "RequestId": event["RequestId"],
@@ -335,15 +387,53 @@ def send(event, context, response_status, response_data, physical_resource_id=No
         "Data": response_data,
     }
 
-    json_response_body = json.dumps(response_body)
-    logger.info("Response body: %s", json_response_body)
 
-    headers = {"content-type": "", "content-length": str(len(json_response_body))}
-    try:
-        response = http.request("PUT", response_url, headers=headers, body=json_response_body)
-        logger.info("Status code: %s", response.status)
-    except (ValueError, TypeError, urllib3.exceptions.HTTPError) as err:
-        logger.error("send(..) failed executing http.request(..): %s", err)
+def assert_cfn_response_fits(event, context, response_data):
+    """Fails fast if the Custom Resource response would exceed CloudFormation's cap.
+
+    CloudFormation rejects Custom Resource responses larger than
+    ``CFN_RESPONSE_MAX_BYTES`` (4096). Without this guard the symptom is
+    an opaque ``Response object is too long`` / stack-timeout failure
+    well after the partitioner has already written to DynamoDB, which is
+    painful to diagnose. Measuring here lets us fail the resource with an
+    explicit message naming the cause and the remediation options.
+
+    :param event: the CloudFormation Custom Resource event
+    :param context: the Lambda context object
+    :param response_data: the ``Data`` dict about to be returned
+    :raises RuntimeError: when the serialized body exceeds the budget
+    """
+    body = json.dumps(_build_response_body(event, context, SUCCESS, response_data))
+    size = len(body.encode("utf-8"))
+    budget = CFN_RESPONSE_MAX_BYTES - CFN_RESPONSE_SAFETY_MARGIN_BYTES
+
+    logger.info("Custom Resource response body is %d bytes (budget %d, hard limit %d)",
+                size, budget, CFN_RESPONSE_MAX_BYTES)
+
+    if size <= budget:
+        if size >= CFN_RESPONSE_MAX_BYTES * CFN_RESPONSE_WARN_RATIO:
+            logger.warning(
+                "Custom Resource response body is %d bytes — within %d%% of "
+                "CloudFormation's %d byte hard limit. The organization is "
+                "approaching the maximum this design can carry inline "
+                "(%d partitions x %d accounts).",
+                size, int(CFN_RESPONSE_WARN_RATIO * 100), CFN_RESPONSE_MAX_BYTES,
+                MAX_PARTITIONS, MAX_ACCOUNTS_PER_PARTITION,
+            )
+        return
+
+    account_total = sum(
+        len([a for a in str(v).split(",") if a])
+        for k, v in response_data.items()
+        if k.startswith("AccountsInP")
+    )
+    raise RuntimeError(
+        f"Account partitioner response is too large for CloudFormation: "
+        f"{size} bytes for {account_total} account(s) across "
+        f"{MAX_PARTITIONS} partition(s), which exceeds the usable budget of "
+        f"{budget} bytes (CloudFormation hard limit is {CFN_RESPONSE_MAX_BYTES} "
+        f"bytes per Custom Resource response)."
+    )
 
 
 def _build_cfn_response_data(result):
@@ -355,9 +445,10 @@ def _build_cfn_response_data(result):
     with ``Fn::Split`` / ``Fn::Join``.
 
     The total response body is capped at 4 KB by CloudFormation; with
-    ``MAX_ACCOUNTS_PER_PARTITION * MAX_PARTITIONS = 180`` account IDs at
-    13 bytes each (12 digits + comma), the combined payload stays well
-    under that limit.
+    ``MAX_ACCOUNTS_PER_PARTITION * MAX_PARTITIONS = 240`` account IDs at
+    13 bytes each (12 digits + comma), the combined payload stays under
+    that limit with ~500 bytes of headroom. ``assert_cfn_response_fits``
+    enforces this at runtime.
     """
     accounts_in_partition = result["accountsInPartition"]
     data = {
@@ -402,6 +493,9 @@ def lambda_handler(event, context):
         try:
             result = run_partitioner()
             response_data = _build_cfn_response_data(result)
+            # Fail loudly (and legibly) rather than letting CloudFormation
+            # reject an oversized response after state has been written.
+            assert_cfn_response_fits(event, context, response_data)
             send(event, context, SUCCESS, response_data)
         except Exception as e:
             logger.error("Partitioner failed: %s", e)

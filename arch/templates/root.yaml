@@ -100,14 +100,14 @@ Parameters:
       each guardrail Lambda's resource-based policy under the 20 KB IAM limit.
   MaxPartitions:
     Type: Number
-    Default: 3
+    Default: 4
     MinValue: 1
-    MaxValue: 3
+    MaxValue: 4
     Description: >-
       Max number of partitions the Account Partitioner Lambda can create.
-      Hard-capped at 3 because the AuditAccountPreRequisitesPart* templates
+      Hard-capped at 4 because the AuditAccountPreRequisitesPart* templates
       and ConformancePackPartitions only define conditional clones for partitions 1,
-      2, and 3. Total addressable accounts = MaxAccountsPerPartition x
+      2, 3, and 4. Total addressable accounts = MaxAccountsPerPartition x
       MaxPartitions.
 
 Resources:
@@ -144,8 +144,8 @@ Resources:
         # knows which stack to call cloudformation:UpdateStack against.
         # Nested stacks cannot be updated directly, so the state machine
         # bumps InvokeUpdate on the root to cascade new
-        # AccountsInP1/P2/P3 values into the ConformancePackStack nested stack
-        # and the Part1-8 StackSets.
+        # AccountsInP1/P2/P3/P4 values into the ConformancePackStack nested
+        # stack and the Part1-8 StackSets.
         RootStackName: !Ref AWS::StackName
 
 
