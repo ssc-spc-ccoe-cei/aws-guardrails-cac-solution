@@ -17,7 +17,6 @@ Parameters:
   EvidenceBucketName: ""
   AWSConfigConformsBucketName: ""
   ExecutionName: ""
-  DeployRoles: "false"
   # Account Partitioner Lambda tuning (defaults match main.yaml/root.yaml).
   # Max supported = MaxAccountsPerPartition x MaxPartitions (60 x 4 = 240).
   # MaxPartitions is hard-capped at 4 by the templates and the 4 KB
