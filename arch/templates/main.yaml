@@ -30,7 +30,6 @@ Metadata:
           default: Optional Parameters
         Parameters:
           - AWSConfigConformsBucketName
-          - DeployRoles
           - DeployVersion
           - DestBucketName
           - EvidenceBucketName
@@ -79,8 +78,6 @@ Metadata:
         default: Name for the S3 AWS Config Conformance Pack assets bucket
       DestBucketName:
         default: Name of the S3 bucket (leave as is unless instructed otherwise)
-      DeployRoles:
-        default: True/ False flag used to create GC Guardrails Roles (default - False)
       DeployVersion:
         default: The version to deploy
       GC04EnterpriseMonitoringIAMRoleName:
@@ -191,10 +188,6 @@ Parameters:
   GC04EnterpriseMonitoringIAMTrustedPrincipal:
     Type: String
     Default: "arn:aws:iam::939755092653:root"
-  DeployRoles:
-    Type: String
-    Default: false
-    AllowedValues: [true, false]
   InvokeUpdate:
     Type: String
   DeployVersion:
@@ -239,7 +232,6 @@ Conditions:
   GenerateEvidenceBucketName: !Equals [!Ref EvidenceBucketName, ""]
   GenerateAWSConfigConformsBucketName:
     !Equals [!Ref AWSConfigConformsBucketName, ""]
-  DeployRoles: !Equals [!Ref DeployRoles, "true"]
 
 Resources:
   ##################################################
@@ -248,7 +240,6 @@ Resources:
   # Privileged Role Creation
   LambdaCreateRole:
     Type: "AWS::IAM::Role"
-    Condition: DeployRoles
     Properties:
       ManagedPolicyArns:
         - !Sub arn:${AWS::Partition}:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
@@ -298,7 +289,6 @@ Resources:
 
   InvokeCustomLambda:
     Type: Custom::InvokeCustomLambda
-    Condition: DeployRoles
     Properties:
       InvokeUpdate: !Ref InvokeUpdate
       ServiceToken: !GetAtt CreateRoleLambda.Arn
@@ -452,7 +442,6 @@ Resources:
 
   InvokeCustomLambda2:
     Type: Custom::InvokeCustomLambda
-    Condition: DeployRoles
     Properties:
       InvokeUpdate: !Ref InvokeUpdate
       ServiceToken: !GetAtt CreateRoleLambda.Arn
@@ -542,7 +531,6 @@ Resources:
 
   CreateRoleLambda:
     Type: "AWS::Lambda::Function"
-    Condition: DeployRoles
     Properties:
       FunctionName: !Sub ${OrganizationName}aws_create_role
       Code: "../../src/lambda/aws_create_role/build/CreateRoleLambda/"
@@ -1241,7 +1229,6 @@ Resources:
 
   # MGMT-Account-Pre-Requisites:
   GCLambdaExecutionRole:
-    Condition: DeployRoles
     DependsOn:
       - AuditAccountPreRequisitesPartN
     Type: AWS::IAM::Role
@@ -1271,7 +1258,6 @@ Resources:
           Value: "ProServe Delivery Kit"
 
   GCLambdaExecutionRole2:
-    Condition: DeployRoles
     DependsOn:
       - AuditAccountPreRequisitesPartN
     Type: AWS::IAM::Role
@@ -1302,7 +1288,6 @@ Resources:
 
   # Encryption in Transit Checks Access
   GCLambdaExecutionRoleInTransitEncryptionPolicy:
-    Condition: DeployRoles
     Type: AWS::IAM::Policy
     Properties:
       PolicyDocument:
@@ -1358,7 +1343,6 @@ Resources:
         - !Ref GCLambdaExecutionRole2
 
   GCLambdaExecutionRoleS3AccessPolicy:
-    Condition: DeployRoles
     Type: AWS::IAM::Policy
     Properties:
       PolicyDocument:
@@ -1411,7 +1395,6 @@ Resources:
 
   # CW Logs Access
   GCLambdaExecutionRoleCWLogsPolicy:
-    Condition: DeployRoles
     Type: AWS::IAM::Policy
     Properties:
       PolicyDocument:
@@ -1440,7 +1423,6 @@ Resources:
 
   # IAM Access
   GCLambdaExecutionRoleIAMPolicy:
-    Condition: DeployRoles
     Type: AWS::IAM::Policy
     Properties:
       PolicyDocument:
@@ -1474,7 +1456,6 @@ Resources:
 
   # Datastores Access
   GCLambdaExecutionRoleDatastoresPolicy:
-    Condition: DeployRoles
     Type: AWS::IAM::Policy
     Properties:
       PolicyDocument:
@@ -1556,7 +1537,6 @@ Resources:
 
   # Account Access
   GCLambdaExecutionRoleAccountPolicy:
-    Condition: DeployRoles
     Type: AWS::IAM::Policy
     Properties:
       PolicyDocument:
@@ -1575,7 +1555,6 @@ Resources:
 
   # CloudTrail Access
   GCLambdaExecutionRoleCloudTrailPolicy:
-    Condition: DeployRoles
     Type: AWS::IAM::Policy
     Properties:
       PolicyDocument:
@@ -1599,7 +1578,6 @@ Resources:
 
   # Marketplace Access
   GCLambdaExecutionRoleMarketplacePolicy:
-    Condition: DeployRoles
     Type: AWS::IAM::Policy
     Properties:
       PolicyDocument:
@@ -1617,7 +1595,6 @@ Resources:
 
   # Organizations Access
   GCLambdaExecutionRoleOrganizationsPolicy:
-    Condition: DeployRoles
     Type: AWS::IAM::Policy
     Properties:
       PolicyDocument:
@@ -1637,7 +1614,6 @@ Resources:
 
   # IAM Access
   GCLambdaExecutionRoleCloudFrontPolicy:
-    Condition: DeployRoles
     Type: AWS::IAM::Policy
     Properties:
       PolicyDocument:
@@ -1658,7 +1634,6 @@ Resources:
 
   # ACM Accessdescribe_domain
   GCLambdaExecutionRoleAcmPolicy:
-    Condition: DeployRoles
     Type: AWS::IAM::Policy
     Properties:
       PolicyDocument:

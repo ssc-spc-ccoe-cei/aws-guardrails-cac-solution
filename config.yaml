@@ -20,7 +20,6 @@ Parameters:
   AWSConfigConformsBucketName: ""
   AdditionalAssessmentAdminRoleARN: ""
   ExecutionName: "ssc-fedclient-copy-execution-role"
-  DeployRoles: "true"
   BGA1: ""
   BGA2: ""
   BGA3: "N/A"

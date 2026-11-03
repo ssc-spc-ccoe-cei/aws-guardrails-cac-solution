@@ -80,10 +80,6 @@ Parameters:
     Type: String
     Default: "*GCDestBucketName*"
     Description: Bucket to which evidence will be shared
-  DeployRoles:
-    Type: String
-    Default: true
-    AllowedValues: [true, false]
   DeployVersion:
     Type: String
     Default: 2.0.0
@@ -130,7 +126,6 @@ Resources:
         RootOUID: !Ref RootOUID
         PipelineBucket: !Ref PipelineBucket
         DestBucketName: !Ref DestBucketName
-        DeployRoles: !Ref DeployRoles
         DeployVersion: !Ref DeployVersion
         InvokeUpdate: !Ref InvokeUpdate
         BGA1: !Ref BGA1
