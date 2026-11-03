@@ -1128,9 +1128,9 @@ above to get the list). Total active: 240 → 180.
 
 **Steps:**
 1. `aws organizations close-account --account-id <id>` for each P1
-   member. Wait ~1–2 min for `Status='SUSPENDED'` to propagate
-   across all of them.
-2. Confirm `list-accounts --query "Accounts[?Status=='ACTIVE'].Id"`
+   member. Wait ~1–2 min for `State='PENDING_CLOSURE'`/`'SUSPENDED'` to
+   propagate across all of them.
+2. Confirm `list-accounts --query "Accounts[?State=='ACTIVE'].Id"`
    returns exactly 180 IDs.
 3. Manually start the Step Function; wait for `Succeeded`.
 
