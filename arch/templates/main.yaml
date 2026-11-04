@@ -92,7 +92,7 @@ Metadata:
       MaxPartitions:
         default: Max number of partitions (Account Partitioner)
       PimEnabled:
-        default: Feature flag: when True, use PIM/JIT logic (CloudTrail-based recent elevation checks). Default False preserves original behaviour.
+        default: "Enable PIM/JIT evaluation logic for GC01 dedicated admin account check"
 
 Parameters:
   OrganizationName:
@@ -237,8 +237,10 @@ Parameters:
       - "true"
       - "false"
     Description: >-
-      Feature flag: when True, use PIM/JIT logic (CloudTrail-based recent elevation checks).
-      Default False preserves original behaviour.
+      Feature flag for the GC01 dedicated admin account check. When "true",
+      the check uses PIM/JIT logic (CloudTrail-based recent elevation checks).
+      Must be lowercase "true" or "false"; "false" preserves the original
+      behaviour.
 
 Conditions:
   GenerateEvidenceBucketName: !Equals [!Ref EvidenceBucketName, ""]

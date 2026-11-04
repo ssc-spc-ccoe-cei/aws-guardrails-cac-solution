@@ -74,5 +74,9 @@
   {
     "ParameterKey": "MaxPartitions",
     "ParameterValue": "4"
+  },
+  {
+    "ParameterKey": "PimEnabled",
+    "ParameterValue": "false"
   }
 ]
