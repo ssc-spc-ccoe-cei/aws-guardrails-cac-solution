@@ -112,8 +112,10 @@ Parameters:
       - "true"
       - "false"
     Description: >-
-      Feature flag: when True, use PIM/JIT logic (CloudTrail-based recent elevation checks).
-      Default False preserves original behaviour.
+      Feature flag for the GC01 dedicated admin account check. When "true",
+      the check uses PIM/JIT logic (CloudTrail-based recent elevation checks).
+      Must be lowercase "true" or "false"; "false" preserves the original
+      behaviour.
 
 Resources:
   GuardRailsStack:
