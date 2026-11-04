@@ -35,6 +35,7 @@ Metadata:
           - EvidenceBucketName
           - MaxAccountsPerPartition
           - MaxPartitions
+          - PimEnabled
     ParameterLabels:
       OrganizationName:
         default: The name of the organization
@@ -90,6 +91,8 @@ Metadata:
         default: Max accounts per partition (Account Partitioner)
       MaxPartitions:
         default: Max number of partitions (Account Partitioner)
+      PimEnabled:
+        default: Feature flag: when True, use PIM/JIT logic (CloudTrail-based recent elevation checks). Default False preserves original behaviour.
 
 Parameters:
   OrganizationName:
@@ -227,6 +230,15 @@ Parameters:
       StackSets when the partitioner reports accountsChanged=true. Nested
       stacks cannot be updated directly, so the state machine has to target
       the root.
+  PimEnabled:
+    Type: String
+    Default: "false"
+    AllowedValues:
+      - "true"
+      - "false"
+    Description: >-
+      Feature flag: when True, use PIM/JIT logic (CloudTrail-based recent elevation checks).
+      Default False preserves original behaviour.
 
 Conditions:
   GenerateEvidenceBucketName: !Equals [!Ref EvidenceBucketName, ""]
@@ -898,6 +910,8 @@ Resources:
           ParameterValue: !Ref DefaultCloudProfile
         - ParameterKey: PartitionCount
           ParameterValue: !GetAtt InvokeAccountPartitioner.PartitionCount
+        - ParameterKey: PimEnabled
+          ParameterValue: !Ref PimEnabled
       PermissionModel: SERVICE_MANAGED
       StackInstancesGroup:
         - DeploymentTargets:

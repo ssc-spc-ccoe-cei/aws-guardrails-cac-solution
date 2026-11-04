@@ -34,6 +34,15 @@ Parameters:
       output. 1 = single partition (legacy behaviour, no clones).
       2 = create _p2 clones. 3 = create _p2 and _p3 clones.
       4 = create _p2, _p3 and _p4 clones.
+  PimEnabled:
+    Type: String
+    Default: "false"
+    AllowedValues:
+      - "true"
+      - "false"
+    Description: >-
+      Feature flag: when True, use PIM/JIT logic (CloudTrail-based recent elevation checks).
+      Default False preserves original behaviour.
 
 Conditions:
   IsAuditAccount: !Equals
@@ -169,6 +178,7 @@ Resources:
       Environment:
         Variables:
           DEFAULT_CLOUD_PROFILE: !Ref DefaultCloudProfile
+          PIM_ENABLED: !Ref PimEnabled
 
   GC01CheckDedicatedAdminAccountLambdaP2:
     Condition: IsAuditAccountAndCreatePartition2
@@ -188,6 +198,7 @@ Resources:
       Environment:
         Variables:
           DEFAULT_CLOUD_PROFILE: !Ref DefaultCloudProfile
+          PIM_ENABLED: !Ref PimEnabled
 
   GC01CheckDedicatedAdminAccountLambdaP3:
     Condition: IsAuditAccountAndCreatePartition3
@@ -207,6 +218,7 @@ Resources:
       Environment:
         Variables:
           DEFAULT_CLOUD_PROFILE: !Ref DefaultCloudProfile
+          PIM_ENABLED: !Ref PimEnabled
 
   ## GC02
   GC01CheckDedicatedAdminAccountLambdaP4:
@@ -227,6 +239,7 @@ Resources:
       Environment:
         Variables:
           DEFAULT_CLOUD_PROFILE: !Ref DefaultCloudProfile
+          PIM_ENABLED: !Ref PimEnabled
 
   ## GC02
 
