@@ -24,3 +24,9 @@ Parameters:
   MaxAccountsPerPartition: 60
   MaxPartitions: 4
   PimEnabled: "false"
+  # AWS account ID of the Canadian Centre for Cyber Security Cloud Based
+  # Sensor (CBS). Used by the GC10 cyber centre sensors check to confirm that
+  # log bucket replication targets the Cyber Centre and that the
+  # cbs-global-reader role trusts it. Only change if CCCS has onboarded you to
+  # a different CBS account.
+  CBSAccountID: "346725238039"
