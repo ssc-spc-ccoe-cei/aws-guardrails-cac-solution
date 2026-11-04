@@ -83,6 +83,13 @@ Parameters:
     Default: ""
   LogArchiveAccountName:
     Type: String
+  CBSAccountID:
+    Type: String
+    Default: "346725238039"
+    Description: >-
+      12-digit AWS account ID of the Canadian Centre for Cyber Security Cloud
+      Based Sensor (CBS). Forwarded to each pack and consumed by the GC10
+      cyber centre sensors rule.
   ClientEvidenceBucket:
     Type: String
     Description: >-
@@ -233,6 +240,8 @@ Resources:
           ParameterValue: !Sub "s3://${ClientEvidenceBucket}/gc-09/network_security_architecture.pdf"
         - ParameterName: S3LogBucketsPath
           ParameterValue: !Sub "s3://${ClientEvidenceBucket}/gc-10/log_buckets.txt"
+        - ParameterName: CBSAccountID
+          ParameterValue: !Ref CBSAccountID
         - ParameterName: S3MonitoringUseCasesPath
           ParameterValue: !Sub "s3://${ClientEvidenceBucket}/gc-11/monitoring_usecases.pdf"
         - ParameterName: S3AccountManagementProcedurePath
@@ -351,6 +360,8 @@ Resources:
           ParameterValue: !Sub "s3://${ClientEvidenceBucket}/gc-09/network_security_architecture.pdf"
         - ParameterName: S3LogBucketsPath
           ParameterValue: !Sub "s3://${ClientEvidenceBucket}/gc-10/log_buckets.txt"
+        - ParameterName: CBSAccountID
+          ParameterValue: !Ref CBSAccountID
         - ParameterName: S3MonitoringUseCasesPath
           ParameterValue: !Sub "s3://${ClientEvidenceBucket}/gc-11/monitoring_usecases.pdf"
         - ParameterName: S3AccountManagementProcedurePath
@@ -468,6 +479,8 @@ Resources:
           ParameterValue: !Sub "s3://${ClientEvidenceBucket}/gc-09/network_security_architecture.pdf"
         - ParameterName: S3LogBucketsPath
           ParameterValue: !Sub "s3://${ClientEvidenceBucket}/gc-10/log_buckets.txt"
+        - ParameterName: CBSAccountID
+          ParameterValue: !Ref CBSAccountID
         - ParameterName: S3MonitoringUseCasesPath
           ParameterValue: !Sub "s3://${ClientEvidenceBucket}/gc-11/monitoring_usecases.pdf"
         - ParameterName: S3AccountManagementProcedurePath
@@ -586,6 +599,8 @@ Resources:
           ParameterValue: !Sub "s3://${ClientEvidenceBucket}/gc-09/network_security_architecture.pdf"
         - ParameterName: S3LogBucketsPath
           ParameterValue: !Sub "s3://${ClientEvidenceBucket}/gc-10/log_buckets.txt"
+        - ParameterName: CBSAccountID
+          ParameterValue: !Ref CBSAccountID
         - ParameterName: S3MonitoringUseCasesPath
           ParameterValue: !Sub "s3://${ClientEvidenceBucket}/gc-11/monitoring_usecases.pdf"
         - ParameterName: S3AccountManagementProcedurePath

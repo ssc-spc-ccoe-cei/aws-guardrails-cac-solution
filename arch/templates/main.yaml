@@ -36,6 +36,7 @@ Metadata:
           - MaxAccountsPerPartition
           - MaxPartitions
           - PimEnabled
+          - CBSAccountID
     ParameterLabels:
       OrganizationName:
         default: The name of the organization
@@ -63,6 +64,8 @@ Metadata:
         default: Fourth Breakglass Account
       LogArchiveAccountName:
         default: Log Archive Account Name
+      CBSAccountID:
+        default: Cyber Centre (CBS) AWS Account ID
       SecurityOUID:
         default: ID of the AWS Organizations Security OU
       RolePrefix:
@@ -147,7 +150,15 @@ Parameters:
     Type: String
     Default: "LogArchive"
     Description: Name of Log Archive account
-    
+  CBSAccountID:
+    Type: String
+    Default: "346725238039"
+    AllowedPattern: "^[0-9]{12}$"
+    Description: >-
+      12-digit AWS account ID of the Canadian Centre for Cyber Security Cloud
+      Based Sensor (CBS). Only change this if CCCS has onboarded you to a
+      different CBS account.
+
   SecurityOUID:
     Type: String
     Default: ""
@@ -1716,6 +1727,7 @@ Resources:
         BGA3: !Ref BGA3
         BGA4: !Ref BGA4
         LogArchiveAccountName: !Ref LogArchiveAccountName
+        CBSAccountID: !Ref CBSAccountID
         ClientEvidenceBucket:
           !If [
             GenerateEvidenceBucketName,
