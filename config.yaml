@@ -30,4 +30,5 @@ Parameters:
   # CloudFormation Custom Resource response limit - see doc/RESOURCE_POLICY_FIX.md.
   MaxAccountsPerPartition: 60
   MaxPartitions: 4
+  PimEnabled: "false"
   
