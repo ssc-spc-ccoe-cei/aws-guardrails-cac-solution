@@ -5,12 +5,15 @@
 import json
 import logging
 import datetime
+import os
 
 import botocore.exceptions
 
+#Configuration from environment variables
+
 # Feature flag: when True, use PIM/JIT logic (CloudTrail-based recent elevation checks)
 # Default False preserves original behaviour.
-PIM_ENABLED = False
+PIM_ENABLED = os.environ.get("PIM_ENABLED", 'false').lower() == 'true'
 
 from utils import (
     is_scheduled_notification,
@@ -207,6 +210,8 @@ def policy_doc_gives_admin_access(policy_doc: str) -> bool:
         document_dict = policy_doc
     
     statement = document_dict.get("Statement", [])
+    statement = statement if isinstance(statement, list) else [statement]
+    
     for statement_component in statement:
         if (
             statement_component.get("Effect", "") == "Allow"
@@ -575,7 +580,7 @@ def _get_group_user_ids_cached(identity_store_client, identity_store_id: str, gr
  
     user_ids: set[str] = set()
     next_token = None
-   try:
+    try:
         while True:
             resp = (
                 identity_store_client.list_group_memberships(

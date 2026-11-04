@@ -4,7 +4,7 @@ Sources compliance data from the organization AWS Config Aggregator
 (deployed by ``config-aggregator.yaml``) instead of AWS Audit Manager
 (which is being deprecated by AWS). Only Config rules deployed by the
 solution's organization conformance pack(s) are included — those rules
-are named ``gc<NN>_check_*`` (optionally with a ``_p2``/``_p3`` partition
+are named ``gc<NN>_check_*`` (optionally with a ``_p2``/``_p3``/``_p4`` partition
 suffix on the backing Lambda; the rule name itself is stable).
 
 Produces the same CSV shape as the previous Audit Manager-backed

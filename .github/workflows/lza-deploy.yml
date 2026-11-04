@@ -19,6 +19,7 @@ jobs:
       AWS_REGION: ${{ secrets.LZA_AWS_REGION }}
       AWS_ACCOUNT_ID: ${{ secrets.LZA_AWS_ACCOUNT_ID }}
       PIPELINE_BUCKET: ${{ secrets.LZA_PIPELINE_BUCKET }}
+      CFN_ROLE_ARN: ${{ secrets.LZA_CFN_DEPLOY_ROLE_ARN }}
       DEPLOY_VERSION: lza-${{ github.sha }}
  
     steps:
@@ -29,7 +30,7 @@ jobs:
         run: |
           set -euo pipefail
  
-          for variable_name in AWS_REGION AWS_ACCOUNT_ID PIPELINE_BUCKET; do
+          for variable_name in AWS_REGION AWS_ACCOUNT_ID PIPELINE_BUCKET CFN_ROLE_ARN; do
             if [ -z "${!variable_name:-}" ]; then
               echo "::error::Required deployment setting ${variable_name} is empty or unset"
               exit 1
@@ -109,7 +110,7 @@ jobs:
       - name: Deploy selected branch
         env:
           CONFIG_FILE: config.yaml
-        run: make deploy-stack DEPLOY_VERSION="${DEPLOY_VERSION}"
+        run: make deploy-stack DEPLOY_VERSION="${DEPLOY_VERSION}" CFN_ROLE_ARN="${CFN_ROLE_ARN}"
  
       - name: Verify deployed stack
         run: |
