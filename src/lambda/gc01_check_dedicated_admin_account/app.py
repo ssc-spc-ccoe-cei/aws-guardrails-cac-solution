@@ -575,7 +575,7 @@ def _get_group_user_ids_cached(identity_store_client, identity_store_id: str, gr
  
     user_ids: set[str] = set()
     next_token = None
-   try:
+    try:
         while True:
             resp = (
                 identity_store_client.list_group_memberships(
