@@ -129,42 +129,28 @@ def _get_management_account_id(org_client) -> str:
     return resp["Organization"]["MasterAccountId"]
 
 
-def _get_inactive_account_ids(org_client) -> set:
-    """Return the set of account IDs that are not ACTIVE in the organization.
+def _get_active_account_ids(org_client) -> set:
+    """Return the set of account IDs that are ACTIVE in the organization.
 
     The Config aggregator retains items for accounts that have been
-    suspended/closed, and those accounts break downstream enrichment
-    (``organizations:ListTagsForResource`` fails for them). AWS Config does
-    not expose account state in the advanced-query schema, so the state is
-    sourced from the Organizations API and then pushed down into the query
-    expression as an ``accountId NOT IN (...)`` predicate.
+    suspended/closed/removed, and those accounts break downstream execution. 
+    AWS Config does not expose account state in the advanced-query
+    schema, so this active set is used as an allow-list when processing query
+    results.
     """
     accounts = _safe_call(
         organizations_list_all_accounts, "organizations_list_all_accounts", org_client
     )
-    inactive = {
+    active = {
         account["Id"]
         for account in (accounts or [])
-        if str(account.get("State", "")).upper() != "ACTIVE"
+        if account.get("Id") and str(account.get("State", "")).upper() == "ACTIVE"
     }
-    if inactive:
-        logger.info(
-            "Excluding %s inactive account(s) from aggregator queries: %s",
-            len(inactive),
-            ", ".join(sorted(inactive)),
-        )
-    return inactive
+    logger.info("Organizations reports %s active account(s).", len(active))
+    return active
 
 
-def _inactive_accounts_clause(inactive_accounts: set) -> str:
-    """Build the ``AND accountId NOT IN (...)`` predicate (empty if none)."""
-    if not inactive_accounts:
-        return ""
-    ids = ", ".join(f"'{account_id}'" for account_id in sorted(inactive_accounts))
-    return f" AND accountId NOT IN ({ids})"
-
-
-def _get_valid_rule_names(config_client, aggregator_name: str, inactive_accounts: set) -> dict:
+def _get_valid_rule_names(config_client, aggregator_name: str) -> dict:
     """Map accountId -> set of guardrail Config rule names in scope.
 
     Only rules belonging to this solution's organization conformance
@@ -176,7 +162,6 @@ def _get_valid_rule_names(config_client, aggregator_name: str, inactive_accounts
         "SELECT accountId, configuration.configRuleList.configRuleName "
         "WHERE resourceType = 'AWS::Config::ConformancePackCompliance' "
         f"AND resourceName LIKE '{CONFORMANCE_PACK_NAME_PATTERN}'"
-        f"{_inactive_accounts_clause(inactive_accounts)}"
     )
     valid_dict = {}
     next_token = None
@@ -235,15 +220,15 @@ def _iter_aggregate_compliance(config_client, org_client, aggregator_name: str):
     evaluating that resource; we filter to guardrail rules and yield one
     tuple per (resource, rule) pair.
     """
-    inactive_accounts = _get_inactive_account_ids(org_client)
-    valid_rules = _get_valid_rule_names(config_client, aggregator_name, inactive_accounts)
+    active_accounts = _get_active_account_ids(org_client)
+    valid_rules = _get_valid_rule_names(config_client, aggregator_name)
+    skipped_accounts = set()
 
     expression = (
         "SELECT accountId, awsRegion, resourceId, resourceType, "
         "configuration.targetResourceId, configuration.targetResourceType, "
         "configuration.complianceType, configuration.configRuleList "
         "WHERE resourceType = 'AWS::Config::ResourceCompliance'"
-        f"{_inactive_accounts_clause(inactive_accounts)}"
     )
 
     next_token = None
@@ -270,6 +255,12 @@ def _iter_aggregate_compliance(config_client, org_client, aggregator_name: str):
                 continue
 
             account_id = row.get("accountId", "UNKNOWN")
+            # Allow-list guard: covers accounts that were removed from the
+            # organization outright and so cannot appear in the NOT IN clause.
+            if account_id not in active_accounts:
+                skipped_accounts.add(account_id)
+                continue
+
             account_rules = valid_rules.get(account_id)
             if not account_rules:
                 continue
@@ -306,11 +297,32 @@ def _iter_aggregate_compliance(config_client, org_client, aggregator_name: str):
         if not next_token:
             break
 
+    if skipped_accounts:
+        logger.info(
+            "Skipped aggregator results for %s account(s) that are not active members "
+            "of the organization: %s",
+            len(skipped_accounts),
+            ", ".join(sorted(skipped_accounts)),
+        )
+
 
 def _row_from_evaluation(ev: dict, org_client, now_iso: str) -> list:
     rule_name = ev["rule_name"]
     control_set = CONTROL_SET_NAMES.get(rule_name[:4], rule_name[:4])
-    tags = _get_account_tags_cached(org_client, ev["account_id"])
+    try:
+        tags = _get_account_tags_cached(org_client, ev["account_id"])
+    except ClientError as e:
+        # Guards against an account being closed/removed between the
+        # Organizations lookup and this call; one unreachable account must
+        # not fail the whole report.
+        if e.response.get("Error", {}).get("Code") != "TargetNotFoundException":
+            raise
+        logger.warning(
+            "Account %s is no longer a resolvable organization target; using default "
+            "cloud profile for its rows.",
+            ev["account_id"],
+        )
+        tags = []
     cloud_profile = _get_cloud_profile_from_tag_str_cached(json.dumps(tags, sort_keys=True))
     return [
         f'="{str(ev["account_id"])}"',

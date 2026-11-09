@@ -13,19 +13,23 @@ are unaffected.
 
 ## Scoping rules
 
-Two scoping filters are pushed down into the aggregator query expressions, so
-out-of-scope data never reaches the CSV:
+Two scoping filters keep out-of-scope data out of the CSV:
 
 - **Conformance pack membership.** Only Config rules belonging to this
   solution's organization conformance packs are reported. The in-scope rule
   names are resolved per account from `AWS::Config::ConformancePackCompliance`
   items whose `resourceName` matches
   `OrgConformsPack-<OrganizationName>-GC-CP-Guardrails-P%`. Rules from
-  unrelated conformance packs and standalone Config rules are excluded.
-- **Account state.** Accounts that are not `ACTIVE` in AWS Organizations are
-  excluded with an `accountId NOT IN (...)` predicate. Suspended/closed
+  unrelated conformance packs and standalone Config rules are excluded. This
+  filter is pushed down into the query expression.
+- **Account state.** Query results are checked against the set of accounts that
+  are `ACTIVE` in AWS Organizations, and anything else is dropped. Inactive
   accounts linger in the aggregator and cannot be enriched through the
-  Organizations tagging APIs, which previously caused response-parsing errors.
+  Organizations tagging APIs (`ListTagsForResource` raises
+  `TargetNotFoundException`), which previously failed the whole report. This
+  filter is applied to results rather than pushed into the query: an
+  `accountId NOT IN (...)` predicate cannot cover accounts that were removed
+  from the organization outright, because they never appear in `ListAccounts`.
 
 Evaluations with a `NOT_APPLICABLE` compliance type are skipped.
 
@@ -51,7 +55,7 @@ The execution role needs `config:SelectAggregateResourceConfig`,
 
 `lambda_handler` is the main entry point. It orchestrates:
 
-- Resolving inactive accounts and the in-scope conformance pack rule names
+- Resolving active accounts and the in-scope conformance pack rule names
 - Querying the aggregator for `AWS::Config::ResourceCompliance` items
 - Enriching each evaluation with the account's cloud profile (from account tags)
 - Writing the rows to a CSV and uploading it to
@@ -59,16 +63,12 @@ The execution role needs `config:SelectAggregateResourceConfig`,
 
 ## Key Functions
 
-**`_get_inactive_account_ids`**
+**`_get_active_account_ids`**
 
-Returns the set of account IDs that are not `ACTIVE` in AWS Organizations,
-using the shared `organizations_list_all_accounts` helper from the
-`cloud_guardrails` layer.
-
-**`_inactive_accounts_clause`**
-
-Builds the `AND accountId NOT IN (...)` query predicate (empty string when
-every account is active).
+Returns the set of account IDs that are `ACTIVE` in AWS Organizations, using
+the shared `organizations_list_all_accounts` helper from the
+`cloud_guardrails` layer. Account state is read from the `State` field of the
+`ListAccounts` response (the `Status` field was retired in September 2026).
 
 **`_get_valid_rule_names`**
 
