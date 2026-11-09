@@ -252,6 +252,7 @@ Resources:
               - Effect: Allow
                 Action:
                   - organizations:ListTagsForResource
+                  - organizations:ListAccounts
                   - organizations:Des*
                   - lambda:In*
                 Resource: "*"
