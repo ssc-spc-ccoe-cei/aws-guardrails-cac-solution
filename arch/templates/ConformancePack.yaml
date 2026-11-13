@@ -15,12 +15,16 @@ Parameters:
       - ""
       - "_p2"
       - "_p3"
+      - "_p4"
     Description: >-
-      Suffix appended to every guardrail Config rule name and to the Lambda
-      function name referenced by each rule. Empty for partition 1 (the base
-      / "P1" pack); ``_p2`` and ``_p3`` are used by the partition-2 and
-      partition-3 packs created by ConformancePackPartitions.yaml when the
-      organization grows beyond ``MaxAccountsPerPartition`` accounts.
+      Suffix appended to the Lambda function name referenced by each
+      guardrail Config rule. (ConfigRuleName is deliberately left as a
+      static literal — AWS Config's conformance-pack template engine
+      ignores Fn::Sub there — so rule names are identical across packs.)
+      Empty for partition 1 (the base / "P1" pack); ``_p2``, ``_p3`` and
+      ``_p4`` are used by the partition-2, -3 and -4 packs created by
+      ConformancePackPartitions.yaml when the organization grows beyond
+      ``MaxAccountsPerPartition`` accounts.
   GCLambdaExecutionRoleName:
     Type: String
   GCLambdaExecutionRoleName2:
@@ -126,6 +130,22 @@ Parameters:
   # GC10
   S3LogBucketsPath:
     Type: String
+  CBSAccountID:
+    Type: String
+    Default: "346725238039"
+    Description: >-
+      12-digit AWS account ID of the Canadian Centre for Cyber Security Cloud
+      Based Sensor (CBS). Used to confirm that log bucket replication actually
+      targets the Cyber Centre, and that the cbs-global-reader trust policy
+      admits a principal from that account.
+  CBSRoleName:
+    Type: String
+    Default: "cbs-global-reader"
+    Description: Name of the CBS cross-account reader role deployed by the CCCS onboarding package.
+  CBSRoleManagedPolicyArns:
+    Type: String
+    Default: "arn:aws:iam::aws:policy/ReadOnlyAccess"
+    Description: Comma-separated managed policy ARNs that must be attached to the CBS reader role.
   # GC11
   S3MonitoringUseCasesPath:
     Type: String
@@ -1134,7 +1154,7 @@ Resources:
     Type: "AWS::Config::ConfigRule"
     Properties:
       ConfigRuleName: gc10_check_cyber_center_sensors
-      Description: "Confirms that Cyber Centre sensors are in place via the cbs-global-reader role and Log Archive replication. Remediate by creating the role and S3 replication. Source: https://github.com/canada-ca/cloud-guardrails/blob/master/EN/10_Cyber-Defense-Services.md"
+      Description: "Confirms Cyber Centre sensors are in place: the cbs-global-reader role is configured in each account and Log Archive buckets replicate to the CBS account. Source: https://github.com/canada-ca/cloud-guardrails/blob/master/EN/10_Cyber-Defense-Services.md"
       InputParameters:
         S3LogBucketsPath:
           Fn::If:
@@ -1145,6 +1165,21 @@ Resources:
           Fn::If:
             - logArchiveAccountName
             - Ref: LogArchiveAccountName
+            - Ref: AWS::NoValue
+        CBSAccountID:
+          Fn::If:
+            - cbsAccountID
+            - Ref: CBSAccountID
+            - Ref: AWS::NoValue
+        CBSRoleName:
+          Fn::If:
+            - cbsRoleName
+            - Ref: CBSRoleName
+            - Ref: AWS::NoValue
+        CBSRoleManagedPolicyArns:
+          Fn::If:
+            - cbsRoleManagedPolicyArns
+            - Ref: CBSRoleManagedPolicyArns
             - Ref: AWS::NoValue
         ExecutionRoleName:
           Fn::If:
@@ -1774,6 +1809,21 @@ Conditions:
       - Fn::Equals:
           - ""
           - Ref: LogArchiveAccountName
+  cbsAccountID:
+    Fn::Not:
+      - Fn::Equals:
+          - ""
+          - Ref: CBSAccountID
+  cbsRoleName:
+    Fn::Not:
+      - Fn::Equals:
+          - ""
+          - Ref: CBSRoleName
+  cbsRoleManagedPolicyArns:
+    Fn::Not:
+      - Fn::Equals:
+          - ""
+          - Ref: CBSRoleManagedPolicyArns
   # GC11
   s3MonitoringUseCasesPath:
     Fn::Not:

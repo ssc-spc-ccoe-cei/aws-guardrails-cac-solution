@@ -30,12 +30,13 @@ Metadata:
           default: Optional Parameters
         Parameters:
           - AWSConfigConformsBucketName
-          - DeployRoles
           - DeployVersion
           - DestBucketName
           - EvidenceBucketName
           - MaxAccountsPerPartition
           - MaxPartitions
+          - PimEnabled
+          - CBSAccountID
     ParameterLabels:
       OrganizationName:
         default: The name of the organization
@@ -63,6 +64,8 @@ Metadata:
         default: Fourth Breakglass Account
       LogArchiveAccountName:
         default: Log Archive Account Name
+      CBSAccountID:
+        default: Cyber Centre (CBS) AWS Account ID
       SecurityOUID:
         default: ID of the AWS Organizations Security OU
       RolePrefix:
@@ -79,8 +82,6 @@ Metadata:
         default: Name for the S3 AWS Config Conformance Pack assets bucket
       DestBucketName:
         default: Name of the S3 bucket (leave as is unless instructed otherwise)
-      DeployRoles:
-        default: True/ False flag used to create GC Guardrails Roles (default - False)
       DeployVersion:
         default: The version to deploy
       GC04EnterpriseMonitoringIAMRoleName:
@@ -93,6 +94,8 @@ Metadata:
         default: Max accounts per partition (Account Partitioner)
       MaxPartitions:
         default: Max number of partitions (Account Partitioner)
+      PimEnabled:
+        default: "Enable PIM/JIT evaluation logic for GC01 dedicated admin account check"
 
 Parameters:
   OrganizationName:
@@ -147,7 +150,15 @@ Parameters:
     Type: String
     Default: "LogArchive"
     Description: Name of Log Archive account
-    
+  CBSAccountID:
+    Type: String
+    Default: "346725238039"
+    AllowedPattern: "^[0-9]{12}$"
+    Description: >-
+      12-digit AWS account ID of the Canadian Centre for Cyber Security Cloud
+      Based Sensor (CBS). Only change this if CCCS has onboarded you to a
+      different CBS account.
+
   SecurityOUID:
     Type: String
     Default: ""
@@ -191,10 +202,6 @@ Parameters:
   GC04EnterpriseMonitoringIAMTrustedPrincipal:
     Type: String
     Default: "arn:aws:iam::939755092653:root"
-  DeployRoles:
-    Type: String
-    Default: false
-    AllowedValues: [true, false]
   InvokeUpdate:
     Type: String
   DeployVersion:
@@ -215,31 +222,41 @@ Parameters:
       assumption changes.
   MaxPartitions:
     Type: Number
-    Default: 3
+    Default: 4
     MinValue: 1
-    MaxValue: 3
+    MaxValue: 4
     Description: >-
       Maximum number of partitions the Account Partitioner Lambda is allowed
-      to create. Hard-capped at 3 because the AuditAccountPreRequisitesPart*
+      to create. Hard-capped at 4 because the AuditAccountPreRequisitesPart*
       templates and ConformancePackPartitions only define conditional clones for
-      partitions 1, 2, and 3. Total addressable accounts =
-      MaxAccountsPerPartition x MaxPartitions (default 60 x 3 = 180).
+      partitions 1, 2, 3, and 4. Total addressable accounts =
+      MaxAccountsPerPartition x MaxPartitions (default 60 x 4 = 240).
   RootStackName:
     Type: String
     Description: >-
       Name of the root CloudFormation stack (passed in from root.yaml). The
       partition-sync Step Function calls cloudformation:UpdateStack against
-      this stack to cascade fresh AccountsInP1/P2/P3 values into the
+      this stack to cascade fresh AccountsInP1/P2/P3/P4 values into the
       ConformancePackStack nested stack and PartitionCount into the Part1-8
       StackSets when the partitioner reports accountsChanged=true. Nested
       stacks cannot be updated directly, so the state machine has to target
       the root.
+  PimEnabled:
+    Type: String
+    Default: "false"
+    AllowedValues:
+      - "true"
+      - "false"
+    Description: >-
+      Feature flag for the GC01 dedicated admin account check. When "true",
+      the check uses PIM/JIT logic (CloudTrail-based recent elevation checks).
+      Must be lowercase "true" or "false"; "false" preserves the original
+      behaviour.
 
 Conditions:
   GenerateEvidenceBucketName: !Equals [!Ref EvidenceBucketName, ""]
   GenerateAWSConfigConformsBucketName:
     !Equals [!Ref AWSConfigConformsBucketName, ""]
-  DeployRoles: !Equals [!Ref DeployRoles, "true"]
 
 Resources:
   ##################################################
@@ -248,7 +265,6 @@ Resources:
   # Privileged Role Creation
   LambdaCreateRole:
     Type: "AWS::IAM::Role"
-    Condition: DeployRoles
     Properties:
       ManagedPolicyArns:
         - !Sub arn:${AWS::Partition}:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
@@ -298,7 +314,6 @@ Resources:
 
   InvokeCustomLambda:
     Type: Custom::InvokeCustomLambda
-    Condition: DeployRoles
     Properties:
       InvokeUpdate: !Ref InvokeUpdate
       ServiceToken: !GetAtt CreateRoleLambda.Arn
@@ -452,7 +467,6 @@ Resources:
 
   InvokeCustomLambda2:
     Type: Custom::InvokeCustomLambda
-    Condition: DeployRoles
     Properties:
       InvokeUpdate: !Ref InvokeUpdate
       ServiceToken: !GetAtt CreateRoleLambda.Arn
@@ -542,7 +556,6 @@ Resources:
 
   CreateRoleLambda:
     Type: "AWS::Lambda::Function"
-    Condition: DeployRoles
     Properties:
       FunctionName: !Sub ${OrganizationName}aws_create_role
       Code: "../../src/lambda/aws_create_role/build/CreateRoleLambda/"
@@ -910,6 +923,8 @@ Resources:
           ParameterValue: !Ref DefaultCloudProfile
         - ParameterKey: PartitionCount
           ParameterValue: !GetAtt InvokeAccountPartitioner.PartitionCount
+        - ParameterKey: PimEnabled
+          ParameterValue: !Ref PimEnabled
       PermissionModel: SERVICE_MANAGED
       StackInstancesGroup:
         - DeploymentTargets:
@@ -1241,7 +1256,6 @@ Resources:
 
   # MGMT-Account-Pre-Requisites:
   GCLambdaExecutionRole:
-    Condition: DeployRoles
     DependsOn:
       - AuditAccountPreRequisitesPartN
     Type: AWS::IAM::Role
@@ -1271,7 +1285,6 @@ Resources:
           Value: "ProServe Delivery Kit"
 
   GCLambdaExecutionRole2:
-    Condition: DeployRoles
     DependsOn:
       - AuditAccountPreRequisitesPartN
     Type: AWS::IAM::Role
@@ -1302,7 +1315,6 @@ Resources:
 
   # Encryption in Transit Checks Access
   GCLambdaExecutionRoleInTransitEncryptionPolicy:
-    Condition: DeployRoles
     Type: AWS::IAM::Policy
     Properties:
       PolicyDocument:
@@ -1358,7 +1370,6 @@ Resources:
         - !Ref GCLambdaExecutionRole2
 
   GCLambdaExecutionRoleS3AccessPolicy:
-    Condition: DeployRoles
     Type: AWS::IAM::Policy
     Properties:
       PolicyDocument:
@@ -1411,7 +1422,6 @@ Resources:
 
   # CW Logs Access
   GCLambdaExecutionRoleCWLogsPolicy:
-    Condition: DeployRoles
     Type: AWS::IAM::Policy
     Properties:
       PolicyDocument:
@@ -1440,7 +1450,6 @@ Resources:
 
   # IAM Access
   GCLambdaExecutionRoleIAMPolicy:
-    Condition: DeployRoles
     Type: AWS::IAM::Policy
     Properties:
       PolicyDocument:
@@ -1474,7 +1483,6 @@ Resources:
 
   # Datastores Access
   GCLambdaExecutionRoleDatastoresPolicy:
-    Condition: DeployRoles
     Type: AWS::IAM::Policy
     Properties:
       PolicyDocument:
@@ -1556,7 +1564,6 @@ Resources:
 
   # Account Access
   GCLambdaExecutionRoleAccountPolicy:
-    Condition: DeployRoles
     Type: AWS::IAM::Policy
     Properties:
       PolicyDocument:
@@ -1575,7 +1582,6 @@ Resources:
 
   # CloudTrail Access
   GCLambdaExecutionRoleCloudTrailPolicy:
-    Condition: DeployRoles
     Type: AWS::IAM::Policy
     Properties:
       PolicyDocument:
@@ -1599,7 +1605,6 @@ Resources:
 
   # Marketplace Access
   GCLambdaExecutionRoleMarketplacePolicy:
-    Condition: DeployRoles
     Type: AWS::IAM::Policy
     Properties:
       PolicyDocument:
@@ -1617,7 +1622,6 @@ Resources:
 
   # Organizations Access
   GCLambdaExecutionRoleOrganizationsPolicy:
-    Condition: DeployRoles
     Type: AWS::IAM::Policy
     Properties:
       PolicyDocument:
@@ -1637,7 +1641,6 @@ Resources:
 
   # IAM Access
   GCLambdaExecutionRoleCloudFrontPolicy:
-    Condition: DeployRoles
     Type: AWS::IAM::Policy
     Properties:
       PolicyDocument:
@@ -1658,7 +1661,6 @@ Resources:
 
   # ACM Accessdescribe_domain
   GCLambdaExecutionRoleAcmPolicy:
-    Condition: DeployRoles
     Type: AWS::IAM::Policy
     Properties:
       PolicyDocument:
@@ -1680,13 +1682,13 @@ Resources:
   #######################################################
   # Part 4 - Conformance Pack (partitioned)
   #######################################################
-  # Up to 3 Organization Conformance Packs are deployed, one per
+  # Up to 4 Organization Conformance Packs are deployed, one per
   # partition produced by ``aws_account_partitioner``. Each pack reuses
   # ConformancePack.yaml in S3 with a different ``PartitionSuffix``
-  # (``""`` / ``"_p2"`` / ``"_p3"``) so its Config rules invoke the
-  # matching guardrail Lambda clones. The ``ExcludedAccounts`` list on
-  # each pack guarantees every org account receives exactly one pack —
-  # the one for the partition it is assigned to. See
+  # (``""`` / ``"_p2"`` / ``"_p3"`` / ``"_p4"``) so its Config rules
+  # invoke the matching guardrail Lambda clones. The ``ExcludedAccounts``
+  # list on each pack guarantees every org account receives exactly one
+  # pack — the one for the partition it is assigned to. See
   # ConformancePackPartitions.yaml for the full set of resources and
   # conditions.
   ConformancePackStack:
@@ -1711,6 +1713,7 @@ Resources:
         AccountsInP1: !GetAtt InvokeAccountPartitioner.AccountsInP1
         AccountsInP2: !GetAtt InvokeAccountPartitioner.AccountsInP2
         AccountsInP3: !GetAtt InvokeAccountPartitioner.AccountsInP3
+        AccountsInP4: !GetAtt InvokeAccountPartitioner.AccountsInP4
         # Wiring / packaging
         PipelineBucket: !Ref PipelineBucket
         DeployVersion: !Ref DeployVersion
@@ -1724,6 +1727,7 @@ Resources:
         BGA3: !Ref BGA3
         BGA4: !Ref BGA4
         LogArchiveAccountName: !Ref LogArchiveAccountName
+        CBSAccountID: !Ref CBSAccountID
         ClientEvidenceBucket:
           !If [
             GenerateEvidenceBucketName,
