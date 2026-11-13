@@ -1,5 +1,3 @@
-*This readme file was created by AWS Bedrock: anthropic.claude-v2*
-
 # ./src/lambda/gc12_check_marketplace/app.py
 
 ## Overview
@@ -46,11 +44,9 @@ so that any stale result is overwritten and the account still appears in the rep
 ## Main Logic
 
 1. **Find a restricting SCP.** `get_policies_that_restrict_marketplace_access` lists the
-   organization's SCPs and uses `iam:SimulateCustomPolicy` to find the ones that deny the
-   marketplace actions. SCPs that provably cannot restrict anything (the AWS managed
-   `p-FullAWSAccess`, or any policy that only allows `Action: "*"`) are skipped without
-   calling the simulator, which keeps the runtime inside the AWS Config result token
-   lifetime in large organizations. If no restricting SCP exists → `NON_COMPLIANT`.
+   organization's SCPs and evaluates each one statically against
+   `PRIVATE_MARKETPLACE_ADMIN_ACTIONS`. A policy qualifies only if it denies **every** action
+   in that list. If no restricting SCP exists → `NON_COMPLIANT`.
 2. **Check the SCP's scope.** `assess_policy_attachment` confirms the restricting SCP is
    *not* attached to the management account, and that it applies to every other account.
    Results of `organizations:ListPoliciesForTarget` are cached per target. If any target is
@@ -58,6 +54,27 @@ so that any stale result is overwritten and the account still appears in the rep
 3. **Check the Private Marketplace.** `assess_private_marketplace` requires an `Experience`
    entity with `Status: Enabled` *and* an audience that covers every account. If both hold →
    `COMPLIANT`, otherwise `NON_COMPLIANT`.
+
+### Why step 1 is evaluated statically
+
+This check previously used `iam:SimulateCustomPolicy` with the SCP as the only entry in
+`PolicyInputList`. That is unsound: an SCP contains no `Allow` statements, so *every* action
+evaluates to `implicitDeny` and the check returned "restricts marketplace access" for **any**
+Deny-only policy — even one that never mentions the marketplace. In practice this meant the
+control reported `COMPLIANT` in any organization that had at least one SCP attached.
+
+`policy_restricts_marketplace_access` now parses the policy document directly, in the same
+style as `policy_doc_gives_admin_access` in `gc01_check_dedicated_admin_account` and
+`gc02_check_group_access_configuration`. It is deterministic, requires no API calls, and the
+rules it applies are:
+
+- only `Effect: Deny` statements count;
+- **conditional denies are ignored** — a deny that only applies in certain regions or to
+  certain principals (e.g. the LZA `GBL1` and `ROOT` statements) is not an unconditional
+  restriction;
+- the statement must apply to `Resource: "*"`, since these actions are not resource-scoped;
+- both `Action` and `NotAction` are handled, with IAM `*` / `?` wildcard semantics;
+- denials may be spread across multiple statements.
 
 ### Organization tree traversal
 
@@ -99,8 +116,10 @@ Beyond the usual Config/Organizations read access, this check needs:
 - `aws-marketplace:ListEntities` and `aws-marketplace:DescribeEntity`
 - `organizations:ListRoots`, `organizations:ListAccountsForParent`,
   `organizations:ListOrganizationalUnitsForParent`, `organizations:ListPoliciesForTarget`,
-  `organizations:DescribeOrganization`, `organizations:DescribePolicy`
-- `iam:SimulateCustomPolicy`
+  `organizations:ListPolicies`, `organizations:DescribeOrganization`,
+  `organizations:DescribePolicy`
+
+`iam:SimulateCustomPolicy` is no longer used.
 
 ## Testing
 

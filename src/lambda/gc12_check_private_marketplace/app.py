@@ -4,6 +4,7 @@
 
 import logging
 import json
+import re
 import time
 
 import boto3
@@ -36,12 +37,22 @@ logger.setLevel(logging.INFO)
 MARKETPLACE_CATALOG_REGION = "us-east-1"
 MARKETPLACE_CATALOG = "AWSMarketplace"
 
-# Marker used to cheaply discard SCPs that cannot possibly restrict the marketplace,
-# which avoids an expensive iam:SimulateCustomPolicy call per policy.
-MARKETPLACE_ACTION_PREFIX = "aws-marketplace"
-
 # The AWS managed SCP that is attached to every target by default. It never restricts anything.
 FULL_AWS_ACCESS_POLICY_ID = "p-FullAWSAccess"
+
+# The private marketplace administration actions that a restricting SCP must deny.
+PRIVATE_MARKETPLACE_ADMIN_ACTIONS = [
+    "aws-marketplace:StartChangeSet",
+    "aws-marketplace:CancelChangeSet",
+    "aws-marketplace:CreatePrivateMarketplace",
+    "aws-marketplace:StartPrivateMarketplace",
+    "aws-marketplace:StopPrivateMarketplace",
+    "aws-marketplace:UpdatePrivateMarketplaceSettings",
+    "aws-marketplace:AssociateProductsWithPrivateMarketplace",
+    "aws-marketplace:DisassociateProductsFromPrivateMarketplace",
+    "aws-marketplace:CreatePrivateMarketplaceProfile",
+    "aws-marketplace:UpdatePrivateMarketplaceProfile"
+]
 
 
 def get_regional_client(
@@ -209,97 +220,127 @@ def assess_private_marketplace(
     return ("COMPLIANT", "Private Marketplace found and applied to all OUs and accounts.")
 
 
-def policy_restricts_marketplace_access(iam_client, policy_content: str, interval_between_calls: str = "0.1") -> bool:
-    args = {
-        "PolicyInputList": [policy_content],
-        "ActionNames": ["aws-marketplace:As*",
-                        "aws-marketplace:CreateP*",
-                        "aws-marketplace:DescribePri*",
-                        "aws-marketplace:Di*",
-                        "aws-marketplace:ListP*",
-                        "aws-marketplace:Start*"],
+def _as_list(value) -> list:
+    """Policy elements such as Action/Resource may be a single string or a list."""
+    if value is None:
+        return []
+    return value if isinstance(value, list) else [value]
+
+
+def iam_pattern_matches(pattern: str, action: str) -> bool:
+    """
+    Match an IAM policy action pattern against a concrete action name.
+
+    IAM wildcards are `*` (any sequence) and `?` (any single character), and matching is
+    case-insensitive. `fnmatch` is deliberately not used because it also treats `[...]` as a
+    character class, which IAM does not.
+    """
+    regex = "".join(
+        ".*" if char == "*" else "." if char == "?" else re.escape(char)
+        for char in str(pattern)
+    )
+    return re.fullmatch(regex, str(action), flags=re.IGNORECASE) is not None
+
+
+def statement_denies_all_resources(statement: dict) -> bool:
+    """The private marketplace admin actions are not resource-scoped, so the Deny must be on `*`."""
+    return "*" in _as_list(statement.get("Resource"))
+
+
+def actions_denied_by_statement(statement: dict, candidate_actions: set[str]) -> set[str]:
+    """
+    Return the subset of `candidate_actions` that the given Deny statement blocks.
+
+    Handles both `Action` (deny what matches) and `NotAction` (deny what does NOT match).
+    """
+    if "NotAction" in statement:
+        not_actions = _as_list(statement.get("NotAction"))
+        return {
+            action
+            for action in candidate_actions
+            if not any(iam_pattern_matches(pattern, action) for pattern in not_actions)
+        }
+
+    actions = _as_list(statement.get("Action"))
+    return {
+        action
+        for action in candidate_actions
+        if any(iam_pattern_matches(pattern, action) for pattern in actions)
     }
 
-    resources: list[dict] = []
-    while True:
-        response = iam_client.simulate_custom_policy(**args)
-        if response:
-            resources.extend(response.get("EvaluationResults", []))
-            args["Marker"] = response.get("Marker")
-        else:
-            args["Marker"] = None
-        if not args.get("Marker"):
-            break
-        else:
-            time.sleep(float(interval_between_calls))
-    for eval_result in resources:
-        if eval_result.get("EvalDecision") == "allowed":
+
+def policy_restricts_marketplace_access(policy_doc) -> bool:
+    """
+    Return True when the policy denies *every* private marketplace administration action.
+
+    The policy document is evaluated statically rather than with `iam:SimulateCustomPolicy`.
+    Simulating an SCP on its own always reports every action as `implicitDeny`, because an
+    SCP contains no Allow statements, so the simulation returned "restricted" for any
+    Deny-only policy regardless of its content.
+
+    Conditional Deny statements are ignored: a deny that only applies under certain
+    conditions (a region, a principal, ...) does not unconditionally restrict the action.
+    """
+    # Handle both string and dictionary inputs
+    if isinstance(policy_doc, str):
+        try:
+            document_dict = json.loads(policy_doc)
+        except json.JSONDecodeError:
+            # if the string is not valid, return False
             return False
-    return True
+    else:
+        document_dict = policy_doc
 
+    if not isinstance(document_dict, dict):
+        return False
 
-def policy_could_restrict_marketplace(policy_content: str) -> bool:
-    """
-    Cheap, conservative pre-filter used to avoid an iam:SimulateCustomPolicy call per SCP.
-
-    Returns False only when the policy provably cannot restrict marketplace access, i.e. it
-    grants `Action: "*"` on `Resource: "*"` and contains no Deny statements and no reference
-    to the marketplace service. Anything else (Deny statements, allow-lists that restrict by
-    omission, marketplace references, or unparseable content) is sent to the simulator.
-    """
-    if MARKETPLACE_ACTION_PREFIX in policy_content.lower():
-        return True
-
-    try:
-        document = json.loads(policy_content)
-    except (json.JSONDecodeError, TypeError):
-        # Cannot reason about it locally, let the simulator decide.
-        return True
-
-    statements = document.get("Statement", [])
+    statements = document_dict.get("Statement", [])
     if isinstance(statements, dict):
         statements = [statements]
-    if not statements:
-        return True
 
-    for statement in statements:
-        if statement.get("Effect") != "Allow":
-            # A Deny statement may restrict marketplace access indirectly (e.g. by condition).
-            return True
-        actions = statement.get("Action")
-        if isinstance(actions, str):
-            actions = [actions]
-        if actions != ["*"]:
-            # An allow-list restricts every action it omits, including marketplace actions.
+    remaining = set(PRIVATE_MARKETPLACE_ADMIN_ACTIONS)
+    for statement_component in statements:
+        if not isinstance(statement_component, dict):
+            continue
+        if statement_component.get("Effect", "") != "Deny":
+            continue
+        if statement_component.get("Condition"):
+            # A conditional deny is not a guaranteed restriction.
+            continue
+        if not statement_denies_all_resources(statement_component):
+            continue
+
+        remaining -= actions_denied_by_statement(statement_component, remaining)
+        if not remaining:
             return True
 
+    logger.debug("Policy does not deny the following marketplace actions: %s", sorted(remaining))
     return False
 
 
 def get_policies_that_restrict_marketplace_access(
-    organizations_client, iam_client, interval_between_calls: str = "0.1"
+    organizations_client, interval_between_calls: float = 0.1
 ):
+    """
+    Return the SCPs in the organization that deny every private marketplace admin action.
+    """
     policies = organizations_list_all_service_control_policies(organizations_client, interval_between_calls)
     selected_policy_summaries = []
     for policy_summary in policies:
         policy_id = policy_summary.get("Id")
         if not policy_id or policy_id == FULL_AWS_ACCESS_POLICY_ID:
-            # The AWS managed FullAWSAccess policy never restricts anything, skip the API calls.
+            # The AWS managed FullAWSAccess policy never restricts anything, skip the API call.
             continue
         response = organizations_client.describe_policy(PolicyId=policy_id)
         policy = response.get("Policy", {})
         policy_content = policy.get("Content") or ""
         if not policy_content:
             continue
-        if not policy_could_restrict_marketplace(policy_content):
-            # Skip the expensive (and throttled) simulate_custom_policy call.
-            logger.debug("Skipping policy %s, it cannot restrict marketplace access.", policy_id)
-            continue
-        if policy_restricts_marketplace_access(iam_client, policy_content, interval_between_calls):
+        if policy_restricts_marketplace_access(policy_content):
             selected_policy_summaries.append(policy_summary)
+        time.sleep(interval_between_calls)
     logger.info("Marketplace restriction policies found: %s", selected_policy_summaries)
     return selected_policy_summaries
-
 
 
 def organizations_list_all_accounts_for_parent(
@@ -527,7 +568,6 @@ def assess_guardrail_12(event, aws_config_client, rule_parameters):
         )
         return submit_evaluations(aws_config_client, event, [evaluation])
 
-    aws_iam_client = get_client("iam", aws_account_id, execution_role_name, is_not_audit_account)
     tags = get_account_tags(get_client("organizations", assume_role=False), aws_account_id)
     cloud_profile = get_cloud_profile_from_tags(tags)
 
@@ -540,7 +580,7 @@ def assess_guardrail_12(event, aws_config_client, rule_parameters):
         return submit_evaluations(aws_config_client, event, [evaluation])
 
     restricting_policies = get_policies_that_restrict_marketplace_access(
-        aws_orgs_client, aws_iam_client, float(interval_between_calls)
+        aws_orgs_client, float(interval_between_calls)
     )
     if not restricting_policies:
         compliance_type = "NON_COMPLIANT"
