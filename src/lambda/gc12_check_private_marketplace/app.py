@@ -44,14 +44,8 @@ FULL_AWS_ACCESS_POLICY_ID = "p-FullAWSAccess"
 PRIVATE_MARKETPLACE_ADMIN_ACTIONS = [
     "aws-marketplace:StartChangeSet",
     "aws-marketplace:CancelChangeSet",
-    "aws-marketplace:CreatePrivateMarketplace",
-    "aws-marketplace:StartPrivateMarketplace",
-    "aws-marketplace:StopPrivateMarketplace",
-    "aws-marketplace:UpdatePrivateMarketplaceSettings",
     "aws-marketplace:AssociateProductsWithPrivateMarketplace",
-    "aws-marketplace:DisassociateProductsFromPrivateMarketplace",
-    "aws-marketplace:CreatePrivateMarketplaceProfile",
-    "aws-marketplace:UpdatePrivateMarketplaceProfile"
+    "aws-marketplace:DisassociateProductsFromPrivateMarketplace"
 ]
 
 
