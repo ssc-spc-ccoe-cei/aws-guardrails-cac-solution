@@ -328,10 +328,15 @@ comfortably. Measured body sizes:
 Audit Manager has been removed from this solution (deprecated by AWS).
 The daily `aws_compile_audit_report` Lambda now sources guardrail
 compliance directly from the org AWS Config Aggregator by querying
-`AWS::Config::ResourceCompliance` items and filtering on the
-`gc\d\d_check_*` rule-name pattern. Because that name is identical across
-every account regardless of partition (`PartitionSuffix` only flows into
-Lambda ARNs, not into `ConfigRuleName`), the aggregator merges evidence
+`AWS::Config::ResourceCompliance` items and keeping only the rules that
+belong to this solution's conformance packs — resolved from
+`AWS::Config::ConformancePackCompliance` items whose `resourceName`
+matches `OrgConformsPack-<OrganizationName>-GC-CP-Guardrails-P%`. Results
+for accounts that are not `ACTIVE` in Organizations are dropped, since
+those accounts linger in the aggregator but can no longer be enriched
+through the Organizations tagging APIs. Because the rule name is identical
+across every account regardless of partition (`PartitionSuffix` only flows
+into Lambda ARNs, not into `ConfigRuleName`), the aggregator merges evidence
 from P1/P2/P3 automatically with no per-partition configuration.
 
 #### Forward-compatibility with org growth

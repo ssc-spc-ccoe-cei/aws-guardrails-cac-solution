@@ -17,7 +17,6 @@ import io
 import json
 import logging
 import os
-import re
 import time
 from functools import cache
 
@@ -26,7 +25,7 @@ from botocore.exceptions import BotoCoreError, ClientError
 
 from utils import get_cloud_profile_from_tags
 from boto_util.client import get_client
-from boto_util.organizations import get_account_tags
+from boto_util.organizations import get_account_tags, organizations_list_all_accounts
 
 def _get_cloud_profile_from_tag_str(tag_str):
     tags = json.loads(tag_str)
@@ -58,6 +57,14 @@ CONFIG = {
     "DATE_FORMAT": "%Y-%m-%d",
     "PAGE_LIMIT": 100,  # SelectAggregateResourceConfig max
 }
+
+# Conformance packs deployed by this solution are organization conformance
+# packs named ``<OrganizationName>-GC-CP-Guardrails-P<n>``; AWS Config
+# materializes them in each member account as
+# ``OrgConformsPack-<name>-<suffix>``. Restricting the aggregator query to
+# this name pattern prevents rules from unrelated conformance packs (and
+# standalone Config rules) from leaking into the report/dashboard.
+CONFORMANCE_PACK_NAME_PATTERN = f"OrgConformsPack-{CONFIG['ORG_NAME']}-GC-CP-Guardrails-P%"
 
 # Maps ``gc<NN>`` prefix to the human-readable control set name used
 # historically in the CSV's ``guardrail`` column. Kept in sync with the
@@ -122,44 +129,89 @@ def _get_management_account_id(org_client) -> str:
     return resp["Organization"]["MasterAccountId"]
 
 
-def _get_valid_rule_names(config_client, aggregator_name: str) -> dict:
-    """Gets a list of valid Config Rules associated with each account's Conformance Pack."""
-    expression = """
-    SELECT
-        accountId,
-        configuration.configRuleList.configRuleName
-    WHERE
-        resourceType = 'AWS::Config::ConformancePackCompliance'
+def _get_active_account_ids(org_client) -> set:
+    """Return the set of account IDs that are ACTIVE in the organization.
+
+    The Config aggregator retains items for accounts that have been
+    suspended/closed/removed, and those accounts break downstream execution. 
+    AWS Config does not expose account state in the advanced-query
+    schema, so this active set is used as an allow-list when processing query
+    results.
     """
+    accounts = _safe_call(
+        organizations_list_all_accounts, "organizations_list_all_accounts", org_client
+    )
+    active = {
+        account["Id"]
+        for account in (accounts or [])
+        if account.get("Id") and str(account.get("State", "")).upper() == "ACTIVE"
+    }
+    logger.info("Organizations reports %s active account(s).", len(active))
+    return active
+
+
+def _get_valid_rule_names(config_client, aggregator_name: str) -> dict:
+    """Map accountId -> set of guardrail Config rule names in scope.
+
+    Only rules belonging to this solution's organization conformance
+    packs are considered valid; everything else (other conformance packs,
+    standalone Config rules, Security Hub/control-tower rules, ...) is
+    excluded so it never reaches the CSV or the dashboard.
+    """
+    expression = (
+        "SELECT accountId, configuration.configRuleList.configRuleName "
+        "WHERE resourceType = 'AWS::Config::ConformancePackCompliance' "
+        f"AND resourceName LIKE '{CONFORMANCE_PACK_NAME_PATTERN}'"
+    )
     valid_dict = {}
     next_token = None
-    
+
     while True:
         kwargs = {
-            'Expression': expression,
-            'ConfigurationAggregatorName': aggregator_name
+            "Expression": expression,
+            "ConfigurationAggregatorName": aggregator_name,
+            "Limit": CONFIG["PAGE_LIMIT"],
         }
         if next_token:
-            kwargs['NextToken'] = next_token
-            
-        # API call for aggregated queries
-        response = config_client.select_aggregate_resource_config(**kwargs)
-        
-        if 'Results' in response:
-            for row in response['Results']:
-                row_dict = json.loads(row)
-                valid_dict[row_dict['accountId']] = {
-                    rule['configRuleName'] for rule in row_dict['configuration']['configRuleList']
-                }
-            
-        next_token = response.get('NextToken')
+            kwargs["NextToken"] = next_token
+
+        response = _safe_call(
+            config_client.select_aggregate_resource_config,
+            "select_aggregate_resource_config_conformance_packs",
+            **kwargs,
+        )
+
+        for raw in response.get("Results", []):
+            try:
+                row = json.loads(raw)
+            except json.JSONDecodeError:
+                logger.warning("Skipping non-JSON conformance pack result row.")
+                continue
+
+            account_id = row.get("accountId")
+            if not account_id:
+                continue
+
+            rule_list = (row.get("configuration") or {}).get("configRuleList") or []
+            rule_names = {
+                rule.get("configRuleName") for rule in rule_list if rule.get("configRuleName")
+            }
+            if rule_names:
+                valid_dict.setdefault(account_id, set()).update(rule_names)
+
+        next_token = response.get("NextToken")
         if not next_token:
             break
-            
+
+    logger.info(
+        "Resolved guardrail rules for %s account(s) from conformance packs matching '%s'.",
+        len(valid_dict),
+        CONFORMANCE_PACK_NAME_PATTERN,
+    )
     return valid_dict
 
 
-def _iter_aggregate_compliance(config_client, aggregator_name: str):
+def _iter_aggregate_compliance(config_client, org_client, aggregator_name: str):
     """Yield per-resource compliance rows from the org aggregator.
 
     Uses ``SelectAggregateResourceConfig`` against the ``AWS::Config::
@@ -168,7 +220,9 @@ def _iter_aggregate_compliance(config_client, aggregator_name: str):
     evaluating that resource; we filter to guardrail rules and yield one
     tuple per (resource, rule) pair.
     """
+    active_accounts = _get_active_account_ids(org_client)
     valid_rules = _get_valid_rule_names(config_client, aggregator_name)
+    skipped_accounts = set()
 
     expression = (
         "SELECT accountId, awsRegion, resourceId, resourceType, "
@@ -201,6 +255,16 @@ def _iter_aggregate_compliance(config_client, aggregator_name: str):
                 continue
 
             account_id = row.get("accountId", "UNKNOWN")
+            # Allow-list guard: covers accounts that were removed from the
+            # organization outright and so cannot appear in the NOT IN clause.
+            if account_id not in active_accounts:
+                skipped_accounts.add(account_id)
+                continue
+
+            account_rules = valid_rules.get(account_id)
+            if not account_rules:
+                continue
+
             region = row.get("awsRegion", "")
             cfg = row.get("configuration", {}) or {}
             target_resource_id = cfg.get("targetResourceId") or row.get("resourceId") or ""
@@ -215,7 +279,7 @@ def _iter_aggregate_compliance(config_client, aggregator_name: str):
 
             for rule in rule_list:
                 rule_name = rule.get("configRuleName", "")
-                if not rule_name or not rule_name in valid_rules[account_id]:
+                if not rule_name or rule_name not in account_rules:
                     continue
                 compliance = rule.get("complianceType") or cfg.get("complianceType") or "NOT_APPLICABLE"
                 if compliance == "NOT_APPLICABLE":
@@ -233,11 +297,32 @@ def _iter_aggregate_compliance(config_client, aggregator_name: str):
         if not next_token:
             break
 
+    if skipped_accounts:
+        logger.info(
+            "Skipped aggregator results for %s account(s) that are not active members "
+            "of the organization: %s",
+            len(skipped_accounts),
+            ", ".join(sorted(skipped_accounts)),
+        )
+
 
 def _row_from_evaluation(ev: dict, org_client, now_iso: str) -> list:
     rule_name = ev["rule_name"]
     control_set = CONTROL_SET_NAMES.get(rule_name[:4], rule_name[:4])
-    tags = _get_account_tags_cached(org_client, ev["account_id"])
+    try:
+        tags = _get_account_tags_cached(org_client, ev["account_id"])
+    except ClientError as e:
+        # Guards against an account being closed/removed between the
+        # Organizations lookup and this call; one unreachable account must
+        # not fail the whole report.
+        if e.response.get("Error", {}).get("Code") != "TargetNotFoundException":
+            raise
+        logger.warning(
+            "Account %s is no longer a resolvable organization target; using default "
+            "cloud profile for its rows.",
+            ev["account_id"],
+        )
+        tags = []
     cloud_profile = _get_cloud_profile_from_tag_str_cached(json.dumps(tags, sort_keys=True))
     return [
         f'="{str(ev["account_id"])}"',
@@ -279,7 +364,10 @@ def lambda_handler(event, context):
 
     row_count = 0
     try:
-        for ev in _iter_aggregate_compliance(clients["config"], CONFIG["AGGREGATOR_NAME"]):
+        for ev in _iter_aggregate_compliance(
+            clients["config"], clients["organizations"], CONFIG["AGGREGATOR_NAME"]
+        ):
+
             writer.writerow(_row_from_evaluation(ev, clients["organizations"], now_iso))
             row_count += 1
     except (BotoCoreError, ClientError) as e:

@@ -51,7 +51,7 @@ class DataProcessor {
   extractGuardrailNumber(controlName) {
     const match = controlName.match(/gc(\d+)_/i);
     if (match) return match[1].padStart(2, '0');
-    return '00';
+    return 'UNKNOWN';
   }
 
   getDescription(controlName) {
