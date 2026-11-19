@@ -61,7 +61,9 @@ def check_enterprise_monitoring_accounts(aws_iam_client, trusted_principal, role
         if isinstance(policy_document, str):
             policy_document = json.loads(policy_document)
 
-        for statement in policy_document.get("Statement", []):
+        statements = policy_document.get("Statement", [])
+        statements = statements if isinstance(statements, list) else [statements]
+        for statement in statements:
             principal = statement.get("Principal", {})
             if principal:
                 aws = principal.get("AWS", "")

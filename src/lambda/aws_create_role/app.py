@@ -61,7 +61,7 @@ def get_org_accounts():
 
     for page in paginator.paginate():
         for account in page["Accounts"]:
-            if account["Status"] == "ACTIVE":
+            if account["State"] == "ACTIVE":
                 logger.info(f"Account added {account}")
                 active_accounts.append(account)
 

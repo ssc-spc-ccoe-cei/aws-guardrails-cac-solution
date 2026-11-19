@@ -1,7 +1,16 @@
 """Structural validator for the partitioned ConformancePack rollout."""
+import itertools
 import re
 import sys
 import yaml
+
+# Number of partition slots the templates are expected to define. Must
+# stay in sync with tools/validate_parts.py, main.yaml's MaxPartitions
+# MaxValue, and MAX_PARTITIONS in aws_account_partitioner/app.py.
+MAX_PARTITIONS = 4
+PARTITIONS = list(range(1, MAX_PARTITIONS + 1))
+# Partition 1 uses the base Lambda names (no suffix).
+SUFFIXES = {p: ("" if p == 1 else f"_p{p}") for p in PARTITIONS}
 
 
 class CfnLoader(yaml.SafeLoader):
@@ -43,11 +52,13 @@ ress = cp.get("Resources", {})
 
 # 1. PartitionSuffix parameter exists with the right allowed values
 ps = params.get("PartitionSuffix", {})
-if ps.get("Default") != "" or set(ps.get("AllowedValues", [])) != {"", "_p2", "_p3"}:
+expected_suffixes = set(SUFFIXES.values())
+if ps.get("Default") != "" or set(ps.get("AllowedValues", [])) != expected_suffixes:
     print(f"*** ConformancePack.yaml: PartitionSuffix param malformed: {ps}")
+    print(f"    expected AllowedValues {sorted(expected_suffixes)}")
     ok = False
 else:
-    print("ConformancePack: PartitionSuffix parameter OK")
+    print(f"ConformancePack: PartitionSuffix parameter OK ({sorted(expected_suffixes)})")
 
 # 2. Every Config rule must have a literal-string ConfigRuleName (NO
 #    intrinsic functions), and a SourceIdentifier that still references
@@ -88,7 +99,7 @@ cpp_params = cpp.get("Parameters", {})
 cpp_ress = cpp.get("Resources", {})
 cpp_conds = cpp.get("Conditions", {})
 
-required_resources = {"ConformancePackP1", "ConformancePackP2", "ConformancePackP3"}
+required_resources = {f"ConformancePackP{p}" for p in PARTITIONS}
 got_resources = set(cpp_ress.keys())
 missing = required_resources - got_resources
 if missing:
@@ -99,9 +110,7 @@ if missing:
 # partition that has lost all of its accounts cleanly retires its pack
 # (rather than leaving an empty pack that excludes the whole org).
 expected_resource_conds = {
-    "ConformancePackP1": "HasAccountsInP1",
-    "ConformancePackP2": "HasAccountsInP2",
-    "ConformancePackP3": "HasAccountsInP3",
+    f"ConformancePackP{p}": f"HasAccountsInP{p}" for p in PARTITIONS
 }
 for r_name, expected_cond in expected_resource_conds.items():
     r = cpp_ress.get(r_name, {})
@@ -114,14 +123,13 @@ for r_name, expected_cond in expected_resource_conds.items():
 # P1 deliberately omits it and relies on the template's "" default
 # (commit 4ec1404 "removed empty partition suffix") — passing an empty
 # string explicitly is a no-op and just adds noise.
-for r_name, expected_suffix in [
-    ("ConformancePackP2", "_p2"),
-    ("ConformancePackP3", "_p3"),
-]:
+for p in PARTITIONS[1:]:
+    r_name = f"ConformancePackP{p}"
+    expected_suffix = SUFFIXES[p]
     r = cpp_ress.get(r_name, {})
     inputs = r.get("Properties", {}).get("ConformancePackInputParameters", [])
     suffix_param = next(
-        (p for p in inputs if p.get("ParameterName") == "PartitionSuffix"), None,
+        (q for q in inputs if q.get("ParameterName") == "PartitionSuffix"), None,
     )
     if suffix_param is None:
         print(f"*** {r_name}: PartitionSuffix input missing")
@@ -132,17 +140,37 @@ for r_name, expected_suffix in [
 # P1 must NOT pass PartitionSuffix (relies on template default "").
 p1 = cpp_ress.get("ConformancePackP1", {})
 p1_inputs = p1.get("Properties", {}).get("ConformancePackInputParameters", [])
-if any(p.get("ParameterName") == "PartitionSuffix" for p in p1_inputs):
+if any(q.get("ParameterName") == "PartitionSuffix" for q in p1_inputs):
     print("*** ConformancePackP1: PartitionSuffix input should be omitted (template default is \"\")")
     ok = False
-print("ConformancePackPartitions: 3 packs wired with correct PartitionSuffix and HasAccountsInP* condition")
+
+# Every pack must declare an ExcludedAccounts !If ladder — without it an
+# account would be targeted by more than one pack.
+for p in PARTITIONS:
+    r = cpp_ress.get(f"ConformancePackP{p}", {})
+    excl = r.get("Properties", {}).get("ExcludedAccounts")
+    if not isinstance(excl, dict) or "Fn::If" not in excl:
+        print(f"*** ConformancePackP{p}: ExcludedAccounts is not an !If ladder: {excl!r}")
+        ok = False
+    else:
+        # The ladder must never reference the pack's own account list,
+        # which would exclude every account the pack is meant to cover.
+        if f"AccountsInP{p}" in repr(excl):
+            print(f"*** ConformancePackP{p}: ExcludedAccounts references its own AccountsInP{p}")
+            ok = False
+
+print(f"ConformancePackPartitions: {len(PARTITIONS)} packs wired with correct PartitionSuffix, "
+      "HasAccountsInP* condition and ExcludedAccounts ladder")
 
 # Required empty-string conditions on each partition's account list, plus
-# the AND combinations used by the ExcludedAccounts !If ladders.
-for c in (
-    "HasAccountsInP1", "HasAccountsInP2", "HasAccountsInP3",
-    "HasAccountsInP2AndP3", "HasAccountsInP1AndP3", "HasAccountsInP1AndP2",
-):
+# the AND combinations used by the ExcludedAccounts !If ladders. Each
+# pack excludes the union of whichever OTHER partitions are populated, so
+# every non-empty subset of size >= 2 needs its own condition.
+required_conds = [f"HasAccountsInP{p}" for p in PARTITIONS]
+for size in range(2, MAX_PARTITIONS):
+    for combo in itertools.combinations(PARTITIONS, size):
+        required_conds.append("HasAccountsIn" + "And".join(f"P{c}" for c in combo))
+for c in required_conds:
     if c not in cpp_conds:
         print(f"*** ConformancePackPartitions: missing Condition {c}")
         ok = False
@@ -178,43 +206,61 @@ else:
 main = load("arch/templates/main.yaml")
 main_ress = main.get("Resources", {})
 
-cp_res = main_ress.get("ConformancePack", {})
+# Logical ID is ConformancePackStack (renamed from the historical
+# ConformancePack when the resource type changed from
+# AWS::Config::OrganizationConformancePack to a nested stack —
+# CloudFormation forbids in-place Type changes on a logical ID).
+CP_STACK_ID = "ConformancePackStack"
+cp_res = main_ress.get(CP_STACK_ID, {})
 if cp_res.get("Type") != "AWS::CloudFormation::Stack":
-    print(f"*** main.yaml ConformancePack Type={cp_res.get('Type')} (expected AWS::CloudFormation::Stack)")
+    print(f"*** main.yaml {CP_STACK_ID} Type={cp_res.get('Type')} (expected AWS::CloudFormation::Stack)")
     ok = False
 else:
-    print("main.yaml: ConformancePack is now a nested stack")
+    print(f"main.yaml: {CP_STACK_ID} is a nested stack")
+if "ConformancePack" in main_ress:
+    print("*** main.yaml still declares the legacy ConformancePack logical ID")
+    ok = False
 
 # Nested stack must reference ConformancePackPartitions.yaml
 turl = repr(cp_res.get("Properties", {}).get("TemplateURL", ""))
 if "ConformancePackPartitions.yaml" not in turl:
-    print(f"*** main.yaml ConformancePack TemplateURL missing ConformancePackPartitions.yaml: {turl}")
+    print(f"*** main.yaml {CP_STACK_ID} TemplateURL missing ConformancePackPartitions.yaml: {turl}")
     ok = False
 
-# The 3 per-partition account lists must be passed in. PartitionCount
+# Every per-partition account list must be passed in. PartitionCount
 # is no longer consumed by ConformancePackPartitions.yaml — whether each
 # pack is created is driven by emptiness of AccountsInP* — so it is
 # deliberately omitted.
 cp_params = cp_res.get("Properties", {}).get("Parameters", {})
-required_partitioner_params = {"AccountsInP1", "AccountsInP2", "AccountsInP3"}
+required_partitioner_params = {f"AccountsInP{p}" for p in PARTITIONS}
 missing_pp = required_partitioner_params - set(cp_params.keys())
 if missing_pp:
-    print(f"*** main.yaml ConformancePack missing partitioner params: {missing_pp}")
+    print(f"*** main.yaml {CP_STACK_ID} missing partitioner params: {missing_pp}")
     ok = False
 else:
-    print("main.yaml: 3 per-partition account lists wired into ConformancePack")
+    print(f"main.yaml: {len(PARTITIONS)} per-partition account lists wired into {CP_STACK_ID}")
 if "PartitionCount" in cp_params:
-    print("*** main.yaml ConformancePack still passes PartitionCount to nested stack (no longer consumed)")
+    print(f"*** main.yaml {CP_STACK_ID} still passes PartitionCount to nested stack (no longer consumed)")
     ok = False
 
-# Downstream EvidenceCollectionComponents must still DependsOn ConformancePack
-aam = main_ress.get("EvidenceCollectionComponents", {})
-deps = aam.get("DependsOn", [])
-if "ConformancePack" not in deps:
-    print(f"*** main.yaml EvidenceCollectionComponents no longer DependsOn ConformancePack: {deps}")
+# MaxPartitions must allow every partition slot the templates define,
+# otherwise the partitioner would fail closed before the last pack is
+# ever created.
+max_parts = main.get("Parameters", {}).get("MaxPartitions", {})
+if max_parts.get("MaxValue") != MAX_PARTITIONS:
+    print(f"*** main.yaml MaxPartitions MaxValue={max_parts.get('MaxValue')} (expected {MAX_PARTITIONS})")
     ok = False
 else:
-    print("main.yaml: EvidenceCollectionComponents still DependsOn ConformancePack")
+    print(f"main.yaml: MaxPartitions MaxValue={MAX_PARTITIONS} matches the template partition slots")
+
+# Downstream EvidenceCollectionComponents must still DependsOn the pack stack
+aam = main_ress.get("EvidenceCollectionComponents", {})
+deps = aam.get("DependsOn", [])
+if CP_STACK_ID not in deps:
+    print(f"*** main.yaml EvidenceCollectionComponents no longer DependsOn {CP_STACK_ID}: {deps}")
+    ok = False
+else:
+    print(f"main.yaml: EvidenceCollectionComponents still DependsOn {CP_STACK_ID}")
 
 # Partitioner Lambda must NOT have AUDIT_ACCOUNT_ID env var — the
 # audit-account-first deterministic placement was reverted (the system

@@ -45,7 +45,14 @@ psm = load("arch/templates/PartitionSyncStateMachine.yaml")
 psm_params = psm.get("Parameters", {})
 psm_ress = psm.get("Resources", {})
 
-expected_params = {"OrganizationName", "RootStackName", "AuditAccountID"}
+expected_params = {
+    "OrganizationName",
+    "RootStackName",
+    "AuditAccountID",
+    # CloudFormation service role handed to UpdateStack by the state
+    # machine; created in main.yaml and passed down.
+    "CloudFormationDeploymentRoleArn",
+}
 missing_params = expected_params - set(psm_params.keys())
 extra_params = set(psm_params.keys()) - expected_params
 if missing_params:

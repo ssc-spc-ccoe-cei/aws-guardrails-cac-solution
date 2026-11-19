@@ -73,6 +73,10 @@
   },
   {
     "ParameterKey": "MaxPartitions",
-    "ParameterValue": "3"
+    "ParameterValue": "4"
+  },
+  {
+    "ParameterKey": "PimEnabled",
+    "ParameterValue": "false"
   }
 ]

@@ -292,6 +292,7 @@ def policy_doc_gives_admin_access(policy_doc: str) -> bool:
         document_dict = policy_doc
 
     statements = document_dict.get("Statement", [])
+    statements = statements if isinstance(statements, list) else [statements]
 
     for statement_component in statements:
         if statement_component.get("Effect", "") == "Allow":
@@ -301,7 +302,7 @@ def policy_doc_gives_admin_access(policy_doc: str) -> bool:
                 actions = [actions]
 
             # Check if any action is exact "*" AND Resource == "*".
-            if "*" in actions and statement_component.get("Resource", "") == "*":
+            if "*" in actions and statement_component.get("Resource", "") in ["*", ["*"]]:
                 return True
 
     return False

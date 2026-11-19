@@ -80,16 +80,22 @@ Parameters:
     Type: String
     Default: "*GCDestBucketName*"
     Description: Bucket to which evidence will be shared
-  DeployRoles:
-    Type: String
-    Default: true
-    AllowedValues: [true, false]
   DeployVersion:
     Type: String
     Default: 2.0.0
   LogArchiveAccountName:
     Type: String
     Default: "LogArchive"
+  CBSAccountID:
+    Type: String
+    Default: "346725238039"
+    AllowedPattern: "^[0-9]{12}$"
+    Description: >-
+      12-digit AWS account ID of the Canadian Centre for Cyber Security Cloud
+      Based Sensor (CBS). Consumed by the GC10 cyber centre sensors check to
+      confirm that log replication targets the Cyber Centre and that the
+      cbs-global-reader role trusts it. Only change if CCCS has onboarded you
+      to a different CBS account.
   MaxAccountsPerPartition:
     Type: Number
     Default: 60
@@ -100,15 +106,26 @@ Parameters:
       each guardrail Lambda's resource-based policy under the 20 KB IAM limit.
   MaxPartitions:
     Type: Number
-    Default: 3
+    Default: 4
     MinValue: 1
-    MaxValue: 3
+    MaxValue: 4
     Description: >-
       Max number of partitions the Account Partitioner Lambda can create.
-      Hard-capped at 3 because the AuditAccountPreRequisitesPart* templates
+      Hard-capped at 4 because the AuditAccountPreRequisitesPart* templates
       and ConformancePackPartitions only define conditional clones for partitions 1,
-      2, and 3. Total addressable accounts = MaxAccountsPerPartition x
+      2, 3, and 4. Total addressable accounts = MaxAccountsPerPartition x
       MaxPartitions.
+  PimEnabled:
+    Type: String
+    Default: "false"
+    AllowedValues:
+      - "true"
+      - "false"
+    Description: >-
+      Feature flag for the GC01 dedicated admin account check. When "true",
+      the check uses PIM/JIT logic (CloudTrail-based recent elevation checks).
+      Must be lowercase "true" or "false"; "false" preserves the original
+      behaviour.
 
 Resources:
   GuardRailsStack:
@@ -130,7 +147,6 @@ Resources:
         RootOUID: !Ref RootOUID
         PipelineBucket: !Ref PipelineBucket
         DestBucketName: !Ref DestBucketName
-        DeployRoles: !Ref DeployRoles
         DeployVersion: !Ref DeployVersion
         InvokeUpdate: !Ref InvokeUpdate
         BGA1: !Ref BGA1
@@ -138,15 +154,17 @@ Resources:
         BGA3: !Ref BGA3
         BGA4: !Ref BGA4
         LogArchiveAccountName: !Ref LogArchiveAccountName
+        CBSAccountID: !Ref CBSAccountID
         MaxAccountsPerPartition: !Ref MaxAccountsPerPartition
         MaxPartitions: !Ref MaxPartitions
         # Forwarded so the partition-sync Step Function inside main.yaml
         # knows which stack to call cloudformation:UpdateStack against.
         # Nested stacks cannot be updated directly, so the state machine
         # bumps InvokeUpdate on the root to cascade new
-        # AccountsInP1/P2/P3 values into the ConformancePackStack nested stack
-        # and the Part1-8 StackSets.
+        # AccountsInP1/P2/P3/P4 values into the ConformancePackStack nested
+        # stack and the Part1-8 StackSets.
         RootStackName: !Ref AWS::StackName
+        PimEnabled: !Ref PimEnabled
 
 
       Tags:

@@ -8,8 +8,8 @@ account-to-partition mapping maintained by `aws_account_partitioner` in the
 
 AWS Lambda resource-based policies are capped at **20 KB**. With one
 `AddPermission` statement per organization account, the policy on each
-guardrail Lambda overflows around **~60 accounts**. To support up to **180
-accounts**, accounts are split across up to **3 partitions of ≤60**, and each
+guardrail Lambda overflows around **~60 accounts**. To support up to **240
+accounts**, accounts are split across up to **4 partitions of ≤60**, and each
 guardrail Lambda is cloned per partition. This Lambda keeps each clone's
 policy in sync with its partition's accounts so every clone stays well under
 the 20 KB limit.
@@ -23,6 +23,7 @@ For an organization name prefix `<org>` and guardrail suffix `<suffix>`:
 | 1         | `<org><suffix>`            |
 | 2         | `<org><suffix>_p2`         |
 | 3         | `<org><suffix>_p3`         |
+| 4         | `<org><suffix>_p4`         |
 
 ## Per-run behaviour
 
@@ -41,7 +42,7 @@ For an organization name prefix `<org>` and guardrail suffix `<suffix>`:
       suspended, or transferred out of the AWS Organization — the
       partitioner never re-assigns an existing account to a different
       partition.
-   5. If the clone Lambda does not exist (e.g., the `_p2`/`_p3` StackSet
+   5. If the clone Lambda does not exist (e.g., the `_p2`/`_p3`/`_p4` StackSet
       hasn't been updated yet), the clone is skipped with a warning — not a
       failure.
 

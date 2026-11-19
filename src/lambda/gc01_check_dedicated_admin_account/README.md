@@ -20,6 +20,29 @@ It loads the rule parameters, gets the relevant AWS clients with assumed roles i
 
 Builds an AWS Config evaluation object from the provided parameters.
 
+## Configuration
+
+### `PIM_ENABLED`
+
+Feature flag for the PIM/JIT evaluation path (CloudTrail-based recent
+elevation checks via IAM Identity Center). When unset or `false`, the
+original evaluation behaviour is preserved.
+
+The value is **not** hardcoded in the Lambda. It is set from the top-level
+solution configuration and threaded down through CloudFormation:
+
+| Layer | Key |
+| --- | --- |
+| `config.yaml` → `Parameters` | `PimEnabled: "false"` |
+| `arch/params/base.json` | `{"ParameterKey": "PimEnabled", "ParameterValue": "false"}` |
+| `arch/templates/root.yaml` | `PimEnabled` parameter → passed to `main.yaml` |
+| `arch/templates/main.yaml` | `PimEnabled` parameter → passed to the `AuditAccountPreRequisitesPart2` StackSet |
+| `arch/templates/AuditAccountPreRequisitesPart2.yaml` | `PIM_ENABLED: !Ref PimEnabled` env var on the base Lambda and the `_p2` / `_p3` / `_p4` partition clones |
+
+Allowed values are lowercase `"true"` and `"false"` only — the templates
+enforce this with `AllowedValues`. To enable the flag, edit `config.yaml`
+and redeploy; no code change is required.
+
 ## Deployment
 
 This function runs on AWS Lambda and is deployed via the Serverless Framework and CI/CD pipelines.
