@@ -389,21 +389,21 @@ def assess_cbs_reader_role(
     if cbs_account_id and not trust_policy_allows_account(trust_policy, cbs_account_id):
         problems.append(f"its trust policy does not admit a principal from Cyber Centre account {cbs_account_id}")
 
-    if required_managed_policy_arns:
-        attached_arns = set()
-        readable = True
-        try:
-            paginator = iam_client.get_paginator("list_attached_role_policies")
-            for page in paginator.paginate(RoleName=role_name):
-                attached_arns.update(p.get("PolicyArn", "") for p in page.get("AttachedPolicies", []))
-        except botocore.exceptions.ClientError as e:
-            logger.warning("Unable to list attached policies for role '%s': %s", role_name, e)
-            readable = False
+    attached_arns = set()
+    readable = True
+    try:
+        paginator = iam_client.get_paginator("list_attached_role_policies")
+        for page in paginator.paginate(RoleName=role_name):
+            attached_arns.update(p.get("PolicyArn", "") for p in page.get("AttachedPolicies", []))
+    except botocore.exceptions.ClientError as e:
+        logger.warning("Unable to list attached policies for role '%s': %s", role_name, e)
+        readable = False
+        problems.append(f"cannot check its attached policies due to ClientError: {e}")
 
-        if readable:
-            missing_policies = [a for a in required_managed_policy_arns if a not in attached_arns]
-            if missing_policies:
-                problems.append(f"it is missing the policy {', '.join(missing_policies)}")
+    if readable:
+        missing_policies = [a for a in required_managed_policy_arns if a not in attached_arns]
+        if missing_policies:
+            problems.append(f"it is missing the policy {', '.join(missing_policies)}")
 
     if problems:
         annotation = f"The role '{role_name}' in account '{account_id}' is non-compliant: {'; '.join(problems)}."
