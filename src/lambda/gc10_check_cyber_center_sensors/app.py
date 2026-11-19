@@ -377,9 +377,13 @@ def assess_cbs_reader_role(
     except botocore.exceptions.ClientError as e:
         if "NoSuchEntity" in e.response["Error"]["Code"]:
             annotation = f"The role '{role_name}' does not exist in account '{account_id}'."
-            logger.info("NON_COMPLIANT: %s", annotation)
-            return build_evaluation(role_name, "NON_COMPLIANT", event, resource_type, annotation), False
-        raise
+        else:
+            annotation = (
+                f"The role '{role_name}' could not be verified in account '{account_id}'."
+                f" AWS ClientError: {e}"
+            )
+        logger.info("NON_COMPLIANT: %s", annotation)
+        return build_evaluation(role_name, "NON_COMPLIANT", event, resource_type, annotation), False
 
     trust_policy = normalize_policy_document(role.get("AssumeRolePolicyDocument"))
     if cbs_account_id and not trust_policy_allows_account(trust_policy, cbs_account_id):
