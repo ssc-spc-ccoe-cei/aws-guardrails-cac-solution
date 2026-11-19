@@ -552,20 +552,21 @@ def lambda_handler(event, context):
     all_resources_are_compliant = True
 
     ###
-    # Assert that the log archive account exists
+    # Assert that the log archive account exists. Only assess from single account (Audit) to minimize Org API usage
     ###
-    accounts = organizations_list_all_accounts(aws_organizations_client)
-    log_archive_account = next((x for x in accounts if x.get("Name", "") == log_archive_account_name), None)
+    if not is_not_audit_account:
+        accounts = organizations_list_all_accounts(aws_organizations_client)
+        log_archive_account = next((x for x in accounts if x.get("Name", "") == log_archive_account_name), None)
 
-    if not log_archive_account:
-        annotation = f"A log archive account with name '{log_archive_account_name}' does not exist in the organization."
-        logger.info("NON_COMPLIANT: %s", annotation)
-        submit_evaluations(
-            aws_config_client, event, [build_evaluation(aws_account_id, "NON_COMPLIANT", event, annotation=annotation)]
-        )
-        return
+        if not log_archive_account:
+            annotation = f"A log archive account with name '{log_archive_account_name}' does not exist in the organization."
+            logger.info("NON_COMPLIANT: %s", annotation)
+            submit_evaluations(
+                aws_config_client, event, [build_evaluation(aws_account_id, "NON_COMPLIANT", event, annotation=annotation)]
+            )
+            return
 
-    logger.info("A log archive account with name '%s' was found: %s", log_archive_account_name, log_archive_account)
+        logger.info("A log archive account with name '%s' was found: %s", log_archive_account_name, log_archive_account)
 
     ###
     # Assert that the CBS reader role is correctly deployed in THIS account.
@@ -588,7 +589,8 @@ def lambda_handler(event, context):
     # Assert that the log buckets replicate to the Cyber Centre. Only
     # meaningful in the Log Archive account, which is where those buckets live.
     ###
-    if aws_account_id == log_archive_account["Id"]:
+    aws_account_name = aws_organizations_client.describe_account(AccountId=aws_account_id)['Account']['Name']
+    if aws_account_name == log_archive_account_name:
         # The evidence file lives in the Audit account, where this Lambda runs.
         aws_s3_client_for_audit_account = get_client("s3")
 
