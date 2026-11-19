@@ -81,14 +81,14 @@ def get_active_accounts():
                 continue
 
             for acct in response.get("Accounts", []):
-                if str(acct.get("State", "")).upper() == "ACTIVE":
+                if acct["State"] == "ACTIVE":
                     account_ids.add(acct["Id"])
 
             next_token = response.get("NextToken")
             while next_token:
                 response = client.list_accounts(NextToken=next_token)
                 for acct in response.get("Accounts", []):
-                    if str(acct.get("State", "")).upper() == "ACTIVE":
+                    if acct["State"] == "ACTIVE":
                         account_ids.add(acct["Id"])
                 next_token = response.get("NextToken")
 
