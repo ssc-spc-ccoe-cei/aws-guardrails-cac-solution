@@ -215,8 +215,8 @@ def policy_doc_gives_admin_access(policy_doc: str) -> bool:
     for statement_component in statement:
         if (
             statement_component.get("Effect", "") == "Allow"
-            and statement_component.get("Action", "") == "*"
-            and statement_component.get("Resource", "") == "*"
+            and statement_component.get("Action", "") in ["*", ["*"]]
+            and statement_component.get("Resource", "") in ["*", ["*"]]
            # and "Principal" in statement_component
         ):
          return True

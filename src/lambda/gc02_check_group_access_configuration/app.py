@@ -302,7 +302,7 @@ def policy_doc_gives_admin_access(policy_doc: str) -> bool:
                 actions = [actions]
 
             # Check if any action is exact "*" AND Resource == "*".
-            if "*" in actions and statement_component.get("Resource", "") == "*":
+            if "*" in actions and statement_component.get("Resource", "") in ["*", ["*"]]:
                 return True
 
     return False
